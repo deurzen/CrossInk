@@ -117,6 +117,7 @@ class PageTableFragment final : public PageElement {
   PageElementTag getTag() const override { return TAG_PageTableFragment; }
   static std::unique_ptr<PageTableFragment> deserialize(FsFile& file);
   uint16_t getHeight() const;
+  const std::vector<TableFragmentRow>& getRows() const { return rows; }
 };
 
 class Page {
