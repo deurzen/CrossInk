@@ -117,6 +117,72 @@ analyzer versions, spine count, and source language, then renames it to
 `language.bin` as the commit point. Cached artifacts are CRC-checked with a
 96-byte read buffer before reuse. No payload-sized allocation is made.
 
+### Version 2
+
+Version 2 retains the 108-byte header identity, language, CRC, and file-size
+fields from version 1 but replaces the random-access candidate/surface tables
+with self-contained shard blobs. Header field meanings that differ from version
+1 are:
+
+| Offset | Size | Version-2 field |
+| ---: | ---: | --- |
+| 4 | 2 | Format version (`2`) |
+| 56 | 4 | Total candidate count across all shard blobs |
+| 64 | 4 | Reserved; must be zero |
+| 68 | 4 | Spine-directory offset |
+| 72 | 4 | Shard-directory offset |
+| 76 | 4 | Shard-blob section offset |
+| 80 | 4 | Local-lemma table offset |
+| 84 | 4 | Metadata section offset |
+| 88 | 8 | Reserved; must be zero |
+
+The spine directory remains the version-1 eight-byte record. Each version-2
+shard-directory record is 20 bytes:
+
+```text
+blobOffset:u32       // relative to the shard-blob section
+blobLength:u16
+recordCount:u16
+sourceTokenStart:u32
+sourceTokenEnd:u32
+reserved:u32         // zero
+```
+
+Shard blobs are ordered by shard ID, non-overlapping, and at most 24 KiB each.
+They contain `recordCount` variable records sorted by `(surfaceHash, UTF-8
+surface)`. Each record starts with this 16-byte header:
+
+```text
+surfaceHash:u64      // FNV-1a-64 over exact NFC UTF-8
+recordSize:u16       // header + analyses + surface + zero padding
+surfaceLength:u8     // 1..255
+analysisCount:u8     // 1..8
+flags:u8
+reserved:u8          // zero
+confidence:u16       // 0..1000
+localLemmaIds:u16[analysisCount]
+surface:u8[surfaceLength]
+padding:u8[]         // zero, to four-byte record alignment
+```
+
+The first and second inline analysis IDs replace the version-1 primary and
+alternate fields. Compound-only guesses with no whole-word analysis are not
+emitted. A record must fit completely inside its shard blob; all local IDs must
+be below the header's local-lemma count. Firmware processes one shard
+sequentially through bounded scratch storage and never allocates `blobLength`.
+
+The local-lemma table remains `globalLexemeId:u32` indexed by local ID and
+sorted by global ID. Version 2 removes the global-to-local table and the entire
+surface-detail section. The metadata section retains the `CXLM` envelope and
+records shard size plus compiler/tokenizer/analyzer versions. The same 64 MiB
+file cap, 4096-spine cap, 65535-shard cap, 32768-local-lemma cap, payload CRC,
+and header CRC apply. Version-2 compilers fail on oversized records/blobs rather
+than truncating structural data.
+
+Firmware must retain version-1 reading during migration. Version 1 uses its
+existing random-access path; version 2 uses sequential shard streaming. Both
+versions map to the same bounded `Shortlist` and global learning-state IDs.
+
 A deterministically invalid embedded artifact creates `<book-cache>/language.invalid`:
 magic `CXLI` followed by its `fileSize:u32`. This prevents repeated extraction
 attempts by multiple short-lived `Epub` objects. A missing member removes stale
@@ -142,11 +208,10 @@ generation, new status, three reserved bytes, and CRC32. Updates sync the WAL,
 status byte, and generation in that order. Recovery idempotently replays the WAL
 before removing it.
 
-Each EPUB cache may contain `dictionary-suppress.bin`: a 36-byte `CXSP` header
-with bundle UUID, local lemma count, global generation, and payload byte count,
-followed by one suppression bit per local lemma. Generation or format mismatch
-causes an atomic rebuild from `language.bin` and global state. Deleting an EPUB
-cache removes only this reproducible projection, never global learning state.
+Explicit lookup filters only the bounded visible shortlist against this global
+state. Legacy `dictionary-suppress.bin` files from earlier builds are ignored;
+they are reproducible cache data and may be removed with the EPUB cache. Global
+learning state is never stored under an EPUB cache.
 
 ## `/.crosspoint/dictionaries/<bundle-uuid>/`
 
