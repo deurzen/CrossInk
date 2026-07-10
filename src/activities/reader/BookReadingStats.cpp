@@ -1,5 +1,6 @@
 #include "BookReadingStats.h"
 
+#include <AtomicFile.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -74,7 +75,12 @@ std::string statsFileNameForVersion(const uint8_t version) {
 
 bool openStatsFileForRead(const std::string& cachePath, FsFile& f) {
   const std::string currentName = statsFileNameForVersion(STATS_FILE_VERSION);
-  if (Storage.openFileForRead("STATS", cachePath + "/" + currentName, f)) {
+  const std::string currentPath = cachePath + "/" + currentName;
+  if (Storage.openFileForRead("STATS", currentPath, f)) {
+    return true;
+  }
+  if (Storage.openFileForRead("STATS", currentPath + ".bak", f)) {
+    LOG_DBG("STATS", "Recovered %s from atomic backup", currentName.c_str());
     return true;
   }
 
@@ -133,10 +139,71 @@ ReadingStatsDate readDate(const uint8_t* data, const int offset) {
   return date;
 }
 
+void serializeStats(const BookReadingStats& stats, uint8_t* data) {
+  memset(data, 0, STATS_FILE_SIZE);
+  data[0] = STATS_FILE_VERSION;
+  writeLe16(data, 1, stats.sessionCount);
+  writeLe32(data, 3, stats.totalReadingSeconds);
+  writeLe32(data, 7, stats.totalPagesTurned);
+  data[11] = stats.isCompleted ? 1 : 0;
+  writeLe16(data, 12, stats.avgSecondsPerForwardPage);
+  writeLe16(data, 14, stats.paceSampleCount);
+  data[16] = (stats.startDateManual ? FLAG_START_DATE_MANUAL : 0u) |
+             (stats.finishedDateManual ? FLAG_FINISHED_DATE_MANUAL : 0u);
+  writeLe16(data, 17, stats.startDate.isValid() ? stats.startDate.year : 0);
+  data[19] = stats.startDate.isValid() ? stats.startDate.month : 0;
+  data[20] = stats.startDate.isValid() ? stats.startDate.day : 0;
+  writeLe16(data, 21, stats.finishedDate.isValid() ? stats.finishedDate.year : 0);
+  data[23] = stats.finishedDate.isValid() ? stats.finishedDate.month : 0;
+  data[24] = stats.finishedDate.isValid() ? stats.finishedDate.day : 0;
+  for (size_t i = 0; i < stats.timeOfDaySeconds.size(); ++i) {
+    writeLe32(data, 25 + static_cast<int>(i) * 4, stats.timeOfDaySeconds[i]);
+  }
+  for (size_t i = 0; i < stats.dayOfWeekSeconds.size(); ++i) {
+    writeLe32(data, 41 + static_cast<int>(i) * 4, stats.dayOfWeekSeconds[i]);
+  }
+  writeLe32(data, 69, stats.estimatedTimeLeftSeconds);
+}
+
+struct StatsWriteContext {
+  const BookReadingStats* stats;
+};
+
+bool writeStatsFile(HalFile& file, const void* context) {
+  const auto* writeContext = static_cast<const StatsWriteContext*>(context);
+  uint8_t data[STATS_FILE_SIZE];
+  serializeStats(*writeContext->stats, data);
+  const size_t written = file.write(data, sizeof(data));
+  if (written == sizeof(data)) return true;
+  LOG_ERR("STATS", "Short write saving stats: %u/%u bytes", static_cast<unsigned>(written),
+          static_cast<unsigned>(sizeof(data)));
+  return false;
+}
+
+bool validateStatsFile(const char* path, const void*) {
+  HalFile file;
+  if (!Storage.openFileForRead("STATS", path, file)) return false;
+  uint8_t version = 0;
+  const bool valid = file.fileSize64() == STATS_FILE_SIZE &&
+                     file.read(&version, sizeof(version)) == static_cast<int>(sizeof(version)) &&
+                     version == STATS_FILE_VERSION;
+  file.close();
+  return valid;
+}
+
 }  // namespace
 
 BookReadingStats BookReadingStats::load(const std::string& cachePath) {
   BookReadingStats stats;
+  const std::string statsPath = cachePath + "/" + statsFileNameForVersion(STATS_FILE_VERSION);
+  // Recover before opening so a missing/corrupt final never hides a valid backup.
+  const std::string tempPath = statsPath + ".tmp";
+  const std::string backupPath = statsPath + ".bak";
+  const AtomicFile::Paths paths{statsPath.c_str(), tempPath.c_str(), backupPath.c_str()};
+  if (!AtomicFile::recover("STATS", paths, validateStatsFile)) {
+    LOG_ERR("STATS", "Could not recover %s before load", statsPath.c_str());
+  }
+
   FsFile f;
   if (!openStatsFileForRead(cachePath, f)) {
     return stats;
@@ -240,37 +307,15 @@ void BookReadingStats::formatDuration(uint32_t seconds, char* buf, size_t len) {
 }
 
 void BookReadingStats::save(const std::string& cachePath) const {
-  const std::string statsFileName = statsFileNameForVersion(STATS_FILE_VERSION);
-  FsFile f;
-  if (!Storage.openFileForWrite("STATS", cachePath + "/" + statsFileName, f)) {
-    LOG_ERR("STATS", "Could not write %s", statsFileName.c_str());
-    return;
+  const std::string statsPath = cachePath + "/" + statsFileNameForVersion(STATS_FILE_VERSION);
+  // These cold-path strings must outlive AtomicFile::write; cache paths are not safely bounded for stack buffers.
+  const std::string tempPath = statsPath + ".tmp";
+  const std::string backupPath = statsPath + ".bak";
+  const AtomicFile::Paths paths{statsPath.c_str(), tempPath.c_str(), backupPath.c_str()};
+  StatsWriteContext context{this};
+  if (!AtomicFile::write("STATS", paths, writeStatsFile, validateStatsFile, &context)) {
+    LOG_ERR("STATS", "Could not atomically save %s", statsPath.c_str());
   }
-  uint8_t data[STATS_FILE_SIZE];
-  memset(data, 0, sizeof(data));
-  data[0] = STATS_FILE_VERSION;
-  writeLe16(data, 1, sessionCount);
-  writeLe32(data, 3, totalReadingSeconds);
-  writeLe32(data, 7, totalPagesTurned);
-  data[11] = isCompleted ? 1 : 0;
-  writeLe16(data, 12, avgSecondsPerForwardPage);
-  writeLe16(data, 14, paceSampleCount);
-  data[16] = (startDateManual ? FLAG_START_DATE_MANUAL : 0u) | (finishedDateManual ? FLAG_FINISHED_DATE_MANUAL : 0u);
-  writeLe16(data, 17, startDate.isValid() ? startDate.year : 0);
-  data[19] = startDate.isValid() ? startDate.month : 0;
-  data[20] = startDate.isValid() ? startDate.day : 0;
-  writeLe16(data, 21, finishedDate.isValid() ? finishedDate.year : 0);
-  data[23] = finishedDate.isValid() ? finishedDate.month : 0;
-  data[24] = finishedDate.isValid() ? finishedDate.day : 0;
-  for (size_t i = 0; i < timeOfDaySeconds.size(); ++i) {
-    writeLe32(data, 25 + static_cast<int>(i) * 4, timeOfDaySeconds[i]);
-  }
-  for (size_t i = 0; i < dayOfWeekSeconds.size(); ++i) {
-    writeLe32(data, 41 + static_cast<int>(i) * 4, dayOfWeekSeconds[i]);
-  }
-  writeLe32(data, 69, estimatedTimeLeftSeconds);
-  f.write(data, STATS_FILE_SIZE);
-  f.close();
 }
 
 bool BookReadingStats::remove(const std::string& cachePath) {
@@ -279,6 +324,16 @@ bool BookReadingStats::remove(const std::string& cachePath) {
   bool ok = true;
   if (Storage.exists(statsPath.c_str()) && !Storage.remove(statsPath.c_str())) {
     LOG_ERR("STATS", "Could not delete %s", statsFileName.c_str());
+    ok = false;
+  }
+  const std::string backupPath = statsPath + ".bak";
+  if (Storage.exists(backupPath.c_str()) && !Storage.remove(backupPath.c_str())) {
+    LOG_ERR("STATS", "Could not delete %s backup", statsFileName.c_str());
+    ok = false;
+  }
+  const std::string tempPath = statsPath + ".tmp";
+  if (Storage.exists(tempPath.c_str()) && !Storage.remove(tempPath.c_str())) {
+    LOG_ERR("STATS", "Could not delete %s temp", statsFileName.c_str());
     ok = false;
   }
 

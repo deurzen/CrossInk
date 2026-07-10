@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Fixed
+
+- Per-book reading stats now use recoverable temporary and backup files, so interrupted SD writes cannot replace the last valid stats snapshot.
+
 ## [v1.4.0] - 2026-07-10
 
 ### Added

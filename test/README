@@ -10,6 +10,12 @@ in the development cycle.
 More information about PlatformIO Unit Testing:
 - https://docs.platformio.org/en/latest/advanced/unit-testing/index.html
 
+Host CMake tests:
+- Configure with `cmake -S test -B build/test -DCMAKE_BUILD_TYPE=Debug`.
+- Build with `cmake --build build/test -j2`.
+- Run with `ctest --test-dir build/test --output-on-failure`.
+- The `atomic_file` suite uses a fake storage backend and injected power cuts; it does not replace SD-card hardware testing.
+
 Simulator smoke test:
 - Run `./scripts/run_simulator_smoke_test.py` from the repo root.
 - The script builds `env:simulator`, creates a temporary `fs_`, copies a test EPUB into it, opens common screens, renders them, drives reader page/menu input, and fails on crashes or missing success output.
