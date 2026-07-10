@@ -53,6 +53,7 @@
 #include "util/BookMoveUtils.h"
 #include "util/ScreenshotUtil.h"
 #include "word_inbox/VisiblePageText.h"
+#include "word_inbox/WordInboxFeedback.h"
 #include "word_inbox/WordInboxStore.h"
 
 namespace {
@@ -3129,24 +3130,21 @@ void EpubReaderActivity::saveCurrentPageToWordInbox() {
     LOG_ERR("WIN", "OOM: visible page text buffer (%u bytes)",
             static_cast<unsigned>(VisiblePageText::MAX_TEXT_BYTES + 1));
     RenderLock lock(*this);
-    drawToastBuffer(renderer, tr(STR_WORD_INBOX_FAILED));
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
     return;
   }
 
   RenderLock lock(*this);
   if (!epub || !section || section->currentPage < 0 || section->currentPage >= section->pageCount) {
     LOG_ERR("WIN", "EPUB page is unavailable for capture");
-    drawToastBuffer(renderer, tr(STR_WORD_INBOX_FAILED));
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
     return;
   }
 
   auto page = section->loadPageFromSectionFile();
   if (!page) {
     LOG_ERR("WIN", "Failed to reload current EPUB page for capture");
-    drawToastBuffer(renderer, tr(STR_WORD_INBOX_FAILED));
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    WordInboxFeedback::show(renderer, WordInboxSaveResult::StorageError);
     return;
   }
 
@@ -3180,9 +3178,7 @@ void EpubReaderActivity::saveCurrentPageToWordInbox() {
 
   uint32_t captureId = 0;
   const WordInboxSaveResult result = WordInboxStore::save(capture, captureId);
-  drawToastBuffer(renderer,
-                  result == WordInboxSaveResult::Saved ? tr(STR_WORD_INBOX_SAVED) : tr(STR_WORD_INBOX_FAILED));
-  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  WordInboxFeedback::show(renderer, result);
 }
 
 void EpubReaderActivity::resetReadingPaceData() {

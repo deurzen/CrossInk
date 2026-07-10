@@ -61,6 +61,7 @@ class XtcReaderActivity final : public Activity {
   void deleteBookStats();
   void deleteBookCache();
   void onReaderMenuConfirm(int action);
+  void saveCurrentPageToWordInbox();
   bool executeLongPressBackAction();
 
  public:

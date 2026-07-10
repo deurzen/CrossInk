@@ -45,6 +45,7 @@ class TxtReaderActivity final : public Activity {
   void saveProgress() const;
   void loadProgress();
   void toggleDarkMode();
+  void saveCurrentPageToWordInbox();
   bool consumeLongPowerButtonRelease();
   bool consumeLongPowerButtonHold();
   bool executePowerButtonAction();

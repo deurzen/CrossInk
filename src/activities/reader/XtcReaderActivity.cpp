@@ -29,6 +29,8 @@
 #include "components/themes/lyra/LyraCarouselTheme.h"
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
+#include "word_inbox/WordInboxFeedback.h"
+#include "word_inbox/WordInboxStore.h"
 
 namespace {
 constexpr unsigned long MIN_READING_STATS_PAGE_MS = 2000UL;
@@ -208,6 +210,9 @@ void XtcReaderActivity::loop() {
         return true;
       case CrossPointSettings::SHORT_PWRBTN::FILE_BROWSER:
         activityManager.goToFileBrowser(xtc ? xtc->getPath() : "");
+        return true;
+      case CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX:
+        saveCurrentPageToWordInbox();
         return true;
       case CrossPointSettings::SHORT_PWRBTN::CREATE_CLIPPING:
         return false;
@@ -629,6 +634,31 @@ void XtcReaderActivity::onReaderMenuConfirm(const int action) {
   }
 }
 
+void XtcReaderActivity::saveCurrentPageToWordInbox() {
+  RenderLock lock(*this);
+  if (!xtc || currentPage >= xtc->getPageCount()) {
+    LOG_ERR("WIN", "XTC page is unavailable for capture");
+    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    return;
+  }
+
+  const ScreenshotInfo info = getScreenshotInfo();
+  const std::string title = xtc->getTitle();
+  WordInboxCapture capture;
+  capture.bookType = WordInboxBookType::Xtc;
+  capture.bookPath = xtc->getPath();
+  capture.title = title;
+  capture.currentPage = static_cast<uint32_t>(std::max(0, info.currentPage));
+  capture.totalPages = static_cast<uint32_t>(std::max(0, info.totalPages));
+  capture.progressPercent = static_cast<uint8_t>(std::clamp(info.progressPercent, 0, 100));
+  capture.framebuffer = renderer.getFrameBuffer();
+  capture.displayWidth = renderer.getDisplayWidth();
+  capture.displayHeight = renderer.getDisplayHeight();
+
+  uint32_t captureId = 0;
+  WordInboxFeedback::show(renderer, WordInboxStore::save(capture, captureId));
+}
+
 bool XtcReaderActivity::executeLongPressBackAction() {
   switch (static_cast<CrossPointSettings::LONG_PRESS_MENU_ACTION>(SETTINGS.longPressBackAction)) {
     case CrossPointSettings::LONG_PRESS_MENU_ACTION::LONG_MENU_SLEEP:
@@ -652,6 +682,9 @@ bool XtcReaderActivity::executeLongPressBackAction() {
       return true;
     case CrossPointSettings::LONG_PRESS_MENU_ACTION::LONG_MENU_FILE_BROWSER:
       activityManager.goToFileBrowser(xtc ? xtc->getPath() : "");
+      return true;
+    case CrossPointSettings::LONG_PRESS_MENU_ACTION::LONG_MENU_SAVE_WORD_INBOX:
+      saveCurrentPageToWordInbox();
       return true;
     case CrossPointSettings::LONG_PRESS_MENU_ACTION::LONG_MENU_CREATE_CLIPPING:
       return false;

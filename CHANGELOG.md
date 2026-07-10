@@ -2,7 +2,7 @@
 
 ### Added
 
-- Word Inbox captures save the visible EPUB page as a screenshot with copyable text through a configurable reader shortcut.
+- Word Inbox captures save visible EPUB and TXT/Markdown pages as screenshots with copyable text, plus screenshot-only XTC/XTCH pages, through a configurable reader shortcut.
 
 ## [v1.4.0] - 2026-07-10
 

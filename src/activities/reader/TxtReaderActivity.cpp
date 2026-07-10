@@ -5,6 +5,8 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <Logging.h>
+#include <Memory.h>
 #include <Serialization.h>
 #include <Utf8.h>
 
@@ -20,6 +22,9 @@
 #include "activities/boot_sleep/SleepCoverAssets.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "word_inbox/VisiblePageText.h"
+#include "word_inbox/WordInboxFeedback.h"
+#include "word_inbox/WordInboxStore.h"
 
 namespace {
 constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
@@ -291,6 +296,47 @@ bool TxtReaderActivity::consumeLongPowerButtonHold() {
   return true;
 }
 
+void TxtReaderActivity::saveCurrentPageToWordInbox() {
+  // The bounded 8 KB text output is too large for the reader task stack and
+  // should not remain allocated throughout the reading session.
+  auto textBuffer = makeUniqueNoThrow<char[]>(VisiblePageText::MAX_TEXT_BYTES + 1);
+  if (!textBuffer) {
+    LOG_ERR("WIN", "OOM: TXT visible page text buffer (%u bytes)",
+            static_cast<unsigned>(VisiblePageText::MAX_TEXT_BYTES + 1));
+    RenderLock lock(*this);
+    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    return;
+  }
+
+  RenderLock lock(*this);
+  if (!txt || pageOffsets.empty()) {
+    LOG_ERR("WIN", "TXT page is unavailable for capture");
+    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    return;
+  }
+
+  const auto visibleText =
+      VisiblePageText::fromTxtLines(currentPageLines, textBuffer.get(), VisiblePageText::MAX_TEXT_BYTES + 1);
+  const ScreenshotInfo info = getScreenshotInfo();
+  const std::string title = txt->getTitle();
+
+  WordInboxCapture capture;
+  capture.bookType = WordInboxBookType::Txt;
+  capture.bookPath = txt->getPath();
+  capture.title = title;
+  capture.currentPage = static_cast<uint32_t>(std::max(0, info.currentPage));
+  capture.totalPages = static_cast<uint32_t>(std::max(0, info.totalPages));
+  capture.progressPercent = static_cast<uint8_t>(std::clamp(info.progressPercent, 0, 100));
+  capture.text = std::string_view(visibleText.text, visibleText.length);
+  capture.textTruncated = visibleText.truncated;
+  capture.framebuffer = renderer.getFrameBuffer();
+  capture.displayWidth = renderer.getDisplayWidth();
+  capture.displayHeight = renderer.getDisplayHeight();
+
+  uint32_t captureId = 0;
+  WordInboxFeedback::show(renderer, WordInboxStore::save(capture, captureId));
+}
+
 bool TxtReaderActivity::executePowerButtonAction() {
   auto executeAction = [this](const CrossPointSettings::SHORT_PWRBTN action) {
     switch (action) {
@@ -311,6 +357,9 @@ bool TxtReaderActivity::executePowerButtonAction() {
         return true;
       case CrossPointSettings::SHORT_PWRBTN::FILE_BROWSER:
         activityManager.goToFileBrowser(txt ? txt->getPath() : "");
+        return true;
+      case CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX:
+        saveCurrentPageToWordInbox();
         return true;
       case CrossPointSettings::SHORT_PWRBTN::CREATE_CLIPPING:
         return false;
@@ -362,6 +411,9 @@ bool TxtReaderActivity::executeLongPressBackAction() {
       return true;
     case CrossPointSettings::LONG_PRESS_MENU_ACTION::LONG_MENU_FILE_BROWSER:
       activityManager.goToFileBrowser(txt ? txt->getPath() : "");
+      return true;
+    case CrossPointSettings::LONG_PRESS_MENU_ACTION::LONG_MENU_SAVE_WORD_INBOX:
+      saveCurrentPageToWordInbox();
       return true;
     case CrossPointSettings::LONG_PRESS_MENU_ACTION::LONG_MENU_CREATE_CLIPPING:
       return false;
