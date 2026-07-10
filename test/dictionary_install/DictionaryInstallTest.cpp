@@ -178,6 +178,19 @@ void stage(Installer& installer, MemoryStorage& storage, const Fixture& data, co
   }
 }
 
+struct PrepareProbe {
+  bool succeed = true;
+  uint32_t calls = 0;
+  uint32_t lexemeCount = 0;
+};
+
+bool preparePackage(void* context, const uint8_t (&bundleUuid)[16], const uint32_t lexemeCount) {
+  auto& probe = *static_cast<PrepareProbe*>(context);
+  ++probe.calls;
+  probe.lexemeCount = lexemeCount;
+  return probe.succeed && std::memcmp(bundleUuid, UUID, sizeof(UUID)) == 0;
+}
+
 Installer openedInstaller(MemoryStorage& storage) {
   Installer installer;
   InstallError error;
@@ -217,6 +230,27 @@ TEST(DictionaryInstaller, ValidatesAndAtomicallyPublishesPackage) {
   EXPECT_EQ(storage.validateCrcCalls, 3);
   EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
   EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.installing-") + UUID_HEX));
+}
+
+TEST(DictionaryInstaller, PreparesStateBeforePublishingPackage) {
+  MemoryStorage storage;
+  Installer installer = openedInstaller(storage);
+  stage(installer, storage, fixture());
+  uint8_t scratch[64]{};
+  PackageInfo info;
+  InstallError error;
+  PrepareProbe probe{false};
+
+  EXPECT_FALSE(installer.commit(UUID, scratch, sizeof(scratch), info, error, preparePackage, &probe));
+  EXPECT_EQ(error, InstallError::PREPARE_FAILED);
+  EXPECT_EQ(probe.calls, 1U);
+  EXPECT_EQ(probe.lexemeCount, 1U);
+  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
+  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.installing-") + UUID_HEX));
+
+  probe.succeed = true;
+  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error, preparePackage, &probe));
+  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
 }
 
 TEST(DictionaryInstaller, RejectsCorruptionWithoutReplacingInstalledPackage) {

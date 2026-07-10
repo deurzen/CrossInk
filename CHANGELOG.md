@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Dictionary installation now prepares absent global learning state before publishing the runtime package, avoiding first-lookup initialization.
 - Dictionary word lists now defer opening lexeme, headword, and entry files until a definition is selected.
 - Dictionary lookup now checks learning status only for the bounded visible shortlist instead of rebuilding a whole-book suppression projection.
 - Dictionary shortlist matching now merges sorted visible tokens with candidate hashes and hydrates matches in surface-table order, reducing random SD reads.

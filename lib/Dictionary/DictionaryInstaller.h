@@ -53,6 +53,7 @@ enum class InstallError : uint8_t {
   PACKAGE_INVALID,
   UUID_MISMATCH,
   CRC_MISMATCH,
+  PREPARE_FAILED,
   RENAME_FAILED,
   REMOVE_FAILED,
 };
@@ -61,6 +62,8 @@ enum class InstallError : uint8_t {
 // returned by stagingFilePath(); commit validates every runtime file before a
 // directory rename publishes it. A same-UUID replacement retains the previous
 // directory as a recoverable backup until the new directory is visible.
+using PrepareCallback = bool (*)(void* context, const uint8_t (&bundleUuid)[16], uint32_t lexemeCount);
+
 class Installer {
  public:
   bool open(const StorageBackend& storage, const char* rootPath, InstallError& error);
@@ -74,7 +77,7 @@ class Installer {
                       InstallError& error);
   bool inspectInstalled(const uint8_t (&bundleUuid)[16], PackageInfo& info, InstallError& error);
   bool commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, size_t scratchSize, PackageInfo& info,
-              InstallError& error);
+              InstallError& error, PrepareCallback prepare = nullptr, void* prepareContext = nullptr);
   bool cancel(const uint8_t (&bundleUuid)[16], InstallError& error);
   bool remove(const uint8_t (&bundleUuid)[16], InstallError& error);
   bool recover(const uint8_t (&bundleUuid)[16], InstallError& error);

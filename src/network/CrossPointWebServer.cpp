@@ -29,6 +29,7 @@
 #include "WifiCredentialStore.h"
 #include "dictionary/DictionaryReviewSession.h"
 #include "dictionary/DictionaryStorage.h"
+#include "dictionary/LanguageStateStorage.h"
 #include "html/DictionariesPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
@@ -49,6 +50,17 @@ namespace {
 constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
 constexpr uint16_t UDP_PORTS[] = {54982, 48123, 39001, 44044, 59678};
 constexpr uint16_t LOCAL_UDP_PORT = 8134;
+
+bool prepareDictionaryLearningState(void*, const uint8_t (&uuid)[16], const uint32_t lexemeCount) {
+  dictionary::lexeme_state::Store state;
+  dictionary::lexeme_state::StateError error = dictionary::lexeme_state::StateError::NONE;
+  if (!state.open(dictionary::language_state_storage::backend(), dictionary::language_state_storage::ROOT_PATH, uuid,
+                  lexemeCount, error)) {
+    LOG_ERR("WEB", "Dictionary learning-state preparation failed: %s", dictionary::lexeme_state::stateErrorName(error));
+    return false;
+  }
+  return true;
+}
 
 bool dictionaryUuidArg(WebServer& server, uint8_t (&uuid)[16]) {
   return server.hasArg("uuid") && dictionary::storage::parseUuid(server.arg("uuid").c_str(), uuid);
@@ -2511,7 +2523,8 @@ void CrossPointWebServer::handleDictionaryInstallCommit() {
   dictionary::installer::InstallError error;
   // Reuse the network-only upload buffer for full-file CRC streaming. This
   // avoids a second allocation and keeps validation reads at 2 KB per chunk.
-  if (!dictionaryInstaller.commit(uuid, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), info, error)) {
+  if (!dictionaryInstaller.commit(uuid, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), info, error,
+                                  prepareDictionaryLearningState, nullptr)) {
     LOG_ERR("WEB", "Dictionary commit failed: %s", dictionary::installer::installErrorName(error));
     char response[96]{};
     std::snprintf(response, sizeof(response), "{\"error\":\"%s\"}", dictionary::installer::installErrorName(error));

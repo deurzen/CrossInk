@@ -319,9 +319,13 @@ bool Installer::recover(const uint8_t (&bundleUuid)[16], InstallError& error) {
 }
 
 bool Installer::commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, const size_t scratchSize, PackageInfo& info,
-                       InstallError& error) {
-  if (!validateStaged(bundleUuid, scratch, scratchSize, info, error) || !recover(bundleUuid, error) ||
-      !directoryPath(bundleUuid, "", pathScratch_, sizeof(pathScratch_), error) ||
+                       InstallError& error, const PrepareCallback prepare, void* prepareContext) {
+  if (!validateStaged(bundleUuid, scratch, scratchSize, info, error)) return false;
+  if (prepare && !prepare(prepareContext, bundleUuid, info.lexemeCount)) {
+    error = InstallError::PREPARE_FAILED;
+    return false;
+  }
+  if (!recover(bundleUuid, error) || !directoryPath(bundleUuid, "", pathScratch_, sizeof(pathScratch_), error) ||
       !directoryPath(bundleUuid, kStagePrefix, pathScratch2_, sizeof(pathScratch2_), error) ||
       !directoryPath(bundleUuid, kBackupPrefix, pathScratch3_, sizeof(pathScratch3_), error)) {
     return false;
@@ -399,6 +403,8 @@ const char* installErrorName(const InstallError error) {
       return "uuid-mismatch";
     case InstallError::CRC_MISMATCH:
       return "crc-mismatch";
+    case InstallError::PREPARE_FAILED:
+      return "prepare-failed";
     case InstallError::RENAME_FAILED:
       return "rename-failed";
     case InstallError::REMOVE_FAILED:
