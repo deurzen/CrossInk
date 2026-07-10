@@ -107,7 +107,9 @@ The allocation-free header validator lives in
 `lib/Dictionary/BookLanguageFormat.*`. It rejects unsupported versions and
 flags, malformed language tags, zero dictionary identities, excessive counts,
 misaligned or overlapping tables, mismatched file sizes, and CRC failures
-before later readers seek into a table.
+before later readers seek into a table. `BookLanguageReader` then provides
+allocation-free, range-checked access to shard candidates, local lexeme IDs,
+and surface details from the validated artifact.
 
 On EPUB load, firmware streams the embedded member through a fixed-header CRC
 validator into `<book-cache>/language.bin.tmp`, syncs it, checks tokenizer and

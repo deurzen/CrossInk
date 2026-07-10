@@ -4,6 +4,7 @@ add_executable(BookLanguageFormatTest
   ${REPO_ROOT}/lib/Dictionary/BookLanguageFormat.cpp
   ${REPO_ROOT}/lib/Dictionary/BookLanguageReader.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
+  ${REPO_ROOT}/lib/Dictionary/PageShortlist.cpp
 )
 
 target_include_directories(BookLanguageFormatTest PRIVATE

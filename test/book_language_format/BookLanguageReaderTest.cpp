@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "BookLanguageReader.h"
+#include "PageShortlist.h"
 
 namespace {
 using dictionary::book_language::BookLanguageReader;
@@ -184,6 +185,83 @@ TEST(BookLanguageReader, RejectsMalformedShardAndCandidateRecords) {
   dictionary::book_language::ShardCandidate candidate;
   EXPECT_FALSE(reader.readCandidate(shard, 0, candidate, error));
   EXPECT_EQ(error, ReaderError::CANDIDATE_RECORD_INVALID);
+}
+
+TEST(PageShortlist, IntersectsLexicalTokensAndRetainsAmbiguity) {
+  const auto data = makeArtifact();
+  BookLanguageReader reader;
+  ReaderError readerError;
+  ASSERT_TRUE(reader.open(sourceFor(data), readerError));
+
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  EXPECT_TRUE(generator.addRenderedWord("Die", false));
+  EXPECT_TRUE(generator.addRenderedWord("liebe,", false));
+  EXPECT_TRUE(generator.addRenderedWord("Welt!", false));
+  generator.finishRenderedPage();
+
+  dictionary::page_shortlist::Shortlist shortlist;
+  dictionary::page_shortlist::GenerateError error;
+  ASSERT_TRUE(generator.generate(reader, 0, 0, shortlist, error))
+      << dictionary::page_shortlist::generateErrorName(error);
+  ASSERT_EQ(shortlist.count, 1);
+  EXPECT_EQ(shortlist.surface(0), "liebe");
+  EXPECT_EQ(shortlist.items[0].primaryLocalLemmaId, 0);
+  EXPECT_EQ(shortlist.items[0].alternateLocalLemmaId, 1);
+  EXPECT_EQ(shortlist.items[0].analysisCount, 2);
+  EXPECT_EQ(shortlist.items[0].localLemmaIds[0], 0);
+  EXPECT_EQ(shortlist.items[0].localLemmaIds[1], 1);
+  EXPECT_FALSE(shortlist.truncated);
+}
+
+TEST(PageShortlist, JoinsLayoutInsertedHyphensBeforeHashing) {
+  const auto data = makeArtifact();
+  BookLanguageReader reader;
+  ReaderError readerError;
+  ASSERT_TRUE(reader.open(sourceFor(data), readerError));
+
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  EXPECT_TRUE(generator.addRenderedWord("lie-", true));
+  EXPECT_TRUE(generator.addRenderedWord("be", false));
+  generator.finishRenderedPage();
+  EXPECT_EQ(generator.visibleTokenCount(), 1);
+
+  dictionary::page_shortlist::Shortlist shortlist;
+  dictionary::page_shortlist::GenerateError error;
+  ASSERT_TRUE(generator.generate(reader, 0, 0, shortlist, error));
+  ASSERT_EQ(shortlist.count, 1);
+  EXPECT_EQ(shortlist.surface(0), "liebe");
+}
+
+TEST(PageShortlist, TokenizesGermanPunctuationWithoutAllocating) {
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  ASSERT_TRUE(generator.addRenderedWord("Straße", false));
+  ASSERT_TRUE(generator.addRenderedWord("–", false));
+  ASSERT_TRUE(generator.addRenderedWord("E-Mail", false));
+  ASSERT_TRUE(generator.addRenderedWord("O’Connor", false));
+  ASSERT_TRUE(generator.addRenderedWord("foo_bar", false));
+  ASSERT_TRUE(generator.addRenderedWord("123", false));
+  generator.finishRenderedPage();
+  EXPECT_EQ(generator.visibleTokenCount(), 5);
+  EXPECT_FALSE(generator.visibleTokensTruncated());
+}
+
+TEST(PageShortlist, RejectsInvalidShardRanges) {
+  const auto data = makeArtifact();
+  BookLanguageReader reader;
+  ReaderError readerError;
+  ASSERT_TRUE(reader.open(sourceFor(data), readerError));
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  ASSERT_TRUE(generator.addRenderedWord("liebe", false));
+  generator.finishRenderedPage();
+
+  dictionary::page_shortlist::Shortlist shortlist;
+  dictionary::page_shortlist::GenerateError error;
+  EXPECT_FALSE(generator.generate(reader, 0, 1, shortlist, error));
+  EXPECT_EQ(error, dictionary::page_shortlist::GenerateError::SHARD_RANGE_INVALID);
 }
 
 TEST(BookLanguageReader, RejectsOutOfRangeReads) {
