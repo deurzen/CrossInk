@@ -7,9 +7,9 @@ fixed-size char buffer.
 
 ## EPUB `META-INF/crossink/language.bin`
 
-### Version 1
+### Obsolete experimental version 1
 
-Dictionary-compatible optimized EPUBs contain `META-INF/crossink/language.bin`
+Version 1 was used only during pre-release development and is not accepted by current firmware. Its layout remains recorded temporarily for interpreting old test artifacts; O11 removes its reader implementation. Dictionary-compatible EPUBs contain `META-INF/crossink/language.bin`
 as an uncompressed ZIP member. It maps stable source-text shards to dictionary
 lexemes without tying those shards to a particular font, orientation, or page
 layout. Firmware validates the embedded artifact before extracting it to the
@@ -117,10 +117,10 @@ analyzer versions, spine count, and source language, then renames it to
 `language.bin` as the commit point. Cached artifacts are CRC-checked with a
 96-byte read buffer before reuse. No payload-sized allocation is made.
 
-### Version 2
+### Version 2 (current)
 
-Version 2 retains the 108-byte header identity, language, CRC, and file-size
-fields from version 1 but replaces the random-access candidate/surface tables
+Version 2 uses the 108-byte header identity, language, CRC, and file-size
+fields and replaces the random-access candidate/surface tables
 with self-contained shard blobs. Header field meanings that differ from version
 1 are:
 
@@ -136,7 +136,7 @@ with self-contained shard blobs. Header field meanings that differ from version
 | 84 | 4 | Metadata section offset |
 | 88 | 8 | Reserved; must be zero |
 
-The spine directory remains the version-1 eight-byte record. Each version-2
+The spine directory uses an eight-byte record. Each version-2
 shard-directory record is 20 bytes:
 
 ```text
@@ -165,8 +165,7 @@ surface:u8[surfaceLength]
 padding:u8[]         // zero, to four-byte record alignment
 ```
 
-The first and second inline analysis IDs replace the version-1 primary and
-alternate fields. Compound-only guesses with no whole-word analysis are not
+The first and second inline analysis IDs are the primary and alternate analyses. Compound-only guesses with no whole-word analysis are not
 emitted. A record must fit completely inside its shard blob; all local IDs must
 be below the header's local-lemma count. Firmware processes one shard
 sequentially through bounded scratch storage and never allocates `blobLength`.
@@ -179,9 +178,7 @@ file cap, 4096-spine cap, 65535-shard cap, 32768-local-lemma cap, payload CRC,
 and header CRC apply. Version-2 compilers fail on oversized records/blobs rather
 than truncating structural data.
 
-Firmware must retain version-1 reading during migration. Version 1 uses its
-existing random-access path; version 2 uses sequential shard streaming. Both
-versions map to the same bounded `Shortlist` and global learning-state IDs.
+Firmware accepts only version 2 and streams shards sequentially into the same bounded `Shortlist` and global learning-state IDs. Old experimental EPUBs must be recompiled.
 
 A deterministically invalid embedded artifact creates `<book-cache>/language.invalid`:
 magic `CXLI` followed by its `fileSize:u32`. This prevents repeated extraction
