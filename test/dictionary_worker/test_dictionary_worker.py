@@ -19,6 +19,10 @@ NODE_RUNNER = ROOT / "test" / "dictionary_worker" / "compile_fixture.js"
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is not installed")
 class DictionaryWorkerTest(unittest.TestCase):
+    def test_web_scripts_have_valid_javascript_syntax(self):
+        for script in (ROOT / "web" / "assets" / "dictionary-worker.js", ROOT / "web" / "pages" / "files.js"):
+            subprocess.run(["node", "--check", str(script)], capture_output=True, text=True, check=True)
+
     def test_worker_matches_host_reference_artifact(self):
         source = json.loads(FIXTURE.read_text(encoding="utf-8"))
         source = copy.deepcopy(source)

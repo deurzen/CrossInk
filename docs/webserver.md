@@ -107,13 +107,22 @@ The default optimization path converts images for e-ink reading, limits them to
 the target device size, saves them as JPEG at 85% quality, and applies basic EPUB
 repairs such as safer SVG handling. Advanced Mode lets you pick the target
 device, JPEG quality, image split or rotation handling, split overlap, and
-whether EPUB sections over 2,000 visible words should be split into smaller
-reader sections.
+stable reference-page sizing.
 
-Optimization changes the EPUB file contents before upload. Note: if you use
-hash-based KOReader sync, this will break the syncing because it changes the epub
-and therefore the hash. If optimization fails, the uploader falls back to sending
-the original file.
+Advanced Mode can also compile a dictionary-aware EPUB. Select a `.cpdict`
+bundle once; the browser validates it and keeps only its compiler metadata in
+IndexedDB. When **Dictionary shortlist** is enabled, a Web Worker analyzes the
+EPUB's spine off the UI thread, inserts 64-token source-shard markers, and embeds
+an uncompressed `META-INF/crossink/language.bin`. Compiler data stays in the
+desktop browser and is not sent over the reader's network connection. The EPUB
+requires the matching runtime dictionary package on the reader once dictionary
+installation support is available.
+
+Optimization changes the EPUB contents and therefore breaks hash-based KOReader
+sync. Conversion is transactional: if image repair or dictionary compilation
+fails or is cancelled, the original EPUB is not silently uploaded. Fix the
+reported error, disable the failing option, or explicitly upload without
+optimization.
 
 ### Settings
 

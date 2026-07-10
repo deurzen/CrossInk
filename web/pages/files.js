@@ -300,6 +300,7 @@ function handleCancelUploadModal() {
   }
   // Process running: stop it, keep modal open for retry
   operationCancelled = true;
+  cancelDictionaryWorker();
   if (currentUploadWs) {
     currentUploadWs.close();
     currentUploadWs = null;
@@ -1419,6 +1420,221 @@ function validateFile() {
   }
 }
 
+const DICTIONARY_DB_NAME = "crossink-dictionary-compiler";
+const DICTIONARY_DB_VERSION = 1;
+const DICTIONARY_STORE_NAME = "bundles";
+const DICTIONARY_ENABLED_KEY = "crossinkDictionaryCompilationEnabled";
+let activeDictionaryWorkerState = null;
+let cachedDictionarySummary = null;
+
+function openDictionaryDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB is unavailable in this browser"));
+      return;
+    }
+    const request = window.indexedDB.open(DICTIONARY_DB_NAME, DICTIONARY_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(DICTIONARY_STORE_NAME)) {
+        database.createObjectStore(DICTIONARY_STORE_NAME, { keyPath: "uuid" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open dictionary cache"));
+  });
+}
+
+async function dictionaryStoreOperation(mode, operation) {
+  const database = await openDictionaryDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(DICTIONARY_STORE_NAME, mode);
+      const store = transaction.objectStore(DICTIONARY_STORE_NAME);
+      let result;
+      try {
+        result = operation(store);
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      transaction.oncomplete = () => resolve(result?.result);
+      transaction.onerror = () => reject(transaction.error || result?.error || new Error("Dictionary cache failed"));
+      transaction.onabort = () => reject(transaction.error || new Error("Dictionary cache was aborted"));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function getCachedDictionaryBundle() {
+  const records = await dictionaryStoreOperation("readonly", (store) => store.getAll());
+  return records && records.length ? records[0] : null;
+}
+
+async function cacheDictionaryBundle(bundle) {
+  await dictionaryStoreOperation("readwrite", (store) => {
+    store.clear();
+    return store.put(bundle);
+  });
+}
+
+async function deleteCachedDictionaryBundle() {
+  await dictionaryStoreOperation("readwrite", (store) => store.clear());
+}
+
+function updateDictionaryBundleStatus(bundle, errorMessage = "") {
+  const status = document.getElementById("dictionaryBundleStatus");
+  const clearButton = document.getElementById("clearDictionaryBundleBtn");
+  if (!status || !clearButton) return;
+  status.classList.toggle("dictionary-bundle-status-ready", Boolean(bundle) && !errorMessage);
+  if (errorMessage) status.textContent = errorMessage;
+  else if (bundle) status.textContent = `${bundle.name} · ${bundle.sourceLanguage} → ${bundle.targetLanguage}`;
+  else status.textContent = "No compiler bundle selected";
+  clearButton.style.display = bundle ? "inline-block" : "none";
+}
+
+async function hydrateDictionaryCompiler() {
+  const checkbox = document.getElementById("dictionaryCompileEnabled");
+  if (!checkbox) return;
+  try {
+    const bundle = await getCachedDictionaryBundle();
+    cachedDictionarySummary = bundle
+      ? {
+          name: bundle.name,
+          uuid: bundle.uuid,
+          sourceLanguage: bundle.sourceLanguage,
+          targetLanguage: bundle.targetLanguage,
+        }
+      : null;
+    checkbox.checked = Boolean(bundle) && localStorage.getItem(DICTIONARY_ENABLED_KEY) === "1";
+    updateDictionaryBundleStatus(cachedDictionarySummary);
+  } catch (error) {
+    checkbox.checked = false;
+    updateDictionaryBundleStatus(null, `Dictionary cache unavailable: ${error.message}`);
+  }
+}
+
+function chooseDictionaryBundle() {
+  document.getElementById("dictionaryBundleInput").click();
+}
+
+function toggleDictionaryCompilation() {
+  const checkbox = document.getElementById("dictionaryCompileEnabled");
+  localStorage.setItem(DICTIONARY_ENABLED_KEY, checkbox.checked ? "1" : "0");
+  if (checkbox.checked && !cachedDictionarySummary) chooseDictionaryBundle();
+}
+
+function cancelDictionaryWorker() {
+  const state = activeDictionaryWorkerState;
+  if (!state) return;
+  activeDictionaryWorkerState = null;
+  state.worker.terminate();
+  state.reject(new Error("Cancelled by user"));
+}
+
+function runDictionaryCompilation(spines, bundle, onProgress) {
+  return new Promise((resolve, reject) => {
+    if (activeDictionaryWorkerState) {
+      reject(new Error("A dictionary compilation is already running"));
+      return;
+    }
+    const worker = new Worker("/js/dictionary-worker.js");
+    const requestId = `${Date.now()}-${Math.random()}`;
+    const cleanup = () => {
+      worker.terminate();
+      if (activeDictionaryWorkerState?.worker === worker) activeDictionaryWorkerState = null;
+    };
+    activeDictionaryWorkerState = { worker, reject };
+    worker.onmessage = (event) => {
+      const message = event.data || {};
+      if (message.requestId !== requestId) return;
+      if (message.type === "progress") {
+        if (onProgress) onProgress(message.progress);
+      } else if (message.type === "result") {
+        cleanup();
+        resolve({ artifact: new Uint8Array(message.artifact), spines: message.spines });
+      } else if (message.type === "error") {
+        cleanup();
+        reject(new Error(message.message || "Dictionary compilation failed"));
+      }
+    };
+    worker.onerror = (event) => {
+      cleanup();
+      reject(new Error(event.message || "Dictionary worker failed"));
+    };
+    const meta = bundle.meta.slice(0);
+    const forms = bundle.forms.slice(0);
+    try {
+      worker.postMessage({ type: "compile", requestId, spines, meta, forms }, [meta, forms]);
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
+}
+
+async function handleDictionaryBundleSelected() {
+  const input = document.getElementById("dictionaryBundleInput");
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+
+  updateDictionaryBundleStatus(null, "Validating dictionary bundle…");
+  try {
+    const archive = await JSZip.loadAsync(file);
+    const manifestFile = archive.file("manifest.json");
+    const metaFile = archive.file("device/meta.bin");
+    const formsFile = archive.file("compiler/forms.bin");
+    if (!manifestFile || !metaFile || !formsFile) throw new Error("Bundle is missing manifest, metadata, or forms");
+    const manifest = JSON.parse(await manifestFile.async("string"));
+    if (manifest.formatVersion !== 1 || !manifest.bundleUuid) throw new Error("Unsupported dictionary bundle");
+    const meta = await metaFile.async("arraybuffer");
+    const forms = await formsFile.async("arraybuffer");
+    if (meta.byteLength !== 80 || forms.byteLength < 64 || forms.byteLength > 600 * 1024 * 1024) {
+      throw new Error("Dictionary compiler data is outside supported size limits");
+    }
+    const bundle = {
+      uuid: manifest.bundleUuid,
+      name: file.name,
+      sourceLanguage: manifest.sourceLanguage || "?",
+      targetLanguage: manifest.targetLanguage || "?",
+      meta,
+      forms,
+      cachedAt: Date.now(),
+    };
+    await runDictionaryCompilation([{ path: "validation.xhtml", content: "<p></p>" }], bundle);
+    await cacheDictionaryBundle(bundle);
+    cachedDictionarySummary = {
+      name: bundle.name,
+      uuid: bundle.uuid,
+      sourceLanguage: bundle.sourceLanguage,
+      targetLanguage: bundle.targetLanguage,
+    };
+    document.getElementById("dictionaryCompileEnabled").checked = true;
+    localStorage.setItem(DICTIONARY_ENABLED_KEY, "1");
+    updateDictionaryBundleStatus(cachedDictionarySummary);
+    showNotification("Dictionary compiler bundle cached in this browser", "success");
+  } catch (error) {
+    document.getElementById("dictionaryCompileEnabled").checked = false;
+    localStorage.setItem(DICTIONARY_ENABLED_KEY, "0");
+    updateDictionaryBundleStatus(cachedDictionarySummary, `Bundle rejected: ${error.message}`);
+  }
+}
+
+async function clearDictionaryBundle() {
+  cancelDictionaryWorker();
+  try {
+    await deleteCachedDictionaryBundle();
+    cachedDictionarySummary = null;
+    document.getElementById("dictionaryCompileEnabled").checked = false;
+    localStorage.setItem(DICTIONARY_ENABLED_KEY, "0");
+    updateDictionaryBundleStatus(null);
+  } catch (error) {
+    updateDictionaryBundleStatus(cachedDictionarySummary, `Could not clear bundle: ${error.message}`);
+  }
+}
+
 let failedUploadsGlobal = [];
 let wsConnection = null;
 let isUploadInProgress = false; // Prevent modal close during upload/conversion
@@ -1944,6 +2160,7 @@ function exportLogToFile(filename = null, isBatch = false) {
 const DEFENSIVE_STYLE =
   '<style type="text/css">img,svg{max-width:100%;height:auto}body{overflow-wrap:break-word}table{max-width:100%;table-layout:fixed}pre,code{white-space:pre-wrap;word-wrap:break-word}*{box-sizing:border-box}</style>';
 const X_LOCATION_MANIFEST_PATH = "META-INF/x-locations.json";
+const DICTIONARY_LANGUAGE_ARTIFACT_PATH = "META-INF/crossink/language.bin";
 const X_LOCATION_WORDS_PER_UNIT = 64;
 const X_DEFAULT_REFERENCE_CHARACTERS_PER_PAGE = 1500;
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
@@ -3385,6 +3602,8 @@ async function convertEpubFile(file, progressCallback) {
   let extraTextFiles = {};
   let opfPath = null,
     opfContent = null;
+  let finalOpfContent = null;
+  let dictionaryCompiled = false;
   let mainIdentifier = null;
 
   // Write mimetype FIRST per EPUB OCF spec
@@ -3675,6 +3894,7 @@ async function convertEpubFile(file, progressCallback) {
     const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/")) : "";
     t = fixOPF(t, opfContent, opfDir, splitImages);
     if (t !== opfContent) logFix("OPF", "manifest updated");
+    finalOpfContent = t;
     out.file(opfPath, t, DEFLATE_OPTS);
 
     const referenceCharactersInput = document.getElementById("referenceCharactersInput");
@@ -3690,6 +3910,39 @@ async function convertEpubFile(file, progressCallback) {
     }
   }
 
+  const dictionaryEnabled = document.getElementById("dictionaryCompileEnabled")?.checked === true;
+  if (dictionaryEnabled) {
+    if (operationCancelled) throw new Error("Cancelled by user");
+    if (!finalOpfContent || !opfPath) throw new Error("Dictionary compilation requires a valid OPF package document");
+    const bundle = await getCachedDictionaryBundle();
+    if (operationCancelled) throw new Error("Cancelled by user");
+    if (!bundle) throw new Error("Select a .cpdict compiler bundle before dictionary optimization");
+    const spineHrefs = parseOpfSpineHrefs(finalOpfContent, opfPath);
+    if (!spineHrefs.length) throw new Error("Dictionary compilation could not resolve the EPUB spine");
+    const seenSpines = new Set();
+    const workerSpines = spineHrefs.map((href) => {
+      const decoded = normalizeZipPath(decodeHref(href));
+      const path = Object.prototype.hasOwnProperty.call(processedXhtmlFiles, href) ? href : decoded;
+      const content = processedXhtmlFiles[path];
+      if (content == null) throw new Error(`Dictionary compilation could not load spine resource: ${href}`);
+      if (seenSpines.has(path)) throw new Error(`Dictionary compilation does not support repeated spine resource: ${href}`);
+      seenSpines.add(path);
+      return { path, content };
+    });
+    log("Compiling dictionary candidates…", "", "DICT");
+    const result = await runDictionaryCompilation(workerSpines, bundle, (progress) => {
+      if (progressCallback) progressCallback(65 + progress * 25);
+    });
+    if (operationCancelled) throw new Error("Cancelled by user");
+    for (const spine of result.spines) processedXhtmlFiles[spine.path] = spine.content;
+    out.file(DICTIONARY_LANGUAGE_ARTIFACT_PATH, result.artifact, {
+      compression: "STORE",
+      createFolders: false,
+    });
+    dictionaryCompiled = true;
+    logFix("Dictionary", `${workerSpines.length} spine resources compiled with ${bundle.name}`);
+  }
+
   for (const [xhtmlPath, content] of Object.entries(processedXhtmlFiles)) {
     out.file(xhtmlPath, content, DEFLATE_OPTS);
   }
@@ -3700,6 +3953,7 @@ async function convertEpubFile(file, progressCallback) {
     if (fileObj.dir || path === "mimetype") continue;
     const low = path.toLowerCase();
     if (low === X_LOCATION_MANIFEST_PATH.toLowerCase()) continue;
+    if (dictionaryCompiled && low === DICTIONARY_LANGUAGE_ARTIFACT_PATH.toLowerCase()) continue;
     if (low.match(/\.(png|gif|webp|bmp|jpg|jpeg|svg)$/) || low.match(/\.(xhtml|html|htm)$/) || low.endsWith(".opf"))
       continue;
 
@@ -4113,23 +4367,19 @@ function uploadFile() {
             return;
           }
           console.error("Conversion error:", convError);
-          // Log the error
           logError(`Conversion failed: ${convError.message}`);
-          log("Uploading original file instead...", "warning", "INFO");
+          log("Original file was not uploaded; optimization is transactional.", "warning", "STOP");
           conversionFailed = true;
 
-          // In single file mode, export error log
           if (!useBatchLog && exportLogCheckbox && exportLogCheckbox.checked) {
             setTimeout(() => {
-              exportLogToFile(null, false); // isBatch = false for single file
+              exportLogToFile(null, false);
             }, 100);
           }
 
-          // If conversion fails, try uploading original file
-          progressText.textContent = `Conversion failed, uploading original ${file.name}...`;
-          progressFill.style.backgroundColor = "#e67e22"; // Orange for fallback
-          // Reset progress bar to 0% for original file upload
-          progressFill.style.width = "0%";
+          progressText.textContent = `Conversion failed: ${file.name}`;
+          progressFill.style.backgroundColor = "#e74c3c";
+          throw new Error(`Conversion failed; original was not uploaded: ${convError.message}`);
         }
       }
 
@@ -4458,3 +4708,4 @@ function confirmMove() {
   xhr.send(formData);
 }
 hydrate();
+hydrateDictionaryCompiler().catch((error) => console.error("Dictionary compiler initialization failed:", error));

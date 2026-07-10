@@ -123,6 +123,36 @@
                 />
               </div>
             </div>
+            <!-- Dictionary-aware EPUB -->
+            <div class="advanced-setting-row dictionary-compiler-row">
+              <div class="setting-label">
+                <div class="setting-title">📚 Dictionary shortlist</div>
+                <div class="setting-desc" id="dictionaryBundleStatus">No compiler bundle selected</div>
+              </div>
+              <div class="dictionary-compiler-controls">
+                <label class="toggle-switch" title="Compile dictionary candidates into optimized EPUBs">
+                  <input type="checkbox" id="dictionaryCompileEnabled" onchange="toggleDictionaryCompilation()" />
+                  <span class="toggle-slider"></span>
+                </label>
+                <button type="button" class="dictionary-bundle-btn" onclick="chooseDictionaryBundle()">Select .cpdict</button>
+                <button
+                  type="button"
+                  class="dictionary-bundle-clear"
+                  id="clearDictionaryBundleBtn"
+                  onclick="clearDictionaryBundle()"
+                  style="display: none"
+                >
+                  Clear
+                </button>
+                <input
+                  type="file"
+                  id="dictionaryBundleInput"
+                  accept=".cpdict,application/zip"
+                  onchange="handleDictionaryBundleSelected()"
+                  hidden
+                />
+              </div>
+            </div>
             <!-- Target Device -->
             <div class="advanced-setting-row" id="deviceSettingRow">
               <div class="setting-title">📱 Target Device</div>
