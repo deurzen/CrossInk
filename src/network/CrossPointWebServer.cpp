@@ -35,6 +35,7 @@
 #include "html/js/jszip_minJs.generated.h"
 #include "util/BookCacheUtils.h"
 #include "util/StringUtils.h"
+#include "word_inbox/WordInboxStore.h"
 
 namespace {
 // Folders/files to hide from the web interface file browser.
@@ -98,6 +99,132 @@ String normalizeWebPath(const String& inputPath) {
     result = result.substring(0, result.length() - 1);
   }
   return result;
+}
+
+void sendJsonString(WebServer* const server, const std::string_view value) {
+  server->sendContent("\"");
+  char chunk[96];
+  size_t used = 0;
+  const auto flush = [&]() {
+    if (used == 0) return;
+    chunk[used] = '\0';
+    server->sendContent(chunk);
+    used = 0;
+  };
+
+  for (const unsigned char byte : value) {
+    char escaped[7] = {};
+    size_t escapedLength = 0;
+    switch (byte) {
+      case '\"':
+        escaped[0] = '\\';
+        escaped[1] = '\"';
+        escapedLength = 2;
+        break;
+      case '\\':
+        escaped[0] = '\\';
+        escaped[1] = '\\';
+        escapedLength = 2;
+        break;
+      case '\b':
+        escaped[0] = '\\';
+        escaped[1] = 'b';
+        escapedLength = 2;
+        break;
+      case '\f':
+        escaped[0] = '\\';
+        escaped[1] = 'f';
+        escapedLength = 2;
+        break;
+      case '\n':
+        escaped[0] = '\\';
+        escaped[1] = 'n';
+        escapedLength = 2;
+        break;
+      case '\r':
+        escaped[0] = '\\';
+        escaped[1] = 'r';
+        escapedLength = 2;
+        break;
+      case '\t':
+        escaped[0] = '\\';
+        escaped[1] = 't';
+        escapedLength = 2;
+        break;
+      default:
+        if (byte < 0x20) {
+          snprintf(escaped, sizeof(escaped), "\\u%04x", byte);
+          escapedLength = 6;
+        } else {
+          escaped[0] = static_cast<char>(byte);
+          escapedLength = 1;
+        }
+        break;
+    }
+    if (used + escapedLength >= sizeof(chunk)) flush();
+    memcpy(chunk + used, escaped, escapedLength);
+    used += escapedLength;
+  }
+  flush();
+  server->sendContent("\"");
+}
+
+bool parseUint32(const String& value, uint32_t& output) {
+  if (value.isEmpty() || value.length() > 8) return false;
+  uint32_t parsed = 0;
+  for (size_t index = 0; index < value.length(); ++index) {
+    const char byte = value.charAt(index);
+    if (byte < '0' || byte > '9') return false;
+    parsed = parsed * 10 + static_cast<uint32_t>(byte - '0');
+  }
+  if (parsed == 0 || parsed > 99999999) return false;
+  output = parsed;
+  return true;
+}
+
+bool getWordInboxBookAndId(WebServer* const server, String& book, uint32_t& id) {
+  if (!server->hasArg("book") || !server->hasArg("id")) return false;
+  book = server->arg("book");
+  return WordInboxStore::isValidBookKey(std::string_view(book.c_str(), book.length())) &&
+         parseUint32(server->arg("id"), id);
+}
+
+const char* wordInboxBookTypeName(const WordInboxBookType type) {
+  switch (type) {
+    case WordInboxBookType::Epub:
+      return "epub";
+    case WordInboxBookType::Txt:
+      return "txt";
+    case WordInboxBookType::Xtc:
+      return "xtc";
+  }
+  return "unknown";
+}
+
+bool streamWordInboxFile(WebServer* const server, HalFile& file, const size_t length, const char* const contentType) {
+  server->setContentLength(length);
+  server->send(200, contentType, "");
+  NetworkClient client = server->client();
+  uint8_t buffer[256];
+  size_t remaining = length;
+  while (remaining > 0) {
+    const size_t requested = std::min(remaining, sizeof(buffer));
+    const int read = file.read(buffer, requested);
+    if (read <= 0) return false;
+    size_t sent = 0;
+    while (sent < static_cast<size_t>(read)) {
+      esp_task_wdt_reset();
+      const size_t written = client.write(buffer + sent, static_cast<size_t>(read) - sent);
+      if (written == 0) return false;
+      sent += written;
+    }
+    remaining -= static_cast<size_t>(read);
+    yield();
+  }
+#ifndef SIMULATOR
+  client.clear();
+#endif
+  return true;
 }
 
 bool isProtectedPath(const String& path) {
@@ -188,6 +315,14 @@ void CrossPointWebServer::begin() {
   server->on("/api/status", HTTP_GET, [this] { handleStatus(); });
   server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
   server->on("/download", HTTP_GET, [this] { handleDownload(); });
+
+  // Word Inbox endpoints
+  server->on("/api/word-inbox/books", HTTP_GET, [this] { handleWordInboxBooks(); });
+  server->on("/api/word-inbox/context", HTTP_GET, [this] { handleWordInboxContext(); });
+  server->on("/api/word-inbox/text", HTTP_GET, [this] { handleWordInboxText(); });
+  server->on("/api/word-inbox/image", HTTP_GET, [this] { handleWordInboxImage(); });
+  server->on("/api/word-inbox/delete", HTTP_POST, [this] { handleWordInboxDelete(); });
+  server->on("/api/word-inbox/delete-book", HTTP_POST, [this] { handleWordInboxDeleteBook(); });
 
   // Upload endpoint with special handling for multipart form data
   server->on("/upload", HTTP_POST, [this] { handleUploadPost(upload); }, [this] { handleUpload(upload); });
@@ -640,6 +775,157 @@ void CrossPointWebServer::handleDownload() const {
   client.clear();
 #endif
   file.close();
+}
+
+void CrossPointWebServer::handleWordInboxBooks() const {
+  struct StreamState {
+    WebServer* server;
+    bool first = true;
+  } state{server.get()};
+
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  server->sendContent("[");
+  const auto visitor = [](void* context, const WordInboxBookInfo& book) {
+    auto& stream = *static_cast<StreamState*>(context);
+    if (!stream.first) stream.server->sendContent(",");
+    stream.first = false;
+    stream.server->sendContent("{\"key\":");
+    sendJsonString(stream.server, book.key);
+    stream.server->sendContent(",\"title\":");
+    sendJsonString(stream.server, book.title);
+    stream.server->sendContent(",\"author\":");
+    sendJsonString(stream.server, book.author);
+    stream.server->sendContent(",\"type\":");
+    sendJsonString(stream.server, wordInboxBookTypeName(book.bookType));
+    char numbers[96];
+    snprintf(numbers, sizeof(numbers), ",\"count\":%lu,\"latestId\":%lu}",
+             static_cast<unsigned long>(book.contextCount), static_cast<unsigned long>(book.latestContextId));
+    stream.server->sendContent(numbers);
+    esp_task_wdt_reset();
+    return true;
+  };
+
+  const bool success = WordInboxStore::visitBooks(&state, visitor);
+  server->sendContent("]");
+  server->sendContent("");
+  if (!success) LOG_ERR("WEB", "Failed to enumerate Word Inbox books");
+}
+
+void CrossPointWebServer::handleWordInboxContext() const {
+  String book;
+  uint32_t id = 0;
+  if (!getWordInboxBookAndId(server.get(), book, id)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid book or context ID\"}");
+    return;
+  }
+
+  WordInboxContextInfo context;
+  if (!WordInboxStore::getContext(std::string_view(book.c_str(), book.length()), id, context)) {
+    server->send(404, "application/json", "{\"error\":\"Context not found\"}");
+    return;
+  }
+
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  char fields[192];
+  snprintf(fields, sizeof(fields), "{\"id\":%lu,\"position\":%lu,\"count\":%lu,\"previousId\":%lu,\"nextId\":%lu,",
+           static_cast<unsigned long>(context.id), static_cast<unsigned long>(context.position),
+           static_cast<unsigned long>(context.contextCount), static_cast<unsigned long>(context.previousId),
+           static_cast<unsigned long>(context.nextId));
+  server->sendContent(fields);
+  snprintf(fields, sizeof(fields),
+           "\"spineIndex\":%ld,\"page\":%lu,\"totalPages\":%lu,\"progress\":%u,\"hasText\":%s,"
+           "\"textTruncated\":%s,\"hasImage\":%s,\"chapter\":",
+           static_cast<long>(context.spineIndex), static_cast<unsigned long>(context.currentPage),
+           static_cast<unsigned long>(context.totalPages), context.progressPercent, context.hasText ? "true" : "false",
+           context.textTruncated ? "true" : "false", context.hasScreenshot ? "true" : "false");
+  server->sendContent(fields);
+  sendJsonString(server.get(), context.chapterTitle);
+  server->sendContent("}");
+  server->sendContent("");
+}
+
+void CrossPointWebServer::handleWordInboxText() const {
+  String book;
+  uint32_t id = 0;
+  if (!getWordInboxBookAndId(server.get(), book, id)) {
+    server->send(400, "text/plain", "Invalid book or context ID");
+    return;
+  }
+
+  WordInboxContextInfo context;
+  const std::string_view bookKey(book.c_str(), book.length());
+  if (!WordInboxStore::getContext(bookKey, id, context) || !context.hasText) {
+    server->send(404, "text/plain", "Text unavailable");
+    return;
+  }
+
+  HalFile file;
+  if (!WordInboxStore::openContextText(bookKey, context, file)) {
+    server->send(500, "text/plain", "Could not open context text");
+    return;
+  }
+  if (!streamWordInboxFile(server.get(), file, context.textLength, "text/plain; charset=utf-8")) {
+    LOG_ERR("WEB", "Failed while streaming Word Inbox text");
+  }
+  file.close();
+}
+
+void CrossPointWebServer::handleWordInboxImage() const {
+  String book;
+  uint32_t id = 0;
+  if (!getWordInboxBookAndId(server.get(), book, id)) {
+    server->send(400, "text/plain", "Invalid book or context ID");
+    return;
+  }
+
+  char path[96];
+  if (!WordInboxStore::getScreenshotPath(std::string_view(book.c_str(), book.length()), id, path, sizeof(path))) {
+    server->send(404, "text/plain", "Screenshot unavailable");
+    return;
+  }
+  HalFile file;
+  if (!Storage.openFileForRead("WEB", path, file)) {
+    server->send(500, "text/plain", "Could not open screenshot");
+    return;
+  }
+  if (!streamWordInboxFile(server.get(), file, file.size(), "image/bmp")) {
+    LOG_ERR("WEB", "Failed while streaming Word Inbox screenshot");
+  }
+  file.close();
+}
+
+void CrossPointWebServer::handleWordInboxDelete() const {
+  String book;
+  uint32_t id = 0;
+  if (!getWordInboxBookAndId(server.get(), book, id)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid book or context ID\"}");
+    return;
+  }
+  if (!WordInboxStore::deleteContext(std::string_view(book.c_str(), book.length()), id)) {
+    server->send(500, "application/json", "{\"error\":\"Delete failed\"}");
+    return;
+  }
+  server->send(200, "application/json", "{\"ok\":true}");
+}
+
+void CrossPointWebServer::handleWordInboxDeleteBook() const {
+  if (!server->hasArg("book")) {
+    server->send(400, "application/json", "{\"error\":\"Missing book\"}");
+    return;
+  }
+  const String book = server->arg("book");
+  const std::string_view bookKey(book.c_str(), book.length());
+  if (!WordInboxStore::isValidBookKey(bookKey)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid book\"}");
+    return;
+  }
+  if (!WordInboxStore::deleteBook(bookKey)) {
+    server->send(500, "application/json", "{\"error\":\"Delete failed\"}");
+    return;
+  }
+  server->send(200, "application/json", "{\"ok\":true}");
 }
 
 // Diagnostic counters for upload performance analysis

@@ -105,6 +105,14 @@ class CrossPointWebServer {
   void handleMove() const;
   void handleDelete() const;
 
+  // Word Inbox handlers
+  void handleWordInboxBooks() const;
+  void handleWordInboxContext() const;
+  void handleWordInboxText() const;
+  void handleWordInboxImage() const;
+  void handleWordInboxDelete() const;
+  void handleWordInboxDeleteBook() const;
+
   // Settings handlers
   void handleSettingsPage() const;
   void handleGetSettings() const;
