@@ -269,6 +269,54 @@ bool Store::readPackedByte(const uint32_t byteIndex, uint8_t& value, StateError&
   return true;
 }
 
+bool Store::visitNonUnseen(const uint32_t firstLexemeId, const uint32_t scanLexemeCount, uint8_t* scratch,
+                           const size_t scratchCapacity, void* context, const StatusVisitor visitor,
+                           uint32_t& nextLexemeId, StateError& error) {
+  nextLexemeId = firstLexemeId;
+  if (!recover(error)) return false;
+  if (firstLexemeId > lexemeCount_ || scanLexemeCount == 0 || scanLexemeCount > kMaxReviewScanLexemes ||
+      scratch == nullptr || visitor == nullptr) {
+    error = StateError::INVALID_INPUT;
+    return false;
+  }
+  if (firstLexemeId == lexemeCount_) {
+    error = StateError::NONE;
+    return true;
+  }
+
+  const uint32_t remaining = lexemeCount_ - firstLexemeId;
+  const uint32_t count = scanLexemeCount < remaining ? scanLexemeCount : remaining;
+  const uint32_t endLexemeId = firstLexemeId + count;
+  const uint32_t firstByte = firstLexemeId / 2U;
+  const uint32_t endByte = (endLexemeId + 1U) / 2U;
+  const size_t bytes = endByte - firstByte;
+  if (scratchCapacity < bytes) {
+    error = StateError::INVALID_INPUT;
+    return false;
+  }
+  if (!storage_.readAt(storage_.context, statusPath_, kStatusPayloadOffset + firstByte, scratch, bytes)) {
+    error = StateError::IO_FAILED;
+    return false;
+  }
+
+  for (uint32_t lexemeId = firstLexemeId; lexemeId < endLexemeId; ++lexemeId) {
+    const uint8_t packed = scratch[lexemeId / 2U - firstByte];
+    const uint8_t value = (lexemeId & 1U) == 0 ? packed & 0x0FU : packed >> 4U;
+    if (value > static_cast<uint8_t>(Status::ImplicitlyFamiliar)) {
+      error = StateError::STATUS_INVALID;
+      return false;
+    }
+    if (value != static_cast<uint8_t>(Status::Unseen) && !visitor(context, lexemeId, static_cast<Status>(value))) {
+      nextLexemeId = lexemeId + 1U;
+      error = StateError::NONE;
+      return true;
+    }
+  }
+  nextLexemeId = endLexemeId;
+  error = StateError::NONE;
+  return true;
+}
+
 const char* stateErrorName(const StateError error) {
   switch (error) {
     case StateError::NONE:

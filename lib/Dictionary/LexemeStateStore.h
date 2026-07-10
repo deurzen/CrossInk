@@ -10,6 +10,7 @@ constexpr size_t kMetaSize = 36;
 constexpr size_t kStatusHeaderSize = 32;
 constexpr size_t kWalSize = 40;
 constexpr size_t kMaxStatePath = 144;
+constexpr uint32_t kMaxReviewScanLexemes = 4096;
 
 enum class Status : uint8_t {
   Unseen = 0,
@@ -20,6 +21,8 @@ enum class Status : uint8_t {
 };
 
 bool isSuppressed(Status status);
+
+using StatusVisitor = bool (*)(void* context, uint32_t lexemeId, Status status);
 
 struct StorageBackend {
   void* context = nullptr;
@@ -57,6 +60,10 @@ class Store {
   bool get(uint32_t lexemeId, Status& status, StateError& error);
   bool set(uint32_t lexemeId, Status status, StateError& error);
   bool readPackedByte(uint32_t byteIndex, uint8_t& value, StateError& error);
+  // Reads one bounded contiguous status window. Returning false from visitor
+  // stops successfully after that item; nextLexemeId resumes without repeats.
+  bool visitNonUnseen(uint32_t firstLexemeId, uint32_t scanLexemeCount, uint8_t* scratch, size_t scratchCapacity,
+                      void* context, StatusVisitor visitor, uint32_t& nextLexemeId, StateError& error);
 
   uint32_t generation() const { return generation_; }
   uint32_t lexemeCount() const { return lexemeCount_; }

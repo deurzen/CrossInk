@@ -18,6 +18,7 @@ using dictionary::lexeme_state::Store;
 struct MemoryStorage {
   std::map<std::string, std::vector<uint8_t>> files;
   int writeAtCalls = 0;
+  int readAtCalls = 0;
   int failWriteAtCall = -1;
   bool failRemove = false;
 };
@@ -38,7 +39,9 @@ bool renameFile(void* context, const char* oldPath, const char* newPath) {
   return true;
 }
 bool readAt(void* context, const char* path, const uint32_t offset, void* output, const size_t length) {
-  const auto& files = static_cast<MemoryStorage*>(context)->files;
+  auto& storage = *static_cast<MemoryStorage*>(context);
+  ++storage.readAtCalls;
+  const auto& files = storage.files;
   const auto found = files.find(path);
   if (found == files.end() || static_cast<uint64_t>(offset) + length > found->second.size()) return false;
   std::memcpy(output, found->second.data() + offset, length);
@@ -77,6 +80,17 @@ StorageBackend backend(MemoryStorage& storage) {
 
 constexpr uint8_t UUID[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
+struct StatusCollector {
+  std::vector<std::pair<uint32_t, Status>> items;
+  size_t limit = 0;
+};
+
+bool collectStatus(void* context, const uint32_t lexemeId, const Status status) {
+  auto& collector = *static_cast<StatusCollector*>(context);
+  collector.items.emplace_back(lexemeId, status);
+  return collector.items.size() < collector.limit;
+}
+
 bool readLocalLemma(void* context, const uint16_t localId, uint32_t& globalId) {
   const auto& ids = *static_cast<const std::vector<uint32_t>*>(context);
   if (localId >= ids.size()) return false;
@@ -113,6 +127,53 @@ TEST(LexemeState, InitializesPackedStatusesAndPersistsUpdates) {
   ASSERT_TRUE(reopened.get(4, status, error));
   EXPECT_EQ(status, Status::Ignored);
   EXPECT_TRUE(dictionary::lexeme_state::isSuppressed(status));
+}
+
+TEST(LexemeState, ScansBoundedNonUnseenWindowsWithOneRead) {
+  MemoryStorage storage;
+  Store store;
+  StateError error;
+  ASSERT_TRUE(store.open(backend(storage), "/state", UUID, 10, error));
+  ASSERT_TRUE(store.set(1, Status::Known, error));
+  ASSERT_TRUE(store.set(2, Status::Learning, error));
+  ASSERT_TRUE(store.set(6, Status::Ignored, error));
+
+  uint8_t scratch[4]{};
+  uint32_t next = 0;
+  StatusCollector first{{}, 2};
+  storage.readAtCalls = 0;
+  ASSERT_TRUE(store.visitNonUnseen(1, 7, scratch, sizeof(scratch), &first, collectStatus, next, error));
+  ASSERT_EQ(first.items.size(), 2U);
+  EXPECT_EQ(first.items[0], std::make_pair(1U, Status::Known));
+  EXPECT_EQ(first.items[1], std::make_pair(2U, Status::Learning));
+  EXPECT_EQ(next, 3U);
+  EXPECT_EQ(storage.readAtCalls, 1);
+
+  StatusCollector second{{}, 8};
+  storage.readAtCalls = 0;
+  ASSERT_TRUE(store.visitNonUnseen(next, 7, scratch, sizeof(scratch), &second, collectStatus, next, error));
+  ASSERT_EQ(second.items.size(), 1U);
+  EXPECT_EQ(second.items[0], std::make_pair(6U, Status::Ignored));
+  EXPECT_EQ(next, 10U);
+  EXPECT_EQ(storage.readAtCalls, 1);
+}
+
+TEST(LexemeState, RejectsMalformedReviewStatusAndOversizedWindow) {
+  MemoryStorage storage;
+  Store store;
+  StateError error;
+  ASSERT_TRUE(store.open(backend(storage), "/state", UUID, 4, error));
+  uint8_t scratch[2]{};
+  uint32_t next = 0;
+  StatusCollector collector{{}, 4};
+  EXPECT_FALSE(store.visitNonUnseen(0, dictionary::lexeme_state::kMaxReviewScanLexemes + 1U, scratch, sizeof(scratch),
+                                    &collector, collectStatus, next, error));
+  EXPECT_EQ(error, StateError::INVALID_INPUT);
+
+  const char* statusPath = "/state/0102030405060708090a0b0c0d0e0f10/status.bin";
+  storage.files[statusPath][dictionary::lexeme_state::kStatusHeaderSize] = 0x0FU;
+  EXPECT_FALSE(store.visitNonUnseen(0, 4, scratch, sizeof(scratch), &collector, collectStatus, next, error));
+  EXPECT_EQ(error, StateError::STATUS_INVALID);
 }
 
 TEST(LexemeState, RecoversPowerLossAfterStatusByteWrite) {
