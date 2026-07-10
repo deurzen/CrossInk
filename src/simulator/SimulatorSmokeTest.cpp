@@ -296,7 +296,14 @@ class SimulatorSmokeTest {
     if (!WordInboxStore::getScreenshotPath(state.book.key, capture.id, screenshotPath, sizeof(screenshotPath))) {
       fail("Word Inbox screenshot validation failed");
     }
-    LOG_INF("SMOKE", "Validated Word Inbox context API");
+    if (!WordInboxStore::deleteContext(state.book.key, capture.id)) {
+      fail("Word Inbox context deletion failed");
+    }
+    ValidationState afterDelete;
+    if (!WordInboxStore::visitBooks(&afterDelete, visitor) || afterDelete.found) {
+      fail("Deleted Word Inbox context remained visible");
+    }
+    LOG_INF("SMOKE", "Validated Word Inbox context CRUD API");
   }
 
   void runReaderInputScript() {

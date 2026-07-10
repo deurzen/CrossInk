@@ -31,6 +31,7 @@ class XtcReaderActivity final : public Activity {
   bool longPowerPageTurnHandled = false;
   bool frontButtonLongPressHandled = false;
   bool longPressBackHandled = false;
+  bool longPressMenuHandled = false;
   // Next-book suggestion menu for the End-of-Book screen
   EndOfBookOptions endOfBookOptions;
 

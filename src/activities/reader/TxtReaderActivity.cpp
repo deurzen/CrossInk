@@ -28,6 +28,7 @@
 
 namespace {
 constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
+constexpr unsigned long LONG_PRESS_MENU_MS = 600;
 // Cache file magic and version
 constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
 constexpr uint8_t CACHE_VERSION = 3;          // Increment when cache format changes
@@ -149,6 +150,28 @@ void TxtReaderActivity::loop() {
     return;
   }
   if (executePowerButtonAction()) {
+    return;
+  }
+
+  if (longPressMenuHandled) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+        !mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
+      longPressMenuHandled = false;
+    }
+    return;
+  }
+
+  if (SETTINGS.longPressMenuAction == CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX &&
+      mappedInput.isPressed(MappedInputManager::Button::Confirm) && mappedInput.getHeldTime() >= LONG_PRESS_MENU_MS) {
+    longPressMenuHandled = true;
+    mappedInput.suppressNextConfirmRelease();
+    saveCurrentPageToWordInbox();
+    return;
+  }
+
+  if (SETTINGS.longPressMenuAction == CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX &&
+      mappedInput.wasReleased(MappedInputManager::Button::Confirm) && mappedInput.getHeldTime() >= LONG_PRESS_MENU_MS) {
+    saveCurrentPageToWordInbox();
     return;
   }
 
