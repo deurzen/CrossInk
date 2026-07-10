@@ -365,41 +365,39 @@ bool CrossPointSettings::saveToFile() const {
 }
 
 bool CrossPointSettings::loadFromFile() {
-  enum class JsonLoadStatus : uint8_t { MissingOrEmpty, Loaded, Failed };
-
-  auto loadJsonSettings = [this](const char* path, bool migrateToCurrentPath) -> JsonLoadStatus {
-    if (!Storage.exists(path)) return JsonLoadStatus::MissingOrEmpty;
-
-    String json = Storage.readFile(path);
-    if (!json.isEmpty()) {
-      bool resave = false;
-      bool result;
-      {
-        std::lock_guard<std::mutex> lock(_mutex);
-        result = JsonSettingsIO::loadSettings(*this, json.c_str(), &resave);
-      }
-      if (result && (resave || migrateToCurrentPath)) {
-        if (saveToFile()) {
-          LOG_DBG("CPS", migrateToCurrentPath ? "Migrated legacy settings.json to crossink-settings.json"
-                                              : "Resaved settings to update format");
-        } else {
-          LOG_ERR("CPS", migrateToCurrentPath ? "Failed to save migrated settings to crossink-settings.json"
-                                              : "Failed to resave settings after format update");
-        }
-      }
-      migrateLanguageBinaryFile();
-      return result ? JsonLoadStatus::Loaded : JsonLoadStatus::Failed;
+  auto loadJsonSettings = [this](const char* path, const bool migrateToCurrentPath) -> JsonSettingsIO::LoadResult {
+    bool resave = false;
+    JsonSettingsIO::LoadResult result;
+    {
+      std::lock_guard<std::mutex> lock(_mutex);
+      result = JsonSettingsIO::loadSettings(*this, path, &resave);
     }
-    return JsonLoadStatus::MissingOrEmpty;
+    if (result != JsonSettingsIO::LoadResult::Loaded) return result;
+
+    if (resave || migrateToCurrentPath) {
+      if (saveToFile()) {
+        LOG_DBG("CPS", migrateToCurrentPath ? "Migrated legacy settings.json to crossink-settings.json"
+                                            : "Resaved settings to update format");
+      } else {
+        LOG_ERR("CPS", migrateToCurrentPath ? "Failed to save migrated settings to crossink-settings.json"
+                                            : "Failed to resave settings after format update");
+      }
+    }
+    migrateLanguageBinaryFile();
+    return result;
   };
 
   // Prefer CrossInk's namespaced settings file. Use the old generic file only
   // as a migration fallback so other firmware can keep its own settings.json.
-  JsonLoadStatus jsonStatus = loadJsonSettings(SETTINGS_FILE_JSON, false);
-  if (jsonStatus != JsonLoadStatus::MissingOrEmpty) return jsonStatus == JsonLoadStatus::Loaded;
+  JsonSettingsIO::LoadResult jsonStatus = loadJsonSettings(SETTINGS_FILE_JSON, false);
+  if (jsonStatus != JsonSettingsIO::LoadResult::Missing) {
+    return jsonStatus == JsonSettingsIO::LoadResult::Loaded;
+  }
 
   jsonStatus = loadJsonSettings(LEGACY_SETTINGS_FILE_JSON, true);
-  if (jsonStatus != JsonLoadStatus::MissingOrEmpty) return jsonStatus == JsonLoadStatus::Loaded;
+  if (jsonStatus != JsonSettingsIO::LoadResult::Missing) {
+    return jsonStatus == JsonSettingsIO::LoadResult::Loaded;
+  }
 
   // Fall back to binary migration
   if (Storage.exists(SETTINGS_FILE_BIN)) {

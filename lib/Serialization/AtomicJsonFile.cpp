@@ -84,25 +84,25 @@ bool write(const char* moduleName, const char* path, const JsonDocument& documen
   return true;
 }
 
-bool read(const char* moduleName, const char* path, JsonDocument& document) {
+ReadResult read(const char* moduleName, const char* path, JsonDocument& document) {
   char tempPath[JSON_STORE_PATH_MAX];
   char backupPath[JSON_STORE_PATH_MAX];
-  if (!makeAtomicPaths(moduleName, path, tempPath, backupPath)) return false;
+  if (!makeAtomicPaths(moduleName, path, tempPath, backupPath)) return ReadResult::Failed;
 
   const AtomicFile::Paths paths{path, tempPath, backupPath};
   const JsonContext context{moduleName, nullptr};
   if (!AtomicFile::recover(logModule(moduleName), paths, validateJsonFile, &context)) {
     LOG_ERR(logModule(moduleName), "Failed to recover %s", path);
-    return false;
+    return ReadResult::Failed;
   }
-  if (!Storage.exists(path)) return false;
+  if (!Storage.exists(path)) return ReadResult::Missing;
 
   const DeserializationError error = parseJsonFile(moduleName, path, document);
   if (error) {
     LOG_ERR(logModule(moduleName), "JSON parse error in %s: %s", path, error.c_str());
-    return false;
+    return ReadResult::Failed;
   }
-  return true;
+  return ReadResult::Loaded;
 }
 
 }  // namespace AtomicJsonFile

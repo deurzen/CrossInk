@@ -45,13 +45,13 @@ bool CrossPointState::saveToFile() const {
 }
 
 bool CrossPointState::loadFromFile() {
-  // Try JSON first
-  if (Storage.exists(STATE_FILE_JSON)) {
-    String json = Storage.readFile(STATE_FILE_JSON);
-    if (!json.isEmpty()) {
-      std::lock_guard<std::mutex> lock(_mutex);
-      return JsonSettingsIO::loadState(*this, json.c_str());
-    }
+  JsonSettingsIO::LoadResult jsonResult;
+  {
+    std::lock_guard<std::mutex> lock(_mutex);
+    jsonResult = JsonSettingsIO::loadState(*this, STATE_FILE_JSON);
+  }
+  if (jsonResult != JsonSettingsIO::LoadResult::Missing) {
+    return jsonResult == JsonSettingsIO::LoadResult::Loaded;
   }
 
   // Fall back to binary migration

@@ -10,7 +10,7 @@ bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& 
 }
 
 bool PersistableStoreBase::readDocFromFile(const char* path, JsonDocument& doc) {
-  return AtomicJsonFile::read("PERSIST", path, doc);
+  return AtomicJsonFile::read("PERSIST", path, doc) == AtomicJsonFile::ReadResult::Loaded;
 }
 
 std::string PersistableStoreBase::extractPassword(JsonVariantConst doc, bool& needsResave) {

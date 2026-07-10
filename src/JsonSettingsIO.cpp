@@ -1,10 +1,10 @@
 #include "JsonSettingsIO.h"
 
 #include <ArduinoJson.h>
+#include <AtomicJsonFile.h>
 #ifdef SIMULATOR
 #include <ArduinoJsonStringCompat.h>
 #endif
-#include <HalStorage.h>
 #include <Logging.h>
 #include <ObfuscationUtils.h>
 
@@ -119,18 +119,14 @@ bool JsonSettingsIO::saveState(const CrossPointState& s, const char* path) {
   doc["pendingClippingIndex"] = s.pendingClippingIndex;
   doc["showBootScreen"] = s.showBootScreen;
 
-  String json;
-  serializeJson(doc, json);
-  return Storage.writeFile(path, json);
+  return AtomicJsonFile::write("CPS", path, doc);
 }
 
-bool JsonSettingsIO::loadState(CrossPointState& s, const char* json) {
+JsonSettingsIO::LoadResult JsonSettingsIO::loadState(CrossPointState& s, const char* path) {
   JsonDocument doc;
-  auto error = deserializeJson(doc, json);
-  if (error) {
-    LOG_ERR("CPS", "JSON parse error: %s", error.c_str());
-    return false;
-  }
+  const AtomicJsonFile::ReadResult result = AtomicJsonFile::read("CPS", path, doc);
+  if (result == AtomicJsonFile::ReadResult::Missing) return LoadResult::Missing;
+  if (result != AtomicJsonFile::ReadResult::Loaded) return LoadResult::Failed;
 
   s.openEpubPath = doc["openEpubPath"] | std::string("");
   s.favoriteSleepImagePath = doc["favoriteSleepImagePath"] | std::string("");
@@ -159,7 +155,7 @@ bool JsonSettingsIO::loadState(CrossPointState& s, const char* json) {
   s.pendingBookmarkParagraphIndex = doc["pendingBookmarkParagraphIndex"] | static_cast<uint16_t>(UINT16_MAX);
   s.pendingClippingIndex = doc["pendingClippingIndex"] | static_cast<uint16_t>(UINT16_MAX);
   s.showBootScreen = doc["showBootScreen"] | true;
-  return true;
+  return LoadResult::Loaded;
 }
 
 // ---- CrossPointSettings ----
@@ -214,19 +210,15 @@ bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path)
   // only, leaving the RTC date registers at their placeholder/default value.
   doc["clockDateHasBeenSynced"] = s.clockDateHasBeenSynced;
 
-  String json;
-  serializeJson(doc, json);
-  return Storage.writeFile(path, json);
+  return AtomicJsonFile::write("CPS", path, doc);
 }
 
-bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool* needsResave) {
+JsonSettingsIO::LoadResult JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* path, bool* needsResave) {
   if (needsResave) *needsResave = false;
   JsonDocument doc;
-  auto error = deserializeJson(doc, json);
-  if (error) {
-    LOG_ERR("CPS", "JSON parse error: %s", error.c_str());
-    return false;
-  }
+  const AtomicJsonFile::ReadResult result = AtomicJsonFile::read("CPS", path, doc);
+  if (result == AtomicJsonFile::ReadResult::Missing) return LoadResult::Missing;
+  if (result != AtomicJsonFile::ReadResult::Loaded) return LoadResult::Failed;
 
   auto clamp = [](uint8_t val, uint8_t maxVal, uint8_t def) -> uint8_t { return val < maxVal ? val : def; };
   const bool migrateLegacyTiltMode = !doc["tiltPageTurn"].isNull() && doc["tiltPageTurnDirection"].isNull();
@@ -412,5 +404,5 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
 
   LOG_DBG("CPS", "Settings loaded from file");
 
-  return true;
+  return LoadResult::Loaded;
 }
