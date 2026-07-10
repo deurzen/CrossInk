@@ -200,9 +200,11 @@ def tokenize_xhtml(xhtml: str) -> list[Token]:
     flattened: list[str] = []
     raw_offsets: list[int] = []
     hidden_depth = 0
+    body_depth = 0
+    has_body = re.search(r"<\s*(?:[A-Za-z0-9_-]+:)?body(?:\s|>)", xhtml, re.IGNORECASE) is not None
     cursor = 0
     for tag_match in TAG_PATTERN.finditer(xhtml):
-        if hidden_depth == 0:
+        if hidden_depth == 0 and (not has_body or body_depth > 0):
             _append_visible_text(xhtml[cursor:tag_match.start()], cursor, flattened, raw_offsets)
         tag = tag_match.group(0)
         name_match = TAG_NAME_PATTERN.match(tag)
@@ -210,16 +212,21 @@ def tokenize_xhtml(xhtml: str) -> list[Token]:
             closing = bool(name_match.group(1))
             tag_name = name_match.group(2).split(":")[-1].lower()
             self_closing = tag.rstrip().endswith("/>")
+            if tag_name == "body":
+                if closing:
+                    body_depth = max(0, body_depth - 1)
+                elif not self_closing:
+                    body_depth += 1
             if tag_name in HIDDEN_TAGS:
                 if closing:
                     hidden_depth = max(0, hidden_depth - 1)
                 elif not self_closing:
                     hidden_depth += 1
-            if hidden_depth == 0 and tag_name in BLOCK_TAGS:
+            if hidden_depth == 0 and (not has_body or body_depth > 0) and tag_name in BLOCK_TAGS:
                 flattened.append(" ")
                 raw_offsets.append(tag_match.end())
         cursor = tag_match.end()
-    if hidden_depth == 0:
+    if hidden_depth == 0 and (not has_body or body_depth > 0):
         _append_visible_text(xhtml[cursor:], cursor, flattened, raw_offsets)
 
     text = "".join(flattened)

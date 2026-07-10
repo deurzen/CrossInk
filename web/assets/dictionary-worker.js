@@ -222,28 +222,38 @@
     const characters = [];
     const rawOffsets = [];
     let hiddenDepth = 0;
+    let bodyDepth = 0;
+    const hasBody = /<\s*(?:[A-Za-z0-9_-]+:)?body(?:\s|>)/i.test(xhtml);
     let cursor = 0;
     TAG_PATTERN.lastIndex = 0;
     let match;
     while ((match = TAG_PATTERN.exec(xhtml))) {
-      if (!hiddenDepth) appendVisible(xhtml.slice(cursor, match.index), cursor, characters, rawOffsets);
+      if (!hiddenDepth && (!hasBody || bodyDepth > 0)) {
+        appendVisible(xhtml.slice(cursor, match.index), cursor, characters, rawOffsets);
+      }
       const nameMatch = TAG_NAME_PATTERN.exec(match[0]);
       if (nameMatch) {
         const closing = Boolean(nameMatch[1]);
         const tagName = nameMatch[2].split(":").pop().toLowerCase();
         const selfClosing = /\/\s*>$/.test(match[0]);
+        if (tagName === "body") {
+          if (closing) bodyDepth = Math.max(0, bodyDepth - 1);
+          else if (!selfClosing) bodyDepth++;
+        }
         if (HIDDEN_TAGS.has(tagName)) {
           if (closing) hiddenDepth = Math.max(0, hiddenDepth - 1);
           else if (!selfClosing) hiddenDepth++;
         }
-        if (!hiddenDepth && BLOCK_TAGS.has(tagName)) {
+        if (!hiddenDepth && (!hasBody || bodyDepth > 0) && BLOCK_TAGS.has(tagName)) {
           characters.push(" ");
           rawOffsets.push(match.index + match[0].length);
         }
       }
       cursor = match.index + match[0].length;
     }
-    if (!hiddenDepth) appendVisible(xhtml.slice(cursor), cursor, characters, rawOffsets);
+    if (!hiddenDepth && (!hasBody || bodyDepth > 0)) {
+      appendVisible(xhtml.slice(cursor), cursor, characters, rawOffsets);
+    }
     const text = characters.join("");
     const tokens = [];
     TOKEN_PATTERN.lastIndex = 0;

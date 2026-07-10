@@ -125,6 +125,15 @@ class GermanBookCompilerTest(unittest.TestCase):
         tokens = tokenize_xhtml("<p>Die Ha\u0308u<em>sern</em> &amp; gehen.</p><script>lieben</script>")
         self.assertEqual([token.surface for token in tokens], ["Die", "Häusern", "gehen"])
 
+    def test_full_xhtml_excludes_head_and_trailing_non_rendered_text(self):
+        xhtml = "<html><head><title>gehen</title></head><body><p>Häusern</p></body>gehen</html>"
+        tokens = tokenize_xhtml(xhtml)
+
+        self.assertEqual([token.surface for token in tokens], ["Häusern"])
+        compiled = compile_book([xhtml], compiler_dictionary())
+        self.assertIn('<body><p><span data-crossink-lang-shard="0"></span>Häusern', compiled.xhtml_spines[0])
+        self.assertNotIn('<title><span data-crossink-lang-shard', compiled.xhtml_spines[0])
+
     def test_compiles_inflections_ambiguity_stopwords_and_compounds(self):
         dictionary = compiler_dictionary()
         xhtml = "<html><body><p>Die Ha\u0308u<em>sern</em>, Gingen! liebe Krankenhausaufnahme.</p></body></html>"
