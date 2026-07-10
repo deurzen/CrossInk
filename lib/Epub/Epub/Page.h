@@ -122,6 +122,8 @@ class PageTableFragment final : public PageElement {
 
 class Page {
  public:
+  static constexpr uint32_t INVALID_LANGUAGE_SHARD = UINT32_MAX;
+
   struct PublisherPageMarker {
     int16_t yPos = 0;
     char label[16] = {};
@@ -131,6 +133,8 @@ class Page {
   std::vector<std::shared_ptr<PageElement>> elements;
   std::vector<FootnoteEntry> footnotes;
   std::vector<PublisherPageMarker> publisherPageMarkers;
+  uint32_t languageShardFirst = INVALID_LANGUAGE_SHARD;
+  uint32_t languageShardLast = INVALID_LANGUAGE_SHARD;
   static constexpr uint16_t MAX_FOOTNOTES_PER_PAGE = 16;
   static constexpr uint8_t INITIAL_FOOTNOTE_RESERVE = 2;
   static constexpr uint8_t MAX_PUBLISHER_PAGE_MARKERS_PER_PAGE = 8;
@@ -159,6 +163,25 @@ class Page {
     std::strncpy(marker.label, label, sizeof(marker.label) - 1);
     marker.label[sizeof(marker.label) - 1] = '\0';
     publisherPageMarkers.push_back(marker);
+  }
+
+  void includeLanguageShard(const uint32_t shardId) {
+    if (shardId == INVALID_LANGUAGE_SHARD) return;
+    if (languageShardFirst == INVALID_LANGUAGE_SHARD || shardId < languageShardFirst) {
+      languageShardFirst = shardId;
+    }
+    if (languageShardLast == INVALID_LANGUAGE_SHARD || shardId > languageShardLast) {
+      languageShardLast = shardId;
+    }
+  }
+
+  void includeLanguageShardRange(const uint32_t first, const uint32_t last) {
+    includeLanguageShard(first);
+    includeLanguageShard(last);
+  }
+
+  bool hasLanguageShards() const {
+    return languageShardFirst != INVALID_LANGUAGE_SHARD && languageShardLast != INVALID_LANGUAGE_SHARD;
   }
 
   void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset, bool foregroundBlack = true) const;

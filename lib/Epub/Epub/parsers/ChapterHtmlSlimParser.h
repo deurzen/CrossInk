@@ -134,6 +134,8 @@ class ChapterHtmlSlimParser {
   struct BufferedTable {
     BlockStyle blockStyle;
     std::vector<BufferedTableRow> rows;
+    uint32_t languageShardFirst = UINT32_MAX;
+    uint32_t languageShardLast = UINT32_MAX;
     uint16_t maxCols = 0;
     uint16_t totalCells = 0;
     bool unsupported = false;
@@ -160,6 +162,12 @@ class ChapterHtmlSlimParser {
   uint16_t currentTextBlockListItemIndex = 0;
   uint16_t currentPageParagraphIndex = 0;
   uint16_t currentPageListItemIndex = 0;
+
+  // Source-language shard IDs are parser-only state. Pages persist just the
+  // bounded first/last range, avoiding per-word cache overhead.
+  uint32_t activeLanguageShard = UINT32_MAX;
+  uint32_t currentTextBlockLanguageShardFirst = UINT32_MAX;
+  uint32_t currentTextBlockLanguageShardLast = UINT32_MAX;
 
   // Footnote link tracking
   bool insideFootnoteLink = false;
@@ -190,6 +198,8 @@ class ChapterHtmlSlimParser {
   uint16_t textRunBytesBeforeLayoutLimit() const;
   void markCurrentPageFromCurrentTextBlock();
   void markCurrentPageFromCurrentElement();
+  void includeCurrentTextBlockLanguageShard(uint32_t shardId);
+  void includeBufferedTableLanguageShard(uint32_t shardId);
   void completeCurrentPage();
   void makePages();
   int effectiveLineHeight() const;

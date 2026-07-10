@@ -161,6 +161,21 @@ const char* getAttribute(const XML_Char** atts, const char* attrName) {
   return nullptr;
 }
 
+bool parseLanguageShardId(const char* value, uint32_t& shardId) {
+  if (!value || value[0] == '\0') return false;
+
+  uint32_t parsed = 0;
+  for (const char* cursor = value; *cursor != '\0'; ++cursor) {
+    if (*cursor < '0' || *cursor > '9') return false;
+    const uint32_t digit = static_cast<uint32_t>(*cursor - '0');
+    if (parsed > (UINT32_MAX - digit) / 10U) return false;
+    parsed = parsed * 10U + digit;
+  }
+  if (parsed == UINT32_MAX) return false;
+  shardId = parsed;
+  return true;
+}
+
 bool isNonNavigableInlineElement(const char* name) { return strcmp(name, "span") == 0; }
 
 bool isInternalEpubLink(const char* href) {
@@ -345,11 +360,33 @@ bool ChapterHtmlSlimParser::startNewPage(const char* reason) {
 void ChapterHtmlSlimParser::markCurrentPageFromCurrentTextBlock() {
   currentPageParagraphIndex = currentTextBlockParagraphIndex;
   currentPageListItemIndex = currentTextBlockListItemIndex;
+  currentPage->includeLanguageShardRange(currentTextBlockLanguageShardFirst, currentTextBlockLanguageShardLast);
 }
 
 void ChapterHtmlSlimParser::markCurrentPageFromCurrentElement() {
   currentPageParagraphIndex = xpathParagraphIndex;
   currentPageListItemIndex = xpathListItemIndex;
+  currentPage->includeLanguageShard(activeLanguageShard);
+}
+
+void ChapterHtmlSlimParser::includeCurrentTextBlockLanguageShard(const uint32_t shardId) {
+  if (shardId == UINT32_MAX) return;
+  if (currentTextBlockLanguageShardFirst == UINT32_MAX || shardId < currentTextBlockLanguageShardFirst) {
+    currentTextBlockLanguageShardFirst = shardId;
+  }
+  if (currentTextBlockLanguageShardLast == UINT32_MAX || shardId > currentTextBlockLanguageShardLast) {
+    currentTextBlockLanguageShardLast = shardId;
+  }
+}
+
+void ChapterHtmlSlimParser::includeBufferedTableLanguageShard(const uint32_t shardId) {
+  if (!currentTableBuffer || shardId == UINT32_MAX) return;
+  if (currentTableBuffer->languageShardFirst == UINT32_MAX || shardId < currentTableBuffer->languageShardFirst) {
+    currentTableBuffer->languageShardFirst = shardId;
+  }
+  if (currentTableBuffer->languageShardLast == UINT32_MAX || shardId > currentTableBuffer->languageShardLast) {
+    currentTableBuffer->languageShardLast = shardId;
+  }
 }
 
 void ChapterHtmlSlimParser::completeCurrentPage() {
@@ -575,6 +612,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
       currentTextBlock->setBlockStyle(combinedStyle);
       currentTextBlockParagraphIndex = xpathParagraphIndex;
       currentTextBlockListItemIndex = xpathListItemIndex;
+      includeCurrentTextBlockLanguageShard(activeLanguageShard);
 
       flushPendingAnchor();
       return;
@@ -596,6 +634,9 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   }
   currentTextBlockParagraphIndex = xpathParagraphIndex;
   currentTextBlockListItemIndex = xpathListItemIndex;
+  currentTextBlockLanguageShardFirst = UINT32_MAX;
+  currentTextBlockLanguageShardLast = UINT32_MAX;
+  includeCurrentTextBlockLanguageShard(activeLanguageShard);
   wordsExtractedInBlock = 0;
 }
 
@@ -747,6 +788,8 @@ void ChapterHtmlSlimParser::emitBufferedTableAsParagraphs(BufferedTable& table) 
 
       pendingFootnotes = std::move(cell.footnotes);
       currentTextBlock = std::move(cell.text);
+      currentTextBlockLanguageShardFirst = table.languageShardFirst;
+      currentTextBlockLanguageShardLast = table.languageShardLast;
       wordsExtractedInBlock = 0;
       makePages();
       currentTextBlock.reset();
@@ -959,6 +1002,7 @@ void ChapterHtmlSlimParser::emitBufferedTableAsFragments(BufferedTable& table) {
           std::make_shared<PageTableFragment>(tableWidth, segment.columnCount, TABLE_CELL_PADDING, lineHeight,
                                               std::move(fragmentRows), table.blockStyle.leftInset(), currentPageNextY));
       markCurrentPageFromCurrentElement();
+      currentPage->includeLanguageShardRange(table.languageShardFirst, table.languageShardLast);
       for (const auto& footnote : fragmentFootnotes) {
         currentPage->addFootnote(footnote.number, footnote.href);
       }
@@ -1025,6 +1069,8 @@ void ChapterHtmlSlimParser::fallbackCurrentTableBufferToParagraphs(const char* r
   auto activeTextBlock = std::move(currentTextBlock);
   auto activeFootnotes = std::move(pendingFootnotes);
   const int activeWordsExtracted = wordsExtractedInBlock;
+  const uint32_t activeTextShardFirst = currentTextBlockLanguageShardFirst;
+  const uint32_t activeTextShardLast = currentTextBlockLanguageShardLast;
   const bool activeNextWordContinues = nextWordContinues;
   const bool activeTableCellIsHeader = currentTableCellIsHeader;
   const uint8_t activeTableCellColSpan = currentTableCellColSpan;
@@ -1035,6 +1081,8 @@ void ChapterHtmlSlimParser::fallbackCurrentTableBufferToParagraphs(const char* r
   currentTextBlock = std::move(activeTextBlock);
   pendingFootnotes = std::move(activeFootnotes);
   wordsExtractedInBlock = activeWordsExtracted;
+  currentTextBlockLanguageShardFirst = activeTextShardFirst;
+  currentTextBlockLanguageShardLast = activeTextShardLast;
   nextWordContinues = activeNextWordContinues;
   currentTableCellIsHeader = activeTableCellIsHeader;
   currentTableCellColSpan = activeTableCellColSpan;
@@ -1210,6 +1258,33 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     }
   }
 
+  const char* languageShardAttr = getAttribute(atts, "data-crossink-lang-shard");
+  if (languageShardAttr) {
+    uint32_t shardId = UINT32_MAX;
+    if (!parseLanguageShardId(languageShardAttr, shardId)) {
+      LOG_ERR("EHP", "Ignoring invalid language shard marker '%s'", languageShardAttr);
+      self->skipCurrentElement();
+      return;
+    }
+
+    // Lay out complete lines under the previous shard before advancing. The
+    // final incomplete line remains buffered and conservatively spans both
+    // shards, so marker handling does not introduce a visual line break.
+    if (self->partWordBufferIndex > 0) {
+      self->flushPartWordBuffer();
+    }
+    if (self->tableDepth == 0 && self->currentTextBlock && !self->currentTextBlock->isEmpty()) {
+      self->flushLongTextRunIfNeeded(true);
+      if (self->lowMemoryAbort) return;
+    }
+
+    self->activeLanguageShard = shardId;
+    self->includeCurrentTextBlockLanguageShard(shardId);
+    self->includeBufferedTableLanguageShard(shardId);
+    self->skipCurrentElement();
+    return;
+  }
+
   auto centeredBlockStyle = BlockStyle();
   centeredBlockStyle.textAlignDefined = true;
   centeredBlockStyle.alignment = CssTextAlign::Center;
@@ -1370,6 +1445,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       return;
     }
     self->currentTableBuffer->blockStyle = tableBlockStyle;
+    self->includeBufferedTableLanguageShard(self->activeLanguageShard);
     self->tableDepth += 1;
     self->tableRowIndex = 0;
     self->tableColIndex = 0;

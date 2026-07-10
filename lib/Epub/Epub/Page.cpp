@@ -416,6 +416,11 @@ bool Page::serialize(FsFile& file) const {
     }
   }
 
+  if (!serialization::tryWritePod(file, languageShardFirst) || !serialization::tryWritePod(file, languageShardLast)) {
+    LOG_ERR("PGE", "Failed to write language shard range");
+    return false;
+  }
+
   return true;
 }
 
@@ -516,6 +521,19 @@ std::unique_ptr<Page> Page::deserialize(FsFile& file) {
     }
     marker.label[sizeof(marker.label) - 1] = '\0';
     page->publisherPageMarkers.push_back(marker);
+  }
+
+  if (!serialization::tryReadPod(file, page->languageShardFirst) ||
+      !serialization::tryReadPod(file, page->languageShardLast)) {
+    LOG_ERR("PGE", "Failed to read language shard range");
+    return nullptr;
+  }
+  if ((page->languageShardFirst == Page::INVALID_LANGUAGE_SHARD) !=
+          (page->languageShardLast == Page::INVALID_LANGUAGE_SHARD) ||
+      (page->hasLanguageShards() && page->languageShardFirst > page->languageShardLast)) {
+    LOG_ERR("PGE", "Invalid language shard range %lu-%lu", static_cast<unsigned long>(page->languageShardFirst),
+            static_cast<unsigned long>(page->languageShardLast));
+    return nullptr;
   }
 
   return page;
