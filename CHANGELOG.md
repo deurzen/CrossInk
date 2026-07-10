@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Added
+
+- Word Inbox captures save the visible EPUB page as a screenshot with copyable text through a configurable reader shortcut.
+
 ## [v1.4.0] - 2026-07-10
 
 ### Added

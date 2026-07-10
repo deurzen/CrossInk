@@ -52,6 +52,8 @@
 #include "util/BookCacheUtils.h"
 #include "util/BookMoveUtils.h"
 #include "util/ScreenshotUtil.h"
+#include "word_inbox/VisiblePageText.h"
+#include "word_inbox/WordInboxStore.h"
 
 namespace {
 // pagesPerRefresh now comes from SETTINGS.getRefreshFrequency()
@@ -3118,6 +3120,71 @@ void EpubReaderActivity::startClipSelection() {
       });
 }
 
+void EpubReaderActivity::saveCurrentPageToWordInbox() {
+  // The output can reach 8 KB, which is too large for the reader task stack.
+  // Allocate only for this user-triggered cold path instead of holding it for
+  // the full activity lifetime.
+  auto textBuffer = makeUniqueNoThrow<char[]>(VisiblePageText::MAX_TEXT_BYTES + 1);
+  if (!textBuffer) {
+    LOG_ERR("WIN", "OOM: visible page text buffer (%u bytes)",
+            static_cast<unsigned>(VisiblePageText::MAX_TEXT_BYTES + 1));
+    RenderLock lock(*this);
+    drawToastBuffer(renderer, tr(STR_WORD_INBOX_FAILED));
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
+
+  RenderLock lock(*this);
+  if (!epub || !section || section->currentPage < 0 || section->currentPage >= section->pageCount) {
+    LOG_ERR("WIN", "EPUB page is unavailable for capture");
+    drawToastBuffer(renderer, tr(STR_WORD_INBOX_FAILED));
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
+
+  auto page = section->loadPageFromSectionFile();
+  if (!page) {
+    LOG_ERR("WIN", "Failed to reload current EPUB page for capture");
+    drawToastBuffer(renderer, tr(STR_WORD_INBOX_FAILED));
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
+
+  const auto visibleText = VisiblePageText::fromEpubPage(*page, textBuffer.get(), VisiblePageText::MAX_TEXT_BYTES + 1);
+  std::string chapterTitle;
+  const int tocIndex = epub->getTocIndexForSpineIndex(currentSpineIndex);
+  if (tocIndex >= 0) {
+    chapterTitle = epub->getTocItem(tocIndex).title;
+  }
+
+  WordInboxCapture capture;
+  capture.bookType = WordInboxBookType::Epub;
+  capture.bookPath = epub->getPath();
+  capture.title = epub->getTitle();
+  capture.author = epub->getAuthor();
+  capture.chapterTitle = chapterTitle;
+  capture.spineIndex = currentSpineIndex;
+  capture.currentPage = static_cast<uint32_t>(section->currentPage + 1);
+  capture.totalPages = section->pageCount;
+  capture.progressPercent =
+      static_cast<uint8_t>(clampPercent(static_cast<int>(getCurrentBookProgressPercent() + 0.5f)));
+  capture.text = std::string_view(visibleText.text, visibleText.length);
+  capture.textTruncated = visibleText.truncated;
+  capture.framebuffer = renderer.getFrameBuffer();
+  capture.displayWidth = renderer.getDisplayWidth();
+  capture.displayHeight = renderer.getDisplayHeight();
+
+  // Release the deserialized page arena before SD persistence; only the bounded
+  // text buffer and the existing framebuffer are needed from this point.
+  page.reset();
+
+  uint32_t captureId = 0;
+  const WordInboxSaveResult result = WordInboxStore::save(capture, captureId);
+  drawToastBuffer(renderer,
+                  result == WordInboxSaveResult::Saved ? tr(STR_WORD_INBOX_SAVED) : tr(STR_WORD_INBOX_FAILED));
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+
 void EpubReaderActivity::resetReadingPaceData() {
 #if defined(ENABLE_SERIAL_LOG) && LOG_LEVEL >= 2
   const uint16_t oldAvg = stats.avgSecondsPerForwardPage;
@@ -3238,6 +3305,9 @@ void EpubReaderActivity::executeReaderQuickAction(CrossPointSettings::LONG_PRESS
       break;
     case CrossPointSettings::LONG_MENU_CREATE_CLIPPING:
       startClipSelection();
+      break;
+    case CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX:
+      saveCurrentPageToWordInbox();
       break;
     case CrossPointSettings::LONG_MENU_OFF:
     default:
@@ -3368,6 +3438,9 @@ bool EpubReaderActivity::executeShortPowerButtonAction() {
       mappedInput.suppressNextPowerConfirmRelease();
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_CREATE_CLIPPING);
       return true;
+    case CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX:
+      executeReaderQuickAction(CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX);
+      return true;
     default:
       return false;
   }
@@ -3460,6 +3533,9 @@ bool EpubReaderActivity::executeLongPowerButtonAction() {
     case CrossPointSettings::SHORT_PWRBTN::CREATE_CLIPPING:
       mappedInput.suppressNextPowerConfirmRelease();
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_CREATE_CLIPPING);
+      return true;
+    case CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX:
+      executeReaderQuickAction(CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX);
       return true;
     default:
       return false;
