@@ -9,6 +9,7 @@
 - Per-book reader settings now recover interrupted updates and resets without replacing the last valid settings snapshot.
 - Atomic state recovery now preserves files from newer firmware versions instead of replacing them with older backups.
 - Global reading statistics now recover interrupted saves and cannot restore pre-reset totals from stale transaction files.
+- Recent books, Wi-Fi credentials, OPDS servers, and KOReader credentials now use validated recoverable JSON writes.
 
 ## [v1.4.0] - 2026-07-10
 
