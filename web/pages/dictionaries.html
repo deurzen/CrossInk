@@ -22,6 +22,23 @@
 </div>
 
 <div class="card">
+  <div class="section-heading">
+    <div>
+      <h2>Learning List</h2>
+      <p class="hint">Review words marked known, learning, ignored, or implicitly familiar.</p>
+    </div>
+    <select id="reviewDictionary" onchange="resetReview()"></select>
+  </div>
+  <div class="review-actions">
+    <button class="btn btn-secondary" type="button" onclick="resetReview()">Reload</button>
+    <button class="btn btn-secondary" type="button" onclick="exportLearningList('csv')">Export CSV</button>
+    <button class="btn btn-secondary" type="button" onclick="exportLearningList('tsv')">Export TSV</button>
+  </div>
+  <div id="learningList"><p class="empty">Select an installed dictionary</p></div>
+  <button class="btn btn-secondary" id="loadMoreBtn" type="button" onclick="loadMoreReview()" hidden>Load more</button>
+</div>
+
+<div class="card">
   <h2>Browser Compiler Cache</h2>
   <div id="compilerStatus"><p class="empty">Checking this browser…</p></div>
   <p class="hint">Compiler data is stored in IndexedDB on this computer. It never crosses the reader’s network connection.</p>

@@ -127,6 +127,8 @@ class CrossPointWebServer {
   void handleDictionaryInstallCommit();
   void handleDictionaryInstallCancel();
   void handleDictionaryRemove();
+  void handleDictionaryLearningList();
+  void handleDictionaryLearningStatus();
   bool flushDictionaryUpload();
   void abortDictionaryUpload();
 

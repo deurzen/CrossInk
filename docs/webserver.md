@@ -161,7 +161,9 @@ in IndexedDB for EPUB optimization. Files are uploaded into a hidden staging
 directory and the package becomes visible only after exact-size, UUID, and CRC
 validation. Installation can be cancelled, and replacing a bundle preserves
 the previous runtime until commit. Removing a runtime deliberately retains its
-global learning state.
+global learning state. The same page reviews known, learning, ignored, and
+implicitly familiar words, updates statuses through the WAL-protected store,
+and exports the complete list as CSV or TSV in the desktop browser.
 
 ### Fonts
 

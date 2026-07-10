@@ -12,6 +12,12 @@ const RUNTIME_LIMITS = {
 let installedDictionaries = [];
 let cachedCompiler = null;
 let activeInstall = null;
+let reviewCursor = 0;
+let reviewDone = true;
+let reviewLoading = false;
+
+const STATUS_LABELS = ["Unseen", "Known", "Learning", "Ignored", "Implicitly familiar"];
+const POS_LABELS = ["Unknown", "Noun", "Verb", "Adjective", "Adverb", "Pronoun", "Determiner", "Preposition", "Conjunction", "Numeral", "Particle", "Interjection", "Proper noun", "Phrase", "Abbreviation", "Other"];
 
 function formatBytes(bytes) {
   if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + " GB";
@@ -129,6 +135,147 @@ function renderDictionaries() {
     list.appendChild(row);
   }
   renderCompilerStatus();
+  populateReviewDictionaries();
+}
+
+function populateReviewDictionaries() {
+  const select = document.getElementById("reviewDictionary");
+  const previous = select.value;
+  select.replaceChildren();
+  for (const item of installedDictionaries.filter(dictionary => dictionary.valid)) {
+    const option = document.createElement("option");
+    option.value = item.uuid;
+    option.textContent = `${item.sourceLanguage} → ${item.targetLanguage} · ${item.uuid.slice(0, 8)}`;
+    select.appendChild(option);
+  }
+  if (previous && Array.from(select.options).some(option => option.value === previous)) select.value = previous;
+  if (!select.value) {
+    reviewDone = true;
+    document.getElementById("learningList").innerHTML = '<p class="empty">Install a valid dictionary to review learning state</p>';
+    document.getElementById("loadMoreBtn").hidden = true;
+  }
+}
+
+async function fetchReviewWindow(uuid, cursor) {
+  return responseJson(await fetch(`/api/dictionaries/learning?uuid=${encodeURIComponent(uuid)}&cursor=${cursor}&scan=4096`));
+}
+
+function appendReviewItem(item) {
+  const list = document.getElementById("learningList");
+  const row = document.createElement("div");
+  row.className = "learning-row";
+  const info = document.createElement("div");
+  const word = document.createElement("div");
+  word.className = "learning-word";
+  word.textContent = item.headword || `Lexeme ${item.lexemeId}`;
+  const meta = document.createElement("div");
+  meta.className = "learning-id";
+  meta.textContent = `${POS_LABELS[item.partOfSpeech] || "Unknown"} · ID ${item.lexemeId}`;
+  info.append(word, meta);
+  const status = document.createElement("select");
+  status.className = "learning-status";
+  STATUS_LABELS.forEach((label, value) => {
+    const option = document.createElement("option");
+    option.value = String(value);
+    option.textContent = label;
+    option.selected = value === item.status;
+    status.appendChild(option);
+  });
+  status.addEventListener("change", async () => {
+    status.disabled = true;
+    try {
+      const uuid = document.getElementById("reviewDictionary").value;
+      await responseJson(await fetch(`/api/dictionaries/learning/status?uuid=${encodeURIComponent(uuid)}&id=${item.lexemeId}&status=${status.value}`, { method: "POST" }));
+      if (status.value === "0") row.remove();
+    } catch (error) {
+      status.value = String(item.status);
+      setInstallStatus(`Status update failed: ${error.message}`, "error");
+    } finally {
+      status.disabled = false;
+    }
+  });
+  row.append(info, status);
+  list.appendChild(row);
+}
+
+async function resetReview() {
+  reviewCursor = 0;
+  const list = document.getElementById("learningList");
+  list.replaceChildren();
+  if (!document.getElementById("reviewDictionary").value) {
+    reviewDone = true;
+    list.innerHTML = '<p class="empty">Install a valid dictionary to review learning state</p>';
+    document.getElementById("loadMoreBtn").hidden = true;
+    return;
+  }
+  reviewDone = false;
+  await loadMoreReview();
+}
+
+async function loadMoreReview() {
+  const uuid = document.getElementById("reviewDictionary").value;
+  if (!uuid || reviewDone || reviewLoading) return;
+  reviewLoading = true;
+  const button = document.getElementById("loadMoreBtn");
+  button.disabled = true;
+  try {
+    let added = 0;
+    while (!reviewDone && added === 0) {
+      const page = await fetchReviewWindow(uuid, reviewCursor);
+      if (page.nextCursor <= reviewCursor && !page.done) throw new Error("Reader returned an invalid review cursor");
+      reviewCursor = page.nextCursor;
+      reviewDone = Boolean(page.done);
+      for (const item of page.items || []) {
+        appendReviewItem(item);
+        added++;
+      }
+    }
+    const list = document.getElementById("learningList");
+    if (!list.children.length && reviewDone) list.innerHTML = '<p class="empty">No saved learning states</p>';
+    button.hidden = reviewDone;
+  } catch (error) {
+    setInstallStatus(`Could not load learning list: ${error.message}`, "error");
+  } finally {
+    reviewLoading = false;
+    button.disabled = false;
+  }
+}
+
+function quotedExport(value, separator) {
+  const text = String(value ?? "");
+  if (!text.includes(separator) && !/["\r\n]/.test(text)) return text;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+async function exportLearningList(format) {
+  const uuid = document.getElementById("reviewDictionary").value;
+  if (!uuid) return;
+  const separator = format === "tsv" ? "\t" : ",";
+  const lines = [["headword", "part_of_speech", "status", "lexeme_id"].join(separator)];
+  let cursor = 0;
+  let done = false;
+  setInstallStatus(`Preparing ${format.toUpperCase()} export…`);
+  try {
+    while (!done) {
+      const page = await fetchReviewWindow(uuid, cursor);
+      if (page.nextCursor <= cursor && !page.done) throw new Error("Reader returned an invalid review cursor");
+      cursor = page.nextCursor;
+      done = Boolean(page.done);
+      for (const item of page.items || []) {
+        lines.push([item.headword || "", POS_LABELS[item.partOfSpeech] || "Unknown", STATUS_LABELS[item.status] || "Unknown", item.lexemeId]
+          .map(value => quotedExport(value, separator)).join(separator));
+      }
+    }
+    const blob = new Blob(["\ufeff", lines.join("\r\n"), "\r\n"], { type: "text/plain;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `crossink-learning-${uuid.slice(0, 8)}.${format}`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
+    setInstallStatus(`Exported ${lines.length - 1} learning entries`, "ok");
+  } catch (error) {
+    setInstallStatus(`Export failed: ${error.message}`, "error");
+  }
 }
 
 async function loadDictionaries() {
@@ -257,6 +404,7 @@ async function installSelectedBundle() {
     await saveCachedCompiler({ uuid: manifest.bundleUuid, name: file.name, sourceLanguage: manifest.sourceLanguage || "?", targetLanguage: manifest.targetLanguage || "?", meta: metaBytes.buffer, forms, cachedAt: Date.now() });
     setInstallStatus("Dictionary installed and compiler data cached in this browser", "ok");
     await loadDictionaries();
+    await resetReview();
   } catch (error) {
     if (activeInstall?.uuid && !activeInstall.committed) {
       try { await fetch(`/api/dictionaries/install/cancel?uuid=${encodeURIComponent(activeInstall.uuid)}`, { method: "POST" }); } catch (_) {}
@@ -264,6 +412,7 @@ async function installSelectedBundle() {
     if (activeInstall?.committed) {
       setInstallStatus(`Runtime installed, but compiler cache failed: ${error.message}`, "error");
       await loadDictionaries();
+      await resetReview();
     } else {
       setInstallStatus(error.message, "error");
     }
@@ -289,11 +438,12 @@ async function removeDictionary(uuid) {
   try {
     await responseJson(await fetch(`/api/dictionaries/remove?uuid=${encodeURIComponent(uuid)}`, { method: "POST" }));
     await loadDictionaries();
+    await resetReview();
   } catch (error) {
     setInstallStatus(`Removal failed: ${error.message}`, "error");
   }
 }
 
 Promise.all([loadCachedCompiler(), loadDictionaries()])
-  .then(() => { renderDictionaries(); renderCompilerStatus(); })
+  .then(async () => { renderDictionaries(); renderCompilerStatus(); await resetReview(); })
   .catch(error => renderCompilerStatus(`Compiler cache unavailable: ${error.message}`));

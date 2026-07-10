@@ -64,6 +64,14 @@ MOCK_API = {
          "sourceLanguage": "de", "targetLanguage": "en", "lexemeCount": 200000, "runtimeBytes": 48123456},
         {"uuid": "11111111-2222-3333-4444-555555555555", "valid": False, "error": "crc-mismatch"},
     ],
+    "/api/dictionaries/learning": {
+        "generation": 3, "nextCursor": 200000, "done": True,
+        "items": [
+            {"lexemeId": 12, "status": 2, "partOfSpeech": 1, "headword": "Haus"},
+            {"lexemeId": 48, "status": 1, "partOfSpeech": 2, "headword": "gehen"},
+            {"lexemeId": 91, "status": 3, "partOfSpeech": 3, "headword": "schön"},
+        ],
+    },
     "/api/fonts": {"families": [
         {"name": "Bookerly", "sizes": [10, 12, 14], "files": [{"size": 120000}, {"size": 140000}]},
         {"name": "Literata", "sizes": [12], "files": [{"size": 160000}]},

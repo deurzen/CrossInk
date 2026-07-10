@@ -11,7 +11,13 @@ h2 { color: var(--title-color); margin: 0 0 8px; font-size: 1.15em; }
 .badge-ready { color: #15803d; border-color: rgba(22, 163, 74, 0.35); background: rgba(22, 163, 74, 0.08); }
 .badge-warn { color: #a16207; border-color: rgba(202, 138, 4, 0.35); background: rgba(202, 138, 4, 0.08); }
 .badge-error { color: #b91c1c; border-color: rgba(220, 38, 38, 0.35); background: rgba(220, 38, 38, 0.08); }
-.install-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.install-row, .review-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#reviewDictionary { padding: 8px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg); color: var(--font-color); max-width: 280px; }
+.learning-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border-color); }
+.learning-row:last-child { border-bottom: none; }
+.learning-word { font-weight: 650; color: var(--title-color); }
+.learning-id { color: var(--label-color); font-size: 0.8em; margin-top: 3px; }
+.learning-status { padding: 7px 9px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg); color: var(--font-color); }
 .install-row input { flex: 1; min-width: 220px; }
 .btn { padding: 8px 16px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.9em; font-weight: 600; }
 .btn:disabled { opacity: 0.55; cursor: default; }
@@ -32,4 +38,6 @@ code { font-size: 0.9em; }
   .section-heading, .dictionary-row { align-items: stretch; flex-direction: column; }
   .install-row { align-items: stretch; flex-direction: column; }
   .install-row input { min-width: 0; }
+  .learning-row { grid-template-columns: 1fr; }
+  #reviewDictionary { max-width: none; }
 }

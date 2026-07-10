@@ -420,6 +420,28 @@ staging directory. `POST /api/dictionaries/remove?uuid=<uuid>` atomically
 removes an installed package; learning state is deliberately retained under
 `/.crosspoint/language-state/`.
 
+### Learning-state review
+
+`GET /api/dictionaries/learning?uuid=<uuid>&cursor=0&scan=4096` scans at most
+4096 dense lexeme IDs (2048 packed status bytes) and returns at most 50 nonzero
+states. `nextCursor` resumes after the last scanned or emitted ID; clients keep
+requesting windows until `done` is true. The status file is never loaded whole.
+
+```json
+{"generation":7,"nextCursor":4096,"done":false,"items":[{"lexemeId":12,"status":2,"partOfSpeech":1,"headword":"Haus"}]}
+```
+
+`POST /api/dictionaries/learning/status?uuid=<uuid>&id=<lexeme-id>&status=<0-4>`
+changes one state through the same synced WAL used by the reader. Status values
+are 0 unseen, 1 known, 2 learning, 3 ignored, and 4 implicitly familiar.
+Setting unseen removes the entry from subsequent review responses. Per-book
+suppression projections rebuild lazily on their next explicit lookup because
+the global generation changes.
+
+The Dictionaries page paginates these windows for review and generates CSV or
+TSV exports in the desktop browser; the firmware does not allocate an export or
+status-sized buffer.
+
 ## OPDS Server API
 
 ### `GET /api/opds`

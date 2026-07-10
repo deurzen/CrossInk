@@ -6,7 +6,7 @@
 - EPUB optimization can compile dictionary candidate shards from a cached `.cpdict` bundle in an off-main-thread browser worker; firmware validates and extracts the resulting artifact with bounded memory.
 - Dictionary-optimized EPUBs now retain source-shard ranges in each rendered page, allowing lookups to stay correct across font, layout, and orientation changes.
 - Compatible EPUBs can open a bounded unknown-word shortlist through a configurable shortcut, stream definitions from SD, and mark words as learning, known, or ignored.
-- The Dictionaries WebUI installs, inspects, replaces, and removes runtime packages transactionally while keeping compiler data in the desktop browser and never exposing arbitrary SD-card paths.
+- The Dictionaries WebUI installs, inspects, replaces, and removes runtime packages transactionally, reviews WAL-protected learning states, and exports CSV/TSV while keeping compiler data in the desktop browser.
 
 ### Changed
 

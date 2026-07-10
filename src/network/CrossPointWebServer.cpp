@@ -27,6 +27,7 @@
 #include "SettingsList.h"
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
+#include "dictionary/DictionaryReviewSession.h"
 #include "dictionary/DictionaryStorage.h"
 #include "html/DictionariesPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
@@ -68,6 +69,21 @@ bool dictionaryRuntimeFile(const String& name, dictionary::installer::RuntimeFil
   } else {
     return false;
   }
+  return true;
+}
+
+bool unsignedArg(WebServer& server, const char* name, const uint32_t maximum, uint32_t& value) {
+  if (!server.hasArg(name)) return false;
+  const String text = server.arg(name);
+  if (text.isEmpty()) return false;
+  uint64_t parsed = 0;
+  for (size_t index = 0; index < text.length(); ++index) {
+    const char digit = text[index];
+    if (digit < '0' || digit > '9') return false;
+    parsed = parsed * 10U + static_cast<uint8_t>(digit - '0');
+    if (parsed > maximum) return false;
+  }
+  value = static_cast<uint32_t>(parsed);
   return true;
 }
 
@@ -462,6 +478,8 @@ void CrossPointWebServer::begin() {
   server->on("/api/dictionaries/install/commit", HTTP_POST, [this] { handleDictionaryInstallCommit(); });
   server->on("/api/dictionaries/install/cancel", HTTP_POST, [this] { handleDictionaryInstallCancel(); });
   server->on("/api/dictionaries/remove", HTTP_POST, [this] { handleDictionaryRemove(); });
+  server->on("/api/dictionaries/learning", HTTP_GET, [this] { handleDictionaryLearningList(); });
+  server->on("/api/dictionaries/learning/status", HTTP_POST, [this] { handleDictionaryLearningStatus(); });
 
   // Upload endpoint with special handling for multipart form data
   server->on("/upload", HTTP_POST, [this] { handleUploadPost(upload); }, [this] { handleUpload(upload); });
@@ -2467,6 +2485,96 @@ void CrossPointWebServer::handleDictionaryRemove() {
     return;
   }
   server->send(200, "application/json", "{\"ok\":true}");
+}
+
+void CrossPointWebServer::handleDictionaryLearningList() {
+  uint8_t uuid[16]{};
+  uint32_t cursor = 0;
+  uint32_t scan = dictionary::lexeme_state::kMaxReviewScanLexemes;
+  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid) ||
+      (server->hasArg("cursor") && !unsignedArg(*server, "cursor", dictionary::kMaxLexemeCount, cursor)) ||
+      (server->hasArg("scan") &&
+       !unsignedArg(*server, "scan", dictionary::lexeme_state::kMaxReviewScanLexemes, scan)) ||
+      scan == 0) {
+    server->send(400, "application/json", "{\"error\":\"Invalid review request\"}");
+    return;
+  }
+
+  // Session (~1.5 KB retained paths/state) and page (~400 B) are bounded
+  // cold-path allocations; neither is safe on the web task stack.
+  auto session = makeUniqueNoThrow<dictionary::review::Session>();
+  auto page = makeUniqueNoThrow<dictionary::review::Page>();
+  if (!session || !page) {
+    LOG_ERR("WEB", "OOM allocating dictionary review session");
+    server->send(503, "application/json", "{\"error\":\"Insufficient memory\"}");
+    return;
+  }
+  dictionary::review::ReviewError error;
+  if (!session->open(uuid, error) ||
+      !session->readPage(cursor, scan, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), *page, error)) {
+    LOG_ERR("WEB", "Dictionary review failed: %s", dictionary::review::reviewErrorName(error));
+    server->send(400, "application/json", "{\"error\":\"Could not read learning state\"}");
+    return;
+  }
+
+  char fields[160]{};
+  std::snprintf(fields, sizeof(fields), "{\"generation\":%lu,\"nextCursor\":%lu,\"done\":%s,\"items\":[",
+                static_cast<unsigned long>(session->generation()), static_cast<unsigned long>(page->nextLexemeId),
+                page->done ? "true" : "false");
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  server->sendContent(fields);
+  for (size_t index = 0; index < page->count; ++index) {
+    const auto& item = page->items[index];
+    uint8_t partOfSpeech = 0;
+    char headword[dictionary::kMaxHeadwordBytes + 1]{};
+    size_t length = 0;
+    const bool headwordOk = session->readHeadword(item.lexemeId, headword, sizeof(headword), length, partOfSpeech, error);
+    std::snprintf(fields, sizeof(fields), "%s{\"lexemeId\":%lu,\"status\":%u,\"partOfSpeech\":%u,\"headword\":",
+                  index == 0 ? "" : ",", static_cast<unsigned long>(item.lexemeId),
+                  static_cast<unsigned>(item.status), static_cast<unsigned>(partOfSpeech));
+    server->sendContent(fields);
+    if (headwordOk) {
+      sendJsonString(server.get(), std::string_view(headword, length));
+    } else {
+      LOG_ERR("WEB", "Could not read review headword %lu", static_cast<unsigned long>(item.lexemeId));
+      server->sendContent("null");
+    }
+    server->sendContent("}");
+    esp_task_wdt_reset();
+  }
+  server->sendContent("]}");
+  server->sendContent("");
+}
+
+void CrossPointWebServer::handleDictionaryLearningStatus() {
+  uint8_t uuid[16]{};
+  uint32_t lexemeId = 0;
+  uint32_t statusValue = 0;
+  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid) ||
+      !unsignedArg(*server, "id", dictionary::kMaxLexemeCount - 1U, lexemeId) ||
+      !unsignedArg(*server, "status", static_cast<uint32_t>(dictionary::lexeme_state::Status::ImplicitlyFamiliar),
+                   statusValue)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid status request\"}");
+    return;
+  }
+  auto session = makeUniqueNoThrow<dictionary::review::Session>();
+  if (!session) {
+    LOG_ERR("WEB", "OOM allocating dictionary status session");
+    server->send(503, "application/json", "{\"error\":\"Insufficient memory\"}");
+    return;
+  }
+  dictionary::review::ReviewError error;
+  if (!session->open(uuid, error) ||
+      !session->setStatus(lexemeId, static_cast<dictionary::lexeme_state::Status>(statusValue), error)) {
+    LOG_ERR("WEB", "Dictionary status update failed: %s", dictionary::review::reviewErrorName(error));
+    server->send(400, "application/json", "{\"error\":\"Status update failed\"}");
+    return;
+  }
+  char response[64]{};
+  std::snprintf(response, sizeof(response), "{\"ok\":true,\"generation\":%lu}",
+                static_cast<unsigned long>(session->generation()));
+  server->send(200, "application/json", response);
 }
 
 // --- Font management handlers ---
