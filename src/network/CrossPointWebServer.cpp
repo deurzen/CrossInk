@@ -33,6 +33,7 @@
 #include "html/SettingsPageHtml.generated.h"
 #include "html/StyleCss.generated.h"
 #include "html/WordInboxPageHtml.generated.h"
+#include "html/js/dictionary_workerJs.generated.h"
 #include "html/js/jszip_minJs.generated.h"
 #include "util/BookCacheUtils.h"
 #include "util/StringUtils.h"
@@ -385,6 +386,7 @@ void CrossPointWebServer::begin() {
   server->on("/files", HTTP_GET, [this] { handleFileList(); });
   server->on("/word-inbox", HTTP_GET, [this] { handleWordInboxPage(); });
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJszip(); });
+  server->on("/js/dictionary-worker.js", HTTP_GET, [this] { handleDictionaryWorker(); });
   server->on("/style.css", HTTP_GET, [this] { handleStyleCss(); });
   server->on("/logo.png", HTTP_GET, [this] { handleLogo(); });
 
@@ -608,6 +610,13 @@ void CrossPointWebServer::handleJszip() const {
   server->sendHeader("Content-Encoding", "gzip");
   server->send_P(200, "application/javascript", jszip_minJs, jszip_minJsCompressedSize);
   LOG_DBG("WEB", "Served jszip.min.js");
+}
+
+void CrossPointWebServer::handleDictionaryWorker() const {
+  server->sendHeader("Content-Encoding", "gzip");
+  server->sendHeader("Cache-Control", "no-cache");
+  server->send_P(200, "application/javascript", dictionary_workerJs, dictionary_workerJsCompressedSize);
+  LOG_DBG("WEB", "Served dictionary-worker.js");
 }
 
 // Shared stylesheet and logo are referenced with a content-hashed ?v= query,
