@@ -376,6 +376,49 @@ Successful response:
 {"ok":true}
 ```
 
+## Dictionary Management API
+
+Dictionary UUID parameters accept canonical UUID text or 32 hexadecimal digits.
+Clients never provide an SD-card path: firmware maps only the five fixed runtime
+filenames into a hidden staging directory. Compiler resources such as
+`compiler/forms.bin` must remain in the browser and are not accepted.
+
+### `GET /api/dictionaries`
+
+Streams up to 64 installed bundle records. Inventory checks metadata and exact
+file sizes without rescanning large payload CRCs on every request. A package
+that no longer passes this lightweight inspection is returned with
+`"valid":false` and an error code.
+
+```json
+[{"uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","valid":true,"sourceLanguage":"de","targetLanguage":"en","lexemeCount":200000,"runtimeBytes":48123456}]
+```
+
+### Transactional installation
+
+Installation is a five-file sequence followed by an explicit commit:
+
+```bash
+UUID=01020304-0506-0708-090a-0b0c0d0e0f10
+curl -X POST "http://crosspoint.local/api/dictionaries/install/start?uuid=$UUID"
+curl -X POST -F "file=@meta.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=meta.bin"
+curl -X POST -F "file=@lexemes.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=lexemes.bin"
+curl -X POST -F "file=@headwords.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=headwords.bin"
+curl -X POST -F "file=@entries.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=entries.bin"
+curl -X POST -F "file=@licenses.txt" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=licenses.txt"
+curl -X POST "http://crosspoint.local/api/dictionaries/install/commit?uuid=$UUID"
+```
+
+Uploads use one reusable 2 KB buffer. Commit streams each payload once through
+the same buffer, validates `meta.bin`, exact sizes, UUID, and CRCs, then
+publishes the package with a directory rename. Failed validation leaves an
+existing same-UUID package untouched.
+
+`POST /api/dictionaries/install/cancel?uuid=<uuid>` removes an incomplete
+staging directory. `POST /api/dictionaries/remove?uuid=<uuid>` atomically
+removes an installed package; learning state is deliberately retained under
+`/.crosspoint/language-state/`.
+
 ## OPDS Server API
 
 ### `GET /api/opds`

@@ -4,6 +4,7 @@
 #include <ESPmDNS.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <Memory.h>
 #include <WiFi.h>
 #include <esp_task_wdt.h>
 
@@ -272,8 +273,14 @@ void CrossPointWebServerActivity::startAccessPoint() {
 void CrossPointWebServerActivity::startWebServer() {
   LOG_DBG("WEBACT", "Starting web server...");
 
-  // Create the web server instance
-  webServer.reset(new CrossPointWebServer());
+  // The network server contains reusable upload buffers and is too large for
+  // the activity task stack; allocate it once for this activity lifetime.
+  webServer = makeUniqueNoThrow<CrossPointWebServer>();
+  if (!webServer) {
+    LOG_ERR("WEBACT", "OOM allocating web server");
+    exitToOrigin();
+    return;
+  }
   webServer->begin();
 
   if (webServer->isRunning()) {

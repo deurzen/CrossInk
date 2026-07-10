@@ -13,6 +13,7 @@ The web server is available while the device is in **File Transfer** or
 - Edit many device settings from a browser
 - Manage saved Wi-Fi networks and OPDS servers
 - Browse, copy, and delete saved Word Inbox reading contexts
+- Install, inspect, and remove compiled dictionary runtime packages through bounded APIs
 - Upload and delete `.cpfont` SD-card font families
 - Accept WebDAV clients and Calibre wireless uploads
 
@@ -150,6 +151,15 @@ context. Per-book on-disk indexes keep navigation lookups independent of the
 number of captures after a one-time migration rebuild. Individual contexts or
 all contexts for a book can be deleted from this page. Word Inbox data remains
 under `/.crosspoint/word_inbox/` when ordinary render caches are cleared.
+
+### Dictionaries
+
+The dictionary management API accepts the five runtime files extracted from a
+`.cpdict` bundle. Files are uploaded into a hidden staging directory and the
+package becomes visible only after exact-size, UUID, and CRC validation. Browser
+compiler resources remain in IndexedDB and are never uploaded. The dedicated
+Dictionary WebUI is added in the next implementation unit; command-line usage
+is documented in [webserver-endpoints.md](./webserver-endpoints.md).
 
 ### Fonts
 

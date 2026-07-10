@@ -5,9 +5,12 @@
 #include <WebServer.h>
 #include <WebSocketsServer.h>
 
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "../../lib/Dictionary/DictionaryInstaller.h"
 
 // Structure to hold file information
 struct FileInfo {
@@ -115,6 +118,17 @@ class CrossPointWebServer {
   void handleWordInboxDelete() const;
   void handleWordInboxDeleteBook() const;
 
+  // Dictionary management handlers
+  void handleDictionaryList();
+  void handleDictionaryInstallStart();
+  void handleDictionaryInstallUpload();
+  void handleDictionaryInstallUploadData();
+  void handleDictionaryInstallCommit();
+  void handleDictionaryInstallCancel();
+  void handleDictionaryRemove();
+  bool flushDictionaryUpload();
+  void abortDictionaryUpload();
+
   // Settings handlers
   void handleSettingsPage() const;
   void handleGetSettings() const;
@@ -141,6 +155,22 @@ class CrossPointWebServer {
 
     FontUploadState() { buffer.resize(BUFFER_SIZE); }
   } fontUpload;
+
+  struct DictionaryUploadState {
+    HalFile file;
+    uint8_t bundleUuid[16]{};
+    dictionary::installer::RuntimeFile runtimeFile = dictionary::installer::RuntimeFile::Meta;
+    char filePath[dictionary::installer::kMaxInstallPath]{};
+    bool valid = false;
+    size_t bytesWritten = 0;
+    size_t bufferPos = 0;
+    // Kept inside the network-only server allocation: too large for the task
+    // stack, but one reusable buffer avoids per-chunk heap churn.
+    std::array<uint8_t, 2048> buffer{};
+  } dictionaryUpload;
+
+  dictionary::installer::Installer dictionaryInstaller;
+  bool dictionaryStorageReady = false;
 
   // OPDS server handlers
   void handleGetOpdsServers() const;

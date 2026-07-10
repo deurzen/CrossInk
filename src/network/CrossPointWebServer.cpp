@@ -9,6 +9,7 @@
 #include <HalGPIO.h>
 #include <HalStorage.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <WiFi.h>
 #include <esp_efuse.h>
 #include <esp_efuse_table.h>
@@ -26,6 +27,7 @@
 #include "SettingsList.h"
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
+#include "dictionary/DictionaryStorage.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
@@ -45,6 +47,45 @@ namespace {
 constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
 constexpr uint16_t UDP_PORTS[] = {54982, 48123, 39001, 44044, 59678};
 constexpr uint16_t LOCAL_UDP_PORT = 8134;
+
+bool dictionaryUuidArg(WebServer& server, uint8_t (&uuid)[16]) {
+  return server.hasArg("uuid") && dictionary::storage::parseUuid(server.arg("uuid").c_str(), uuid);
+}
+
+bool dictionaryRuntimeFile(const String& name, dictionary::installer::RuntimeFile& file) {
+  using dictionary::installer::RuntimeFile;
+  if (name == "meta.bin") {
+    file = RuntimeFile::Meta;
+  } else if (name == "lexemes.bin") {
+    file = RuntimeFile::Lexemes;
+  } else if (name == "headwords.bin") {
+    file = RuntimeFile::Headwords;
+  } else if (name == "entries.bin") {
+    file = RuntimeFile::Entries;
+  } else if (name == "licenses.txt") {
+    file = RuntimeFile::Licenses;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+uint64_t dictionaryRuntimeFileLimit(const dictionary::installer::RuntimeFile file) {
+  using dictionary::installer::RuntimeFile;
+  switch (file) {
+    case RuntimeFile::Meta:
+      return dictionary::kDictionaryMetaSize;
+    case RuntimeFile::Lexemes:
+      return static_cast<uint64_t>(dictionary::kMaxLexemeCount) * dictionary::kLexemeRecordSize;
+    case RuntimeFile::Headwords:
+      return dictionary::kMaxHeadwordsFileSize;
+    case RuntimeFile::Entries:
+      return dictionary::kMaxEntriesFileSize;
+    case RuntimeFile::Licenses:
+      return dictionary::installer::kMaxLicenseBytes;
+  }
+  return 0;
+}
 
 // Static pointer for WebSocket callback (WebSocketsServer requires C-style callback)
 CrossPointWebServer* wsInstance = nullptr;
@@ -394,6 +435,13 @@ void CrossPointWebServer::begin() {
   server->on("/api/files", HTTP_GET, [this] { handleFileListData(); });
   server->on("/download", HTTP_GET, [this] { handleDownload(); });
 
+  dictionary::installer::InstallError dictionaryError;
+  dictionaryStorageReady =
+      dictionaryInstaller.open(dictionary::storage::backend(), dictionary::storage::ROOT_PATH, dictionaryError);
+  if (!dictionaryStorageReady) {
+    LOG_ERR("WEB", "Dictionary storage unavailable: %s", dictionary::installer::installErrorName(dictionaryError));
+  }
+
   // Word Inbox endpoints
   server->on("/api/word-inbox/books", HTTP_GET, [this] { handleWordInboxBooks(); });
   server->on("/api/word-inbox/context", HTTP_GET, [this] { handleWordInboxContext(); });
@@ -401,6 +449,17 @@ void CrossPointWebServer::begin() {
   server->on("/api/word-inbox/image", HTTP_GET, [this] { handleWordInboxImage(); });
   server->on("/api/word-inbox/delete", HTTP_POST, [this] { handleWordInboxDelete(); });
   server->on("/api/word-inbox/delete-book", HTTP_POST, [this] { handleWordInboxDeleteBook(); });
+
+  // Dictionary management endpoints. Runtime filenames and destination paths
+  // are selected by firmware, never accepted as arbitrary client paths.
+  server->on("/api/dictionaries", HTTP_GET, [this] { handleDictionaryList(); });
+  server->on("/api/dictionaries/install/start", HTTP_POST, [this] { handleDictionaryInstallStart(); });
+  server->on(
+      "/api/dictionaries/install/file", HTTP_POST, [this] { handleDictionaryInstallUpload(); },
+      [this] { handleDictionaryInstallUploadData(); });
+  server->on("/api/dictionaries/install/commit", HTTP_POST, [this] { handleDictionaryInstallCommit(); });
+  server->on("/api/dictionaries/install/cancel", HTTP_POST, [this] { handleDictionaryInstallCancel(); });
+  server->on("/api/dictionaries/remove", HTTP_POST, [this] { handleDictionaryRemove(); });
 
   // Upload endpoint with special handling for multipart form data
   server->on("/upload", HTTP_POST, [this] { handleUploadPost(upload); }, [this] { handleUpload(upload); });
@@ -501,6 +560,7 @@ void CrossPointWebServer::stop() {
   if (wsUploadInProgress && wsUploadFile) {
     abortWsUpload("WEB");
   }
+  if (dictionaryUpload.file) abortDictionaryUpload();
 
   // Stop WebSocket server
   if (wsServer) {
@@ -2158,6 +2218,248 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
     default:
       break;
   }
+}
+
+// --- Dictionary management handlers ---
+
+void CrossPointWebServer::handleDictionaryList() {
+  if (!dictionaryStorageReady) {
+    server->send(503, "application/json", "{\"error\":\"Dictionary storage unavailable\"}");
+    return;
+  }
+
+  // 64 bundle UUIDs plus one JSON chunk need 1280 bytes. This cold-path
+  // allocation is bounded and cannot safely use the web task stack; it is
+  // released after this response.
+  constexpr size_t uuidBytes = dictionary::storage::MAX_INSTALLED_BUNDLES * 16;
+  auto uuids = makeUniqueNoThrow<uint8_t[]>(uuidBytes + 256);
+  if (!uuids) {
+    LOG_ERR("WEB", "OOM allocating dictionary inventory UUIDs");
+    server->send(503, "application/json", "{\"error\":\"Insufficient memory\"}");
+    return;
+  }
+  size_t count = 0;
+  if (!dictionary::storage::collectBundleUuids(uuids.get(), dictionary::storage::MAX_INSTALLED_BUNDLES, count)) {
+    LOG_ERR("WEB", "Failed to scan dictionary directory");
+    server->send(500, "application/json", "{\"error\":\"Dictionary scan failed\"}");
+    return;
+  }
+
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  server->sendContent("[");
+  bool first = true;
+  for (size_t index = 0; index < count; ++index) {
+    uint8_t uuid[16]{};
+    std::memcpy(uuid, uuids.get() + index * 16, sizeof(uuid));
+    dictionary::installer::PackageInfo info;
+    dictionary::installer::InstallError error;
+    const bool valid = dictionaryInstaller.inspectInstalled(uuid, info, error);
+    // A .removing-* candidate is collected only so recovery can finish its
+    // best-effort cleanup; it is not an installed or invalid package.
+    if (!valid && error == dictionary::installer::InstallError::PACKAGE_MISSING) continue;
+    char uuidText[37]{};
+    dictionary::storage::formatUuid(uuid, uuidText);
+    char* output = reinterpret_cast<char*>(uuids.get() + uuidBytes);
+    output[0] = '\0';
+    if (valid) {
+      std::snprintf(output, 256,
+                    "%s{\"uuid\":\"%s\",\"valid\":true,\"sourceLanguage\":\"%s\","
+                    "\"targetLanguage\":\"%s\",\"lexemeCount\":%lu,\"runtimeBytes\":%llu}",
+                    first ? "" : ",", uuidText, info.sourceLanguage, info.targetLanguage,
+                    static_cast<unsigned long>(info.lexemeCount), static_cast<unsigned long long>(info.runtimeBytes));
+    } else {
+      std::snprintf(output, 256, "%s{\"uuid\":\"%s\",\"valid\":false,\"error\":\"%s\"}", first ? "" : ",", uuidText,
+                    dictionary::installer::installErrorName(error));
+    }
+    server->sendContent(output);
+    first = false;
+    esp_task_wdt_reset();
+  }
+  server->sendContent("]");
+  server->sendContent("");
+}
+
+void CrossPointWebServer::handleDictionaryInstallStart() {
+  uint8_t uuid[16]{};
+  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+    return;
+  }
+  if (dictionaryUpload.file) abortDictionaryUpload();
+  dictionary::installer::InstallError error;
+  if (!dictionaryInstaller.begin(uuid, error)) {
+    LOG_ERR("WEB", "Dictionary install start failed: %s", dictionary::installer::installErrorName(error));
+    server->send(500, "application/json", "{\"error\":\"Could not start dictionary installation\"}");
+    return;
+  }
+  server->send(200, "application/json", "{\"ok\":true}");
+}
+
+bool CrossPointWebServer::flushDictionaryUpload() {
+  if (!dictionaryUpload.valid || dictionaryUpload.bufferPos == 0) return dictionaryUpload.valid;
+  esp_task_wdt_reset();
+  const size_t written = dictionaryUpload.file.write(dictionaryUpload.buffer.data(), dictionaryUpload.bufferPos);
+  if (written != dictionaryUpload.bufferPos) {
+    LOG_ERR("WEB", "Dictionary upload write failed: %s", dictionaryUpload.filePath);
+    dictionaryUpload.valid = false;
+    return false;
+  }
+  dictionaryUpload.bytesWritten += written;
+  dictionaryUpload.bufferPos = 0;
+  return true;
+}
+
+void CrossPointWebServer::abortDictionaryUpload() {
+  dictionaryUpload.file.close();
+  if (dictionaryUpload.filePath[0] != '\0') Storage.remove(dictionaryUpload.filePath);
+  dictionaryUpload.valid = false;
+  dictionaryUpload.bytesWritten = 0;
+  dictionaryUpload.bufferPos = 0;
+  dictionaryUpload.filePath[0] = '\0';
+}
+
+void CrossPointWebServer::handleDictionaryInstallUploadData() {
+  HTTPUpload& upload = server->upload();
+  using dictionary::installer::InstallError;
+  using dictionary::installer::RuntimeFile;
+
+  switch (upload.status) {
+    case UPLOAD_FILE_START: {
+      if (dictionaryUpload.file) abortDictionaryUpload();
+      std::memset(dictionaryUpload.bundleUuid, 0, sizeof(dictionaryUpload.bundleUuid));
+      dictionaryUpload.runtimeFile = RuntimeFile::Meta;
+      dictionaryUpload.filePath[0] = '\0';
+      dictionaryUpload.valid = false;
+      dictionaryUpload.bytesWritten = 0;
+      dictionaryUpload.bufferPos = 0;
+      if (!dictionaryStorageReady || !dictionaryUuidArg(*server, dictionaryUpload.bundleUuid) ||
+          !server->hasArg("name") || !dictionaryRuntimeFile(server->arg("name"), dictionaryUpload.runtimeFile)) {
+        LOG_ERR("WEB", "Rejected invalid dictionary file upload request");
+        return;
+      }
+      InstallError error;
+      if (!dictionaryInstaller.stagingFilePath(dictionaryUpload.bundleUuid, dictionaryUpload.runtimeFile,
+                                               dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), error) ||
+          !Storage.openFileForWrite("DIN", dictionaryUpload.filePath, dictionaryUpload.file)) {
+        LOG_ERR("WEB", "Could not open staged dictionary file: %s", dictionary::installer::installErrorName(error));
+        dictionaryUpload.filePath[0] = '\0';
+        return;
+      }
+      dictionaryUpload.valid = true;
+      break;
+    }
+
+    case UPLOAD_FILE_WRITE: {
+      if (!dictionaryUpload.valid) return;
+      const uint64_t pending =
+          static_cast<uint64_t>(dictionaryUpload.bytesWritten) + dictionaryUpload.bufferPos + upload.currentSize;
+      if (pending > dictionaryRuntimeFileLimit(dictionaryUpload.runtimeFile)) {
+        LOG_ERR("WEB", "Dictionary runtime file exceeds cap");
+        abortDictionaryUpload();
+        return;
+      }
+      const uint8_t* source = upload.buf;
+      size_t remaining = upload.currentSize;
+      while (remaining > 0 && dictionaryUpload.valid) {
+        const size_t available = dictionaryUpload.buffer.size() - dictionaryUpload.bufferPos;
+        const size_t chunk = std::min(available, remaining);
+        std::memcpy(dictionaryUpload.buffer.data() + dictionaryUpload.bufferPos, source, chunk);
+        dictionaryUpload.bufferPos += chunk;
+        source += chunk;
+        remaining -= chunk;
+        if (dictionaryUpload.bufferPos == dictionaryUpload.buffer.size()) flushDictionaryUpload();
+      }
+      break;
+    }
+
+    case UPLOAD_FILE_END: {
+      if (dictionaryUpload.valid && flushDictionaryUpload() && dictionaryUpload.file.sync()) {
+        dictionaryUpload.file.close();
+      } else {
+        abortDictionaryUpload();
+      }
+      break;
+    }
+
+    case UPLOAD_FILE_ABORTED:
+      abortDictionaryUpload();
+      break;
+  }
+}
+
+void CrossPointWebServer::handleDictionaryInstallUpload() {
+  if (dictionaryUpload.valid && !dictionaryUpload.file) {
+    char response[80]{};
+    std::snprintf(response, sizeof(response), "{\"ok\":true,\"bytes\":%lu}",
+                  static_cast<unsigned long>(dictionaryUpload.bytesWritten));
+    server->send(200, "application/json", response);
+  } else {
+    abortDictionaryUpload();
+    server->send(400, "application/json", "{\"error\":\"Dictionary file upload failed\"}");
+  }
+}
+
+void CrossPointWebServer::handleDictionaryInstallCommit() {
+  uint8_t uuid[16]{};
+  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+    return;
+  }
+  if (dictionaryUpload.file) {
+    server->send(409, "application/json", "{\"error\":\"Dictionary upload still active\"}");
+    return;
+  }
+  dictionary::installer::PackageInfo info;
+  dictionary::installer::InstallError error;
+  // Reuse the network-only upload buffer for full-file CRC streaming. This
+  // avoids a second allocation and keeps validation reads at 2 KB per chunk.
+  if (!dictionaryInstaller.commit(uuid, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), info, error)) {
+    LOG_ERR("WEB", "Dictionary commit failed: %s", dictionary::installer::installErrorName(error));
+    char response[96]{};
+    std::snprintf(response, sizeof(response), "{\"error\":\"%s\"}", dictionary::installer::installErrorName(error));
+    server->send(400, "application/json", response);
+    return;
+  }
+  char response[160]{};
+  std::snprintf(response, sizeof(response), "{\"ok\":true,\"lexemeCount\":%lu,\"runtimeBytes\":%llu}",
+                static_cast<unsigned long>(info.lexemeCount), static_cast<unsigned long long>(info.runtimeBytes));
+  server->send(200, "application/json", response);
+}
+
+void CrossPointWebServer::handleDictionaryInstallCancel() {
+  uint8_t uuid[16]{};
+  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+    return;
+  }
+  if (dictionaryUpload.file) abortDictionaryUpload();
+  dictionary::installer::InstallError error;
+  if (!dictionaryInstaller.cancel(uuid, error)) {
+    LOG_ERR("WEB", "Dictionary install cancellation failed: %s", dictionary::installer::installErrorName(error));
+    server->send(500, "application/json", "{\"error\":\"Could not cancel installation\"}");
+    return;
+  }
+  server->send(200, "application/json", "{\"ok\":true}");
+}
+
+void CrossPointWebServer::handleDictionaryRemove() {
+  uint8_t uuid[16]{};
+  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+    return;
+  }
+  if (dictionaryUpload.file) {
+    server->send(409, "application/json", "{\"error\":\"Dictionary upload still active\"}");
+    return;
+  }
+  dictionary::installer::InstallError error;
+  if (!dictionaryInstaller.remove(uuid, error)) {
+    LOG_ERR("WEB", "Dictionary removal failed: %s", dictionary::installer::installErrorName(error));
+    server->send(500, "application/json", "{\"error\":\"Dictionary removal failed\"}");
+    return;
+  }
+  server->send(200, "application/json", "{\"ok\":true}");
 }
 
 // --- Font management handlers ---

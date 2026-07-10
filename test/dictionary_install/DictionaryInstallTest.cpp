@@ -27,6 +27,7 @@ struct MemoryStorage {
   std::map<std::string, std::vector<uint8_t>> files;
   int renameCalls = 0;
   int failRenameCall = -1;
+  int validateCrcCalls = 0;
   bool failRemove = false;
 };
 
@@ -93,8 +94,16 @@ bool readAt(void* context, const char* path, const uint32_t offset, void* output
   return true;
 }
 
+bool validateCrc(void* context, const char* path, const uint32_t expectedCrc, uint8_t*, size_t) {
+  auto& storage = *static_cast<MemoryStorage*>(context);
+  ++storage.validateCrcCalls;
+  const auto& files = storage.files;
+  const auto found = files.find(path);
+  return found != files.end() && dictionary::updateCrc32(0, found->second.data(), found->second.size()) == expectedCrc;
+}
+
 StorageBackend backend(MemoryStorage& storage) {
-  return {&storage, ensureDirectory, exists, removeTree, renameTree, fileSize, readAt};
+  return {&storage, ensureDirectory, exists, removeTree, renameTree, fileSize, readAt, validateCrc};
 }
 
 void writeU16(std::vector<uint8_t>& data, const size_t offset, const uint16_t value) {
@@ -178,6 +187,21 @@ Installer openedInstaller(MemoryStorage& storage) {
 
 }  // namespace
 
+TEST(DictionaryInstaller, ParsesOnlyCanonicalOrCompactBundleUuids) {
+  uint8_t uuid[16]{};
+  EXPECT_TRUE(dictionary::installer::parseBundleUuid("0102030405060708090a0b0c0d0e0f10", uuid));
+  EXPECT_EQ(std::memcmp(uuid, UUID, sizeof(uuid)), 0);
+  EXPECT_TRUE(dictionary::installer::parseBundleUuid("01020304-0506-0708-090a-0b0c0d0e0f10", uuid));
+  EXPECT_EQ(std::memcmp(uuid, UUID, sizeof(uuid)), 0);
+  EXPECT_FALSE(dictionary::installer::parseBundleUuid("../0102030405060708090a0b0c0d0e0f10", uuid));
+  EXPECT_FALSE(dictionary::installer::parseBundleUuid("00000000-0000-0000-0000-000000000000", uuid));
+  EXPECT_FALSE(dictionary::installer::parseBundleUuid("01020304_0506-0708-090a-0b0c0d0e0f10", uuid));
+
+  char formatted[37]{};
+  dictionary::installer::formatBundleUuid(UUID, formatted);
+  EXPECT_STREQ(formatted, "01020304-0506-0708-090a-0b0c0d0e0f10");
+}
+
 TEST(DictionaryInstaller, ValidatesAndAtomicallyPublishesPackage) {
   MemoryStorage storage;
   Installer installer = openedInstaller(storage);
@@ -190,6 +214,7 @@ TEST(DictionaryInstaller, ValidatesAndAtomicallyPublishesPackage) {
       << dictionary::installer::installErrorName(error);
   EXPECT_EQ(info.lexemeCount, 1U);
   EXPECT_STREQ(info.sourceLanguage, "de");
+  EXPECT_EQ(storage.validateCrcCalls, 3);
   EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
   EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.installing-") + UUID_HEX));
 }
@@ -263,7 +288,28 @@ TEST(DictionaryInstaller, RecoversBothInterruptedReplacementPhases) {
   EXPECT_FALSE(storage.directories.contains(backup));
 }
 
-TEST(DictionaryInstaller, FailedRemovalRestoresInstalledPackage) {
+TEST(DictionaryInstaller, InspectsWithoutRescanningPayloadAndCancelsStaging) {
+  MemoryStorage storage;
+  Installer installer = openedInstaller(storage);
+  stage(installer, storage, fixture());
+  uint8_t scratch[64]{};
+  PackageInfo info;
+  InstallError error;
+  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
+  const int crcCallsAfterCommit = storage.validateCrcCalls;
+
+  PackageInfo inspected;
+  ASSERT_TRUE(installer.inspectInstalled(UUID, inspected, error));
+  EXPECT_EQ(inspected.lexemeCount, 1U);
+  EXPECT_EQ(storage.validateCrcCalls, crcCallsAfterCommit);
+
+  stage(installer, storage, fixture());
+  ASSERT_TRUE(installer.cancel(UUID, error));
+  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.installing-") + UUID_HEX));
+  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
+}
+
+TEST(DictionaryInstaller, RemovalCommitNeverRestoresPartialCleanup) {
   MemoryStorage storage;
   Installer installer = openedInstaller(storage);
   stage(installer, storage, fixture());
@@ -273,7 +319,12 @@ TEST(DictionaryInstaller, FailedRemovalRestoresInstalledPackage) {
   ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
 
   storage.failRemove = true;
-  EXPECT_FALSE(installer.remove(UUID, error));
-  EXPECT_EQ(error, InstallError::REMOVE_FAILED);
-  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
+  ASSERT_TRUE(installer.remove(UUID, error));
+  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
+  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.removing-") + UUID_HEX));
+
+  storage.failRemove = false;
+  ASSERT_TRUE(installer.recover(UUID, error));
+  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
+  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.removing-") + UUID_HEX));
 }
