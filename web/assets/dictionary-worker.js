@@ -4,6 +4,8 @@
   const HEADER_SIZE = 108;
   const SURFACE_HEADER_SIZE = 40;
   const SHARD_TOKENS = 64;
+  const LANGUAGE_FORMAT_VERSION = 2;
+  const MAX_SHARD_BLOB_BYTES = 24 * 1024;
   const UINT16_MAX = 0xffff;
   const UTF8 = new TextEncoder();
   const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
@@ -413,20 +415,13 @@
     const recordCount = shardCandidates.reduce((sum, candidates) => sum + candidates.length, 0);
     if (recordCount > 1000000) fail("book has too many candidates");
 
-    const surfaceMap = new Map();
+    const actionableShards = shardCandidates.map((candidates) => candidates.filter((candidate) => candidate.globalIds.length));
+    const actionableRecordCount = actionableShards.reduce((sum, candidates) => sum + candidates.length, 0);
     const globalSet = new Set();
-    for (const candidates of shardCandidates) {
-      for (const candidate of candidates) {
-        if (!surfaceMap.has(candidate.surface)) surfaceMap.set(candidate.surface, candidate);
-        candidate.globalIds.forEach((id) => globalSet.add(id));
-        candidate.componentIds.forEach((id) => globalSet.add(id));
-      }
-    }
+    actionableShards.forEach((candidates) => candidates.forEach((candidate) => candidate.globalIds.forEach((id) => globalSet.add(id))));
     const globalIds = [...globalSet].sort((a, b) => a - b);
-    if (globalIds.length > 32768 || surfaceMap.size > 65535) fail("book vocabulary exceeds format limits");
+    if (globalIds.length > 32768) fail("book vocabulary exceeds format limits");
     const localByGlobal = new Map(globalIds.map((id, index) => [id, index]));
-    const surfaces = [...surfaceMap.values()].sort((left, right) => compareBytes(UTF8.encode(left.surface), UTF8.encode(right.surface)));
-    const surfaceIds = new Map(surfaces.map((item, index) => [item.surface, index]));
 
     const spineDirectory = [];
     spineRanges.forEach((range) => {
@@ -434,41 +429,42 @@
       writeU32(spineDirectory, range.shardCount);
     });
     const shardDirectory = [];
-    const records = [];
-    let firstRecord = 0;
+    const shardBlobs = [];
     for (const range of spineRanges) {
       for (let localShard = 0; localShard < range.shardCount; localShard++) {
-        const candidates = shardCandidates[range.firstShard + localShard];
-        const tokenStart = range.sourceTokenBase + localShard * SHARD_TOKENS;
-        const tokenEnd = Math.min(range.sourceTokenBase + range.tokenCount, tokenStart + SHARD_TOKENS);
-        writeU32(shardDirectory, firstRecord);
-        writeU16(shardDirectory, candidates.length);
-        writeU16(shardDirectory, 0);
-        writeU32(shardDirectory, tokenStart);
-        writeU32(shardDirectory, tokenEnd);
+        const candidates = actionableShards[range.firstShard + localShard];
+        const blob = [];
         for (const candidate of candidates) {
           const encoded = UTF8.encode(candidate.surface);
           const localIds = candidate.globalIds.map((id) => localByGlobal.get(id));
-          writeU64(records, fnv1a64(encoded));
-          writeU16(records, surfaceIds.get(candidate.surface));
-          writeU16(records, localIds.length ? localIds[0] : UINT16_MAX);
-          writeU16(records, localIds.length > 1 ? localIds[1] : UINT16_MAX);
-          records.push(encoded.length, candidate.flags);
+          if (!localIds.length || localIds.length > 8) fail("surface analysis count exceeds version-2 limit");
+          const recordStart = blob.length;
+          writeU64(blob, fnv1a64(encoded));
+          writeU16(blob, 0);
+          blob.push(encoded.length, localIds.length, candidate.flags, 0);
+          writeU16(blob, candidate.confidence);
+          localIds.forEach((id) => writeU16(blob, id));
+          appendBytes(blob, encoded);
+          align4(blob);
+          blob[recordStart + 8] = (blob.length - recordStart) & 0xff;
+          blob[recordStart + 9] = ((blob.length - recordStart) >>> 8) & 0xff;
         }
-        firstRecord += candidates.length;
+        if (blob.length > MAX_SHARD_BLOB_BYTES) fail("shard blob exceeds version-2 limit");
+        const tokenStart = range.sourceTokenBase + localShard * SHARD_TOKENS;
+        const tokenEnd = Math.min(range.sourceTokenBase + range.tokenCount, tokenStart + SHARD_TOKENS);
+        writeU32(shardDirectory, shardBlobs.length);
+        writeU16(shardDirectory, blob.length);
+        writeU16(shardDirectory, candidates.length);
+        writeU32(shardDirectory, tokenStart);
+        writeU32(shardDirectory, tokenEnd);
+        writeU32(shardDirectory, 0);
+        appendBytes(shardBlobs, blob);
       }
     }
     const localLemmas = [];
-    const globalToLocal = [];
-    globalIds.forEach((globalId, localId) => {
-      writeU32(localLemmas, globalId);
-      writeU32(globalToLocal, globalId);
-      writeU16(globalToLocal, localId);
-      writeU16(globalToLocal, 0);
-    });
-    const surfaceDetails = buildSurfaceDetails(surfaces, localByGlobal);
+    globalIds.forEach((globalId) => writeU32(localLemmas, globalId));
     const metadataJson = UTF8.encode(
-      JSON.stringify({ analyzer: "crossink-exact-forms-de", analyzerVersion: 1, shardTokenCount: 64, tokenizerVersion: 1 }),
+      JSON.stringify({ analyzer: "crossink-exact-forms-de", analyzerVersion: 1, languageFormatVersion: 2, shardTokenCount: 64, tokenizerVersion: 1 }),
     );
     const metadata = [];
     appendBytes(metadata, UTF8.encode("CXLM"));
@@ -480,7 +476,7 @@
 
     const artifact = new Array(HEADER_SIZE).fill(0);
     const offsets = [];
-    for (const section of [spineDirectory, shardDirectory, records, localLemmas, globalToLocal, surfaceDetails, metadata]) {
+    for (const section of [spineDirectory, shardDirectory, shardBlobs, localLemmas, metadata]) {
       align4(artifact);
       offsets.push(artifact.length);
       appendBytes(artifact, section);
@@ -489,7 +485,7 @@
     const bytes = new Uint8Array(artifact);
     bytes.set(UTF8.encode("CXLG"), 0);
     const view = new DataView(bytes.buffer);
-    patchU16(view, 4, 1);
+    patchU16(view, 4, LANGUAGE_FORMAT_VERSION);
     patchU16(view, 6, HEADER_SIZE);
     patchU32(view, 8, 0);
     patchU16(view, 12, 1);
@@ -500,9 +496,9 @@
     patchU16(view, 48, spines.length);
     patchU16(view, 50, 0);
     patchU32(view, 52, shardCandidates.length);
-    patchU32(view, 56, recordCount);
+    patchU32(view, 56, actionableRecordCount);
     patchU32(view, 60, globalIds.length);
-    patchU32(view, 64, surfaces.length);
+    patchU32(view, 64, 0);
     offsets.forEach((offset, index) => patchU32(view, 68 + index * 4, offset));
     patchU32(view, 96, bytes.length);
     patchU32(view, 100, crc32(bytes.subarray(HEADER_SIZE)));

@@ -11,7 +11,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from dictionary.book_compiler import (  # noqa: E402
     CANDIDATE_AMBIGUOUS,
-    CANDIDATE_COMPOUND,
     CANDIDATE_NORMALIZED_FALLBACK,
     compile_book,
     load_compiler_dictionary,
@@ -60,9 +59,9 @@ def artifact_header(data):
         "shardOffset": values[16],
         "recordsOffset": values[17],
         "lemmasOffset": values[18],
-        "globalOffset": values[19],
-        "surfaceOffset": values[20],
-        "metadataOffset": values[21],
+        "metadataOffset": values[19],
+        "reservedOffset1": values[20],
+        "reservedOffset2": values[21],
         "fileSize": values[22],
         "payloadCrc": values[23],
     }
@@ -72,51 +71,28 @@ def decoded_surfaces(data):
     header = artifact_header(data)
     global_ids = [struct.unpack_from("<I", data, header["lemmasOffset"] + index * 4)[0]
                   for index in range(header["lemmaCount"])]
-    surface_offset = header["surfaceOffset"]
-    (
-        magic,
-        version,
-        section_header_size,
-        surface_count,
-        _analysis_count,
-        _component_count,
-        record_offset,
-        analysis_offset,
-        component_offset,
-        string_offset,
-        section_size,
-    ) = struct.unpack_from("<4sHHIIIIIIII", data, surface_offset)
-    assert (magic, version, section_header_size) == (b"CXSD", 1, 40)
-    assert surface_count == header["surfaceCount"]
-    assert surface_offset + section_size == header["metadataOffset"]
-
     surfaces = {}
-    for index in range(surface_count):
-        record = struct.unpack_from("<IIIHBBHH", data, surface_offset + record_offset + index * 20)
-        (
-            string_relative,
-            first_analysis,
-            first_component,
-            length,
-            analysis_count,
-            component_count,
-            confidence,
-            flags,
-        ) = record
-        surface = data[surface_offset + string_offset + string_relative:
-                       surface_offset + string_offset + string_relative + length].decode("utf-8")
-        analyses = [global_ids[struct.unpack_from("<H", data, surface_offset + analysis_offset +
-                                                  (first_analysis + item) * 2)[0]]
-                    for item in range(analysis_count)]
-        components = [global_ids[struct.unpack_from("<H", data, surface_offset + component_offset +
-                                                    (first_component + item) * 2)[0]]
-                      for item in range(component_count)]
-        surfaces[surface] = {
-            "analyses": analyses,
-            "components": components,
-            "confidence": confidence,
-            "flags": flags,
-        }
+    for shard_index in range(header["shardCount"]):
+        blob_offset, blob_length, count, _start, _end, reserved = struct.unpack_from(
+            "<IHHIII", data, header["shardOffset"] + shard_index * 20)
+        assert reserved == 0
+        cursor = header["recordsOffset"] + blob_offset
+        blob_end = cursor + blob_length
+        for _ in range(count):
+            _hash, record_size, length, analysis_count, flags, record_reserved, confidence = struct.unpack_from(
+                "<QHBBBBH", data, cursor)
+            assert record_reserved == 0
+            local_ids = struct.unpack_from(f"<{analysis_count}H", data, cursor + 16)
+            text_start = cursor + 16 + analysis_count * 2
+            surface = data[text_start:text_start + length].decode("utf-8")
+            surfaces[surface] = {
+                "analyses": [global_ids[local_id] for local_id in local_ids],
+                "components": [],
+                "confidence": confidence,
+                "flags": flags,
+            }
+            cursor += record_size
+        assert cursor == blob_end
     return surfaces
 
 
@@ -142,13 +118,11 @@ class GermanBookCompilerTest(unittest.TestCase):
         self.assertIn('<span data-crossink-lang-shard="0"></span>Die', compiled.xhtml_spines[0])
         self.assertNotIn("data-crossink-lang-shard=\"1\"", compiled.xhtml_spines[0])
         surfaces = decoded_surfaces(compiled.language_artifact)
-        self.assertEqual(set(surfaces), {"Häusern", "Gingen", "liebe", "Krankenhausaufnahme"})
+        self.assertEqual(set(surfaces), {"Häusern", "Gingen", "liebe"})
         self.assertEqual(len(surfaces["liebe"]["analyses"]), 2)
         self.assertTrue(surfaces["liebe"]["flags"] & CANDIDATE_AMBIGUOUS)
         self.assertTrue(surfaces["Gingen"]["flags"] & CANDIDATE_NORMALIZED_FALLBACK)
         self.assertEqual(surfaces["Gingen"]["confidence"], 900)
-        self.assertEqual(len(surfaces["Krankenhausaufnahme"]["components"]), 2)
-        self.assertTrue(surfaces["Krankenhausaufnahme"]["flags"] & CANDIDATE_COMPOUND)
 
     def test_shards_every_64_source_tokens_and_deduplicates_per_shard(self):
         dictionary = compiler_dictionary()
@@ -157,25 +131,26 @@ class GermanBookCompilerTest(unittest.TestCase):
 
         self.assertEqual(header["shardCount"], 2)
         self.assertEqual(header["recordCount"], 2)
-        self.assertEqual(header["surfaceCount"], 1)
+        self.assertEqual(header["surfaceCount"], 0)
         self.assertEqual(compiled.xhtml_spines[0].count("data-crossink-lang-shard"), 2)
-        first = struct.unpack_from("<IHHII", compiled.language_artifact, header["shardOffset"])
-        second = struct.unpack_from("<IHHII", compiled.language_artifact, header["shardOffset"] + 16)
-        self.assertEqual((first[0], first[1], first[3], first[4]), (0, 1, 0, 64))
-        self.assertEqual((second[0], second[1], second[3], second[4]), (1, 1, 64, 65))
+        first = struct.unpack_from("<IHHIII", compiled.language_artifact, header["shardOffset"])
+        second = struct.unpack_from("<IHHIII", compiled.language_artifact, header["shardOffset"] + 20)
+        self.assertEqual((first[2], first[3], first[4]), (1, 0, 64))
+        self.assertEqual((second[2], second[3], second[4]), (1, 64, 65))
+        self.assertEqual(second[0], first[1])
 
     def test_artifact_header_offsets_and_crcs_are_self_consistent(self):
         compiled = compile_book(["<p>Häusern gingen.</p>", "<p>liebe</p>"], compiler_dictionary())
         data = compiled.language_artifact
         header = artifact_header(data)
 
-        self.assertEqual((header["magic"], header["version"], header["headerSize"]), (b"CXLG", 1, 108))
+        self.assertEqual((header["magic"], header["version"], header["headerSize"]), (b"CXLG", 2, 108))
         self.assertEqual(header["spineCount"], 2)
         self.assertEqual(header["fileSize"], len(data))
         self.assertEqual(header["payloadCrc"], zlib.crc32(data[108:]) & 0xFFFFFFFF)
         self.assertEqual(struct.unpack_from("<I", data, 104)[0], zlib.crc32(data[:104]) & 0xFFFFFFFF)
         offsets = [header[name] for name in ("spineOffset", "shardOffset", "recordsOffset", "lemmasOffset",
-                                             "globalOffset", "surfaceOffset", "metadataOffset")]
+                                             "metadataOffset")]
         self.assertEqual(offsets, sorted(offsets))
         self.assertTrue(all(offset % 4 == 0 for offset in offsets))
 

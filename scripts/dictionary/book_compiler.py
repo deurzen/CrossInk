@@ -24,6 +24,8 @@ MAX_SHARDS = 65535
 MAX_RECORDS = 1_000_000
 MAX_LOCAL_LEMMAS = 32768
 MAX_LOCAL_SURFACES = 65535
+MAX_SHARD_BLOB_BYTES = 24 * 1024
+LANGUAGE_FORMAT_VERSION = 2
 
 CANDIDATE_AMBIGUOUS = 0x01
 CANDIDATE_COMPOUND = 0x02
@@ -380,62 +382,58 @@ def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> Com
     if record_count > MAX_RECORDS:
         raise BookCompileError(f"book exceeds {MAX_RECORDS} shard candidates")
 
-    surface_by_text: dict[str, Candidate] = {}
-    global_ids: set[int] = set()
-    for candidates in shard_candidates:
-        for candidate in candidates:
-            surface_by_text.setdefault(candidate.surface, candidate)
-            global_ids.update(candidate.global_lexeme_ids)
-            global_ids.update(candidate.component_global_ids)
+    # Version 2 emits only actionable whole-word analyses. Component-only
+    # guesses have no definition target and are intentionally excluded.
+    actionable_shards = [[candidate for candidate in candidates if candidate.global_lexeme_ids]
+                         for candidates in shard_candidates]
+    record_count = sum(len(items) for items in actionable_shards)
+    global_ids = {global_id for candidates in actionable_shards for candidate in candidates
+                  for global_id in candidate.global_lexeme_ids}
     if len(global_ids) > MAX_LOCAL_LEMMAS:
         raise BookCompileError(f"book exceeds {MAX_LOCAL_LEMMAS} local lemmas")
-    if len(surface_by_text) > MAX_LOCAL_SURFACES:
-        raise BookCompileError(f"book exceeds {MAX_LOCAL_SURFACES} local surfaces")
 
     ordered_global_ids = sorted(global_ids)
     local_by_global = {global_id: local_id for local_id, global_id in enumerate(ordered_global_ids)}
-    surfaces = [surface_by_text[key] for key in sorted(surface_by_text, key=lambda value: value.encode("utf-8"))]
-    surface_id = {candidate.surface: index for index, candidate in enumerate(surfaces)}
-
-    spine_directory = bytearray()
-    for first_shard, shard_count, _, _ in spine_ranges:
-        spine_directory.extend(struct.pack("<II", first_shard, shard_count))
-
+    spine_directory = b"".join(struct.pack("<II", first_shard, shard_count)
+                               for first_shard, shard_count, _, _ in spine_ranges)
     shard_directory = bytearray()
-    records = bytearray()
-    first_record = 0
+    shard_blobs = bytearray()
     for spine_index, (_, shard_count, source_start, token_count) in enumerate(spine_ranges):
         spine_first_shard = spine_ranges[spine_index][0]
         for local_shard in range(shard_count):
-            candidates = shard_candidates[spine_first_shard + local_shard]
+            candidates = actionable_shards[spine_first_shard + local_shard]
+            blob = bytearray()
+            for candidate in candidates:
+                encoded = candidate.surface.encode("utf-8")
+                local_ids = [local_by_global[item] for item in candidate.global_lexeme_ids]
+                if not 1 <= len(local_ids) <= 8:
+                    raise BookCompileError("surface analysis count exceeds version-2 limit")
+                record_start = len(blob)
+                blob.extend(struct.pack("<QHBBBBH", _fnv1a64(encoded), 0, len(encoded), len(local_ids),
+                                        candidate.flags, 0, candidate.confidence))
+                blob.extend(struct.pack(f"<{len(local_ids)}H", *local_ids))
+                blob.extend(encoded)
+                _align4(blob)
+                struct.pack_into("<H", blob, record_start + 8, len(blob) - record_start)
+            if len(blob) > MAX_SHARD_BLOB_BYTES:
+                raise BookCompileError(f"shard blob exceeds {MAX_SHARD_BLOB_BYTES} bytes")
             token_start = source_start + local_shard * SHARD_TOKEN_COUNT
             token_end = min(source_start + token_count, token_start + SHARD_TOKEN_COUNT)
-            shard_directory.extend(struct.pack("<IHHII", first_record, len(candidates), 0, token_start, token_end))
-            for candidate in candidates:
-                local_ids = [local_by_global[item] for item in candidate.global_lexeme_ids]
-                primary = local_ids[0] if local_ids else UINT16_MAX
-                alternate = local_ids[1] if len(local_ids) > 1 else UINT16_MAX
-                encoded = candidate.surface.encode("utf-8")
-                records.extend(struct.pack("<QHHHBB", _fnv1a64(encoded), surface_id[candidate.surface], primary,
-                                           alternate, len(encoded), candidate.flags))
-            first_record += len(candidates)
+            shard_directory.extend(struct.pack("<IHHIII", len(shard_blobs), len(blob), len(candidates),
+                                               token_start, token_end, 0))
+            shard_blobs.extend(blob)
 
     local_lemmas = b"".join(struct.pack("<I", global_id) for global_id in ordered_global_ids)
-    global_to_local = b"".join(
-        struct.pack("<IHH", global_id, local_by_global[global_id], 0) for global_id in ordered_global_ids
-    )
-    surface_details = _build_surface_details(surfaces, local_by_global)
     metadata_json = json.dumps(
         {"analyzer": "crossink-exact-forms-de", "analyzerVersion": ANALYZER_VERSION,
-         "shardTokenCount": SHARD_TOKEN_COUNT, "tokenizerVersion": TOKENIZER_VERSION},
-        sort_keys=True, separators=(",", ":")
+         "languageFormatVersion": LANGUAGE_FORMAT_VERSION, "shardTokenCount": SHARD_TOKEN_COUNT,
+         "tokenizerVersion": TOKENIZER_VERSION}, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
     metadata = struct.pack("<4sHHII", b"CXLM", 1, 16, len(metadata_json), 0) + metadata_json
 
     artifact = bytearray(LANGUAGE_HEADER_SIZE)
     sections = []
-    for section in (bytes(spine_directory), bytes(shard_directory), bytes(records), local_lemmas,
-                    global_to_local, surface_details, metadata):
+    for section in (spine_directory, bytes(shard_directory), bytes(shard_blobs), local_lemmas, metadata):
         _align4(artifact)
         sections.append(len(artifact))
         artifact.extend(section)
@@ -444,12 +442,11 @@ def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> Com
         raise BookCompileError("language artifact exceeds 64 MiB")
 
     struct.pack_into("<4sHHIHH16s8s8sHHIIIIIIIIIIIII", artifact, 0,
-                     b"CXLG", 1, LANGUAGE_HEADER_SIZE, 0, TOKENIZER_VERSION, ANALYZER_VERSION,
+                     b"CXLG", LANGUAGE_FORMAT_VERSION, LANGUAGE_HEADER_SIZE, 0, TOKENIZER_VERSION, ANALYZER_VERSION,
                      dictionary.bundle_uuid, _language_field(dictionary.source_language),
                      _language_field(dictionary.target_language), len(xhtml_spines), 0,
-                     len(shard_candidates), record_count, len(ordered_global_ids), len(surfaces),
-                     sections[0], sections[1], sections[2], sections[3], sections[4], sections[5], sections[6],
-                     file_size, 0)
+                     len(shard_candidates), record_count, len(ordered_global_ids), 0,
+                     sections[0], sections[1], sections[2], sections[3], sections[4], 0, 0, file_size, 0)
     struct.pack_into("<I", artifact, 100, _crc32(artifact[LANGUAGE_HEADER_SIZE:]))
     struct.pack_into("<I", artifact, 104, _crc32(artifact[:104]))
     return CompiledBook(tuple(transformed), bytes(artifact))
