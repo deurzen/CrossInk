@@ -15,6 +15,9 @@ class HalStorage {
   HalStorage();
   bool begin();
   bool ready() const;
+  // Performs an uncached FAT scan. Returns false if the card is unavailable or
+  // the filesystem cannot report a trustworthy free-cluster count.
+  bool spaceBytes(uint64_t& totalBytes, uint64_t& freeBytes);
   std::vector<String> listFiles(const char* path = "/", int maxFiles = 200);
   // Read the entire file at `path` into a String. Returns empty string on failure.
   String readFile(const char* path);
@@ -90,6 +93,7 @@ class HalFile : public Print {
   size_t write(const void* buf, size_t count);
   size_t write(uint8_t b) override;
   bool sync();
+  bool truncate(uint64_t length);
   bool rename(const char* newPath);
   bool isDirectory() const;
   void rewindDirectory();

@@ -16,6 +16,7 @@ Keep this file focused on repo-specific gotchas that are worth reusing in future
 ## Real Hardware / Storage
 
 - SdFat on hardware allows only one open reader per file path at a time. If a fallback needs to reopen the same file, close the first handle before reopening.
+- CrossInk pins the `crossink` branch of `deurzen/freeink-sdk`. Keep the fork delta minimal: its current Device Sync addition is only the uncached, result-returning `SDCardManager::sdSpaceBytes()` API; truncate remains a CrossInk `HalFile` wrapper over existing SdFat.
 
 ## Rendering / Reader Pipeline
 

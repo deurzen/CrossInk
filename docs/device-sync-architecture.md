@@ -7,6 +7,7 @@ Implemented foundation:
 - Phase 0 host and simulator build blockers are repaired in the custom branch.
 - Phase 2 policy groundwork defines bounded category permissions, ordered path rules, FAT-style matching, two-peer policy intersection, and crash-safe persistence for the versioned length/CRC-validated policy format, with host power-cut tests.
 - `lib/AtomicFile` provides no-heap, callback-based old-or-new replacement, future-format preservation, and non-resurrecting removal primitives with host power-cut fault injection.
+- The pinned FreeInk fork adds one uncached, result-returning SD space query; CrossInk's HAL exposes it plus SdFat's existing 64-bit truncate operation. No separate SDK metadata-sync API is required by the current SdFat implementation.
 - Global `global_stats.bin`, per-book `stats_v5.bin`, EPUB `progress.bin`, `reader_settings.bin`, bookmark stores, clipping stores, device settings/state, and the shared recent/Wi-Fi/OPDS/KOReader JSON stores use the new primitives; journals and Device Sync transport remain pending.
 
 Target devices: Xteink X3 and X4 (ESP32-C3, no PSRAM, SD-backed storage).
@@ -877,12 +878,12 @@ A multi-file sync is intentionally not atomic as a unit. Per-file durability and
 
 ### 15.1 Required HAL additions
 
-Add thin, verified HAL/SDK methods for:
+Implemented thin HAL/SDK methods:
 
-- `freeBytes()` or equivalent 64-bit capacity/free-space query.
-- `truncate(path/file, uint64_t length)` for safe resume-tail removal.
-- `syncVolumeMetadata()` if SdFat/FsVolume exposes a meaningful cache sync for rename/directory metadata.
-- Optional FAT timestamp/stat retrieval without opening a second reader on the same path.
+- `HalStorage::spaceBytes()` performs an uncached 64-bit capacity/free-space query and reports scan failure separately from an empty card.
+- `HalFile::truncate(uint64_t)` exposes the existing SdFat operation for safe resume-tail removal.
+
+The pinned SdFat implementation's `FsFile::sync()` flushes file data, directory fields, volume caches, and the block device; rename also ends in a volume cache sync. A separate fork-only `syncVolumeMetadata()` wrapper would duplicate that behavior, so it should be added only if hardware fault testing proves a missing durability boundary. Optional FAT timestamp/stat retrieval remains deferred until a concrete manifest requirement justifies it.
 
 Do not reach around `HalStorage` in Device Sync.
 
@@ -1230,7 +1231,7 @@ Existing files expected to change:
 
 ```text
 lib/hal/HalStorage.h/.cpp
-freeink-sdk SDCardManager abstraction if HAL cannot implement the needed volume operations
+freeink-sdk SDCardManager result API for the one volume operation HAL cannot derive reliably
 src/activities/network/NetworkModeSelectionActivity.*
 src/activities/network/CrossPointWebServerActivity.* or routing replacement
 src/activities/ActivityManager.*
@@ -1251,6 +1252,12 @@ test/ host protocol/merge/transaction tests
 ```
 
 Keep SDK-specific Wi-Fi, ESP-NOW, and crypto calls behind `DeviceSyncDiscovery`, `DeviceSyncCrypto`, and `DeviceSyncTransport`. Core planning, merge, manifest, journal, and recovery logic must compile in host tests.
+
+### 21.1 Fork maintenance boundary
+
+CrossInk pins an exact commit from the `crossink` branch of `deurzen/freeink-sdk`. Keep that branch close to FreeInk `main`, and keep Device Sync policy, protocol, and transfer logic out of the SDK. SDK changes are limited to hardware/filesystem capabilities that cannot be implemented correctly through the existing public interface. Each submodule update should remain a separate reviewable CrossInk commit and must build against the new pin before it lands.
+
+Do not create a simulator fork solely to mirror methods before simulator code calls them. Add simulator compatibility through the simulator's normal upstream path or a narrow CrossInk-side adapter when the first caller is implemented.
 
 ## 22. Implementation Plan
 
