@@ -29,8 +29,8 @@ bool validPaths(const Paths& paths) {
          sameParentDirectory(paths.finalPath, paths.backupPath);
 }
 
-bool isValid(const char* path, ValidateCallback validator, const void* context) {
-  return Storage.exists(path) && (validator == nullptr || validator(path, context));
+ValidationResult validateIfPresent(const char* path, ValidateCallback validator, const void* context) {
+  return Storage.exists(path) ? validator(path, context) : ValidationResult::Invalid;
 }
 
 bool removeIfPresent(const char* moduleName, const char* path) {
@@ -46,7 +46,7 @@ bool promoteCandidate(const char* moduleName, const char* candidatePath, const c
     LOG_ERR(logModule(moduleName), "Could not restore atomic file %s from %s", finalPath, candidatePath);
     return false;
   }
-  if (validator == nullptr || validator(finalPath, context)) return true;
+  if (validator(finalPath, context) == ValidationResult::Valid) return true;
   LOG_ERR(logModule(moduleName), "Restored atomic file failed validation: %s", finalPath);
   return false;
 }
@@ -60,17 +60,22 @@ bool recover(const char* moduleName, const Paths& paths, ValidateCallback valida
   }
 
   const bool finalExists = Storage.exists(paths.finalPath);
-  const bool finalValid = finalExists && (validator == nullptr || validator(paths.finalPath, context));
-  if (finalValid) {
+  const ValidationResult finalResult = validateIfPresent(paths.finalPath, validator, context);
+  const ValidationResult backupResult = validateIfPresent(paths.backupPath, validator, context);
+  const ValidationResult tempResult = validateIfPresent(paths.tempPath, validator, context);
+  if (finalResult == ValidationResult::Unsupported || backupResult == ValidationResult::Unsupported ||
+      tempResult == ValidationResult::Unsupported) {
+    LOG_ERR(logModule(moduleName), "Unsupported atomic file version preserved: %s", paths.finalPath);
+    return false;
+  }
+
+  if (finalResult == ValidationResult::Valid) {
     // A valid final is authoritative. A temp can only be an interrupted newer
     // attempt; choosing the old final is the conservative old-or-new recovery.
     return removeIfPresent(moduleName, paths.tempPath);
   }
 
-  const bool backupValid = isValid(paths.backupPath, validator, context);
-  const bool tempValid = isValid(paths.tempPath, validator, context);
-
-  if (backupValid) {
+  if (backupResult == ValidationResult::Valid) {
     if (finalExists && !removeIfPresent(moduleName, paths.finalPath)) return false;
     if (!promoteCandidate(moduleName, paths.backupPath, paths.finalPath, validator, context)) return false;
     if (!removeIfPresent(moduleName, paths.tempPath)) return false;
@@ -78,7 +83,7 @@ bool recover(const char* moduleName, const Paths& paths, ValidateCallback valida
     return true;
   }
 
-  if (tempValid) {
+  if (tempResult == ValidationResult::Valid) {
     if (finalExists && !removeIfPresent(moduleName, paths.finalPath)) return false;
     if (!promoteCandidate(moduleName, paths.tempPath, paths.finalPath, validator, context)) return false;
     LOG_DBG(logModule(moduleName), "Recovered atomic file from temp: %s", paths.finalPath);
@@ -132,9 +137,10 @@ bool write(const char* moduleName, const Paths& paths, WriteCallback writer, Val
     removeIfPresent(moduleName, paths.tempPath);
     return false;
   }
-  if (validator != nullptr && !validator(paths.tempPath, context)) {
+  const ValidationResult tempResult = validator(paths.tempPath, context);
+  if (tempResult != ValidationResult::Valid) {
     LOG_ERR(logModule(moduleName), "Atomic temp file failed validation: %s", paths.tempPath);
-    removeIfPresent(moduleName, paths.tempPath);
+    if (tempResult == ValidationResult::Invalid) removeIfPresent(moduleName, paths.tempPath);
     return false;
   }
 
@@ -156,10 +162,12 @@ bool write(const char* moduleName, const Paths& paths, WriteCallback writer, Val
     return false;
   }
 
-  if (validator == nullptr || validator(paths.finalPath, context)) return true;
+  const ValidationResult promotedResult = validator(paths.finalPath, context);
+  if (promotedResult == ValidationResult::Valid) return true;
 
   LOG_ERR(logModule(moduleName), "Promoted atomic file failed validation: %s", paths.finalPath);
-  if (hadFinal && isValid(paths.backupPath, validator, context)) {
+  if (promotedResult == ValidationResult::Unsupported) return false;
+  if (hadFinal && validateIfPresent(paths.backupPath, validator, context) == ValidationResult::Valid) {
     if (!removeIfPresent(moduleName, paths.finalPath) || !Storage.rename(paths.backupPath, paths.finalPath)) {
       LOG_ERR(logModule(moduleName), "Could not restore atomic backup after validation failure: %s", paths.finalPath);
     }

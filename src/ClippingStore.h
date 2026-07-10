@@ -5,6 +5,9 @@
 #include <vector>
 
 class HalFile;
+namespace AtomicFile {
+enum class ValidationResult : uint8_t;
+}
 
 inline constexpr size_t CLIPPING_CHAPTER_TITLE_MAX = 48;
 inline constexpr size_t CLIPPING_TEXT_MAX = 512;
@@ -78,7 +81,7 @@ class ClippingStore {
   bool writeToFile() const;
 
   static bool writeAtomicFile(HalFile& file, const void* context);
-  static bool validateAtomicFile(const char* path, const void* context);
+  static AtomicFile::ValidationResult validateAtomicFile(const char* path, const void* context);
   static bool recoverAtomicFile(const std::string& path);
   static bool removeAtomicFile(const std::string& path);
 };

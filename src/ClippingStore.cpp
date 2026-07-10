@@ -108,15 +108,23 @@ bool ClippingStore::writeAtomicFile(HalFile& file, const void* context) {
   return true;
 }
 
-bool ClippingStore::validateAtomicFile(const char* path, const void*) {
+AtomicFile::ValidationResult ClippingStore::validateAtomicFile(const char* path, const void*) {
   HalFile file;
-  if (!Storage.openFileForRead("CLIP", path, file)) return false;
+  if (!Storage.openFileForRead("CLIP", path, file)) return AtomicFile::ValidationResult::Invalid;
 
   uint8_t version = 0;
+  if (!serialization::tryReadPod(file, version)) {
+    file.close();
+    return AtomicFile::ValidationResult::Invalid;
+  }
+  if (version > VERSION) {
+    file.close();
+    return AtomicFile::ValidationResult::Unsupported;
+  }
+
   uint16_t count = 0;
-  bool valid = serialization::tryReadPod(file, version) && version == VERSION &&
-               serialization::tryReadPod(file, count) && count <= CLIPPING_MAX_PER_BOOK && skipSerializedString(file) &&
-               skipSerializedString(file) && skipSerializedString(file);
+  bool valid = version == VERSION && serialization::tryReadPod(file, count) && count <= CLIPPING_MAX_PER_BOOK &&
+               skipSerializedString(file) && skipSerializedString(file) && skipSerializedString(file);
 
   constexpr uint32_t fixedRecordSize = sizeof(uint16_t) * 8 + sizeof(uint32_t) + CLIPPING_CHAPTER_TITLE_MAX;
   for (uint16_t i = 0; valid && i < count; ++i) {
@@ -124,7 +132,7 @@ bool ClippingStore::validateAtomicFile(const char* path, const void*) {
   }
   valid = valid && file.available() == 0;
   file.close();
-  return valid;
+  return valid ? AtomicFile::ValidationResult::Valid : AtomicFile::ValidationResult::Invalid;
 }
 
 bool ClippingStore::recoverAtomicFile(const std::string& path) {

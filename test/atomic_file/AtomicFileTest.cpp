@@ -20,9 +20,11 @@ bool writePayload(HalFile& file, const void* context) {
   return file.write(payload->payload, length) == length;
 }
 
-bool validatePayload(const char* path, const void*) {
+AtomicFile::ValidationResult validatePayload(const char* path, const void*) {
   const std::string* data = Storage.getFile(path);
-  return data != nullptr && (*data == kOldPayload || *data == kNewPayload);
+  if (data != nullptr && *data == "future-state") return AtomicFile::ValidationResult::Unsupported;
+  return data != nullptr && (*data == kOldPayload || *data == kNewPayload) ? AtomicFile::ValidationResult::Valid
+                                                                           : AtomicFile::ValidationResult::Invalid;
 }
 
 void expectValidFinal() {
@@ -170,6 +172,42 @@ TEST_F(AtomicFileTest, InvalidFinalRestoresValidBackup) {
   ASSERT_TRUE(AtomicFile::recover("TEST", kPaths, validatePayload, &context));
   ASSERT_NE(Storage.getFile(kPaths.finalPath), nullptr);
   EXPECT_EQ(*Storage.getFile(kPaths.finalPath), kOldPayload);
+}
+
+TEST_F(AtomicFileTest, UnsupportedFinalBlocksRecoveryAndWriteWithoutMutation) {
+  Storage.setFile(kPaths.finalPath, "future-state");
+  Storage.setFile(kPaths.backupPath, kOldPayload);
+
+  EXPECT_FALSE(AtomicFile::recover("TEST", kPaths, validatePayload, &context));
+  EXPECT_FALSE(AtomicFile::write("TEST", kPaths, writePayload, validatePayload, &context));
+  EXPECT_EQ(*Storage.getFile(kPaths.finalPath), "future-state");
+  EXPECT_EQ(*Storage.getFile(kPaths.backupPath), kOldPayload);
+  EXPECT_EQ(Storage.getFile(kPaths.tempPath), nullptr);
+}
+
+TEST_F(AtomicFileTest, UnsupportedTempIsPreservedBesideValidFinal) {
+  Storage.setFile(kPaths.tempPath, "future-state");
+
+  EXPECT_FALSE(AtomicFile::recover("TEST", kPaths, validatePayload, &context));
+  EXPECT_EQ(*Storage.getFile(kPaths.finalPath), kOldPayload);
+  EXPECT_EQ(*Storage.getFile(kPaths.tempPath), "future-state");
+}
+
+TEST_F(AtomicFileTest, UnsupportedBackupBlocksOlderWrite) {
+  Storage.setFile(kPaths.backupPath, "future-state");
+
+  EXPECT_FALSE(AtomicFile::write("TEST", kPaths, writePayload, validatePayload, &context));
+  EXPECT_EQ(*Storage.getFile(kPaths.finalPath), kOldPayload);
+  EXPECT_EQ(*Storage.getFile(kPaths.backupPath), "future-state");
+  EXPECT_EQ(Storage.getFile(kPaths.tempPath), nullptr);
+}
+
+TEST_F(AtomicFileTest, UnsupportedWriterOutputIsPreservedForDiagnosis) {
+  context.payload = "future-state";
+
+  EXPECT_FALSE(AtomicFile::write("TEST", kPaths, writePayload, validatePayload, &context));
+  EXPECT_EQ(*Storage.getFile(kPaths.finalPath), kOldPayload);
+  EXPECT_EQ(*Storage.getFile(kPaths.tempPath), "future-state");
 }
 
 TEST_F(AtomicFileTest, RemoveDeletesSidecarsBeforeFinal) {

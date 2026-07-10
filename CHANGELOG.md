@@ -7,6 +7,7 @@
 - Saved clippings now use validated temporary and backup files, including crash-safe deletion that cannot restore cleared highlights.
 - Bookmarks now validate and recover interrupted saves across legacy and current formats, and cleared bookmark files cannot return from stale backups.
 - Per-book reader settings now recover interrupted updates and resets without replacing the last valid settings snapshot.
+- Atomic state recovery now preserves files from newer firmware versions instead of replacing them with older backups.
 
 ## [v1.4.0] - 2026-07-10
 

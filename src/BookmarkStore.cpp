@@ -80,15 +80,23 @@ bool skipSerializedString(HalFile& file) {
   return serialization::tryReadPod(file, length) && skipBytes(file, length);
 }
 
-bool validateBookmarkFile(const char* path, const void*) {
+AtomicFile::ValidationResult validateBookmarkFile(const char* path, const void*) {
   HalFile file;
-  if (!Storage.openFileForRead("BKS", path, file)) return false;
+  if (!Storage.openFileForRead("BKS", path, file)) return AtomicFile::ValidationResult::Invalid;
 
   uint8_t version = 0;
+  if (!serialization::tryReadPod(file, version)) {
+    file.close();
+    return AtomicFile::ValidationResult::Invalid;
+  }
+  if (version > VERSION) {
+    file.close();
+    return AtomicFile::ValidationResult::Unsupported;
+  }
+
   uint16_t count = 0;
-  bool valid = serialization::tryReadPod(file, version) && tryReadBookmarkCount(file, version, count) &&
-               count <= MAX_BOOKMARKS && skipSerializedString(file) && skipSerializedString(file) &&
-               skipSerializedString(file);
+  bool valid = tryReadBookmarkCount(file, version, count) && count <= MAX_BOOKMARKS && skipSerializedString(file) &&
+               skipSerializedString(file) && skipSerializedString(file);
 
   uint32_t recordSize = sizeof(uint16_t) + sizeof(float) + sizeof(uint32_t) + BOOKMARK_CHAPTER_TITLE_MAX;
   if (version >= PARAGRAPH_ANCHOR_VERSION) recordSize += sizeof(uint16_t);
@@ -98,7 +106,7 @@ bool validateBookmarkFile(const char* path, const void*) {
   }
   valid = valid && file.available() == 0;
   file.close();
-  return valid;
+  return valid ? AtomicFile::ValidationResult::Valid : AtomicFile::ValidationResult::Invalid;
 }
 
 bool makeBookmarkSidecarPaths(const std::string& path, char (&tempPath)[BOOKMARK_ATOMIC_PATH_MAX],

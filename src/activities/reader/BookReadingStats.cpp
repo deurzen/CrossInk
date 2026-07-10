@@ -180,15 +180,15 @@ bool writeStatsFile(HalFile& file, const void* context) {
   return false;
 }
 
-bool validateStatsFile(const char* path, const void*) {
+AtomicFile::ValidationResult validateStatsFile(const char* path, const void*) {
   HalFile file;
-  if (!Storage.openFileForRead("STATS", path, file)) return false;
+  if (!Storage.openFileForRead("STATS", path, file)) return AtomicFile::ValidationResult::Invalid;
   uint8_t version = 0;
-  const bool valid = file.fileSize64() == STATS_FILE_SIZE &&
-                     file.read(&version, sizeof(version)) == static_cast<int>(sizeof(version)) &&
-                     version == STATS_FILE_VERSION;
+  const bool hasVersion = file.read(&version, sizeof(version)) == static_cast<int>(sizeof(version));
+  const bool valid = hasVersion && file.fileSize64() == STATS_FILE_SIZE && version == STATS_FILE_VERSION;
   file.close();
-  return valid;
+  if (hasVersion && version > STATS_FILE_VERSION) return AtomicFile::ValidationResult::Unsupported;
+  return valid ? AtomicFile::ValidationResult::Valid : AtomicFile::ValidationResult::Invalid;
 }
 
 }  // namespace

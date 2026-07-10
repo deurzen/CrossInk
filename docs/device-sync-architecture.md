@@ -5,7 +5,7 @@ Status: implementation in progress on `v1.4.0-custom` from CrossInk `v1.4.0`.
 Implemented foundation:
 
 - Phase 0 host and simulator build blockers are repaired in the custom branch.
-- `lib/AtomicFile` provides no-heap, callback-based old-or-new replacement and non-resurrecting removal primitives with host power-cut fault injection.
+- `lib/AtomicFile` provides no-heap, callback-based old-or-new replacement, future-format preservation, and non-resurrecting removal primitives with host power-cut fault injection.
 - Per-book `stats_v5.bin`, EPUB `progress.bin`, `reader_settings.bin`, bookmark stores, and clipping stores use the new primitives; JSON stores, journals, and Device Sync transport remain pending.
 
 Target devices: Xteink X3 and X4 (ESP32-C3, no PSRAM, SD-backed storage).

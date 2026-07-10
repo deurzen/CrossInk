@@ -25,12 +25,12 @@ struct ProgressWriteContext {
   uint16_t pageCount;
 };
 
-inline bool validateProgressFile(const char* path, const void*) {
+inline AtomicFile::ValidationResult validateProgressFile(const char* path, const void*) {
   HalFile file;
-  if (!Storage.openFileForRead("ERS", path, file)) return false;
+  if (!Storage.openFileForRead("ERS", path, file)) return AtomicFile::ValidationResult::Invalid;
   const uint64_t size = file.fileSize64();
   file.close();
-  return size == 4 || size == 6;
+  return size == 4 || size == 6 ? AtomicFile::ValidationResult::Valid : AtomicFile::ValidationResult::Invalid;
 }
 
 inline bool writeProgressFile(HalFile& file, const void* context) {

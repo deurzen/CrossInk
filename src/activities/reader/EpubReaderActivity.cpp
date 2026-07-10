@@ -943,12 +943,16 @@ bool writeReaderSettingsSnapshot(FsFile& file, const EpubReaderActivity::ReaderS
          writeExact(file, in.sdFontFamilyName, sizeof(in.sdFontFamilyName));
 }
 
-bool validateReaderSettingsFile(const char* path, const void*) {
+AtomicFile::ValidationResult validateReaderSettingsFile(const char* path, const void*) {
   HalFile file;
-  if (!Storage.openFileForRead("ERS", path, file)) return false;
+  if (!Storage.openFileForRead("ERS", path, file)) return AtomicFile::ValidationResult::Invalid;
 
   uint8_t version = 0;
   bool valid = readU8(file, version);
+  if (valid && version > READER_SETTINGS_FILE_VERSION) {
+    file.close();
+    return AtomicFile::ValidationResult::Unsupported;
+  }
   if (valid && version == LEGACY_READER_SETTINGS_FILE_VERSION) {
     uint16_t seconds = 0;
     valid = readU16(file, seconds);
@@ -964,7 +968,7 @@ bool validateReaderSettingsFile(const char* path, const void*) {
   }
   valid = valid && file.available() == 0;
   file.close();
-  return valid;
+  return valid ? AtomicFile::ValidationResult::Valid : AtomicFile::ValidationResult::Invalid;
 }
 
 bool writeReaderSettingsFile(HalFile& file, const void* context) {

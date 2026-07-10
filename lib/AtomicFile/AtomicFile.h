@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 class HalFile;
 
@@ -12,20 +13,27 @@ struct Paths {
   const char* backupPath;
 };
 
+enum class ValidationResult : uint8_t {
+  Valid,
+  Invalid,
+  Unsupported,
+};
+
 using WriteCallback = bool (*)(HalFile& file, const void* context);
-using ValidateCallback = bool (*)(const char* path, const void* context);
+using ValidateCallback = ValidationResult (*)(const char* path, const void* context);
 
 // Restores a usable authoritative file after an interrupted replacement.
 // When both an old backup and a complete temp exist, recovery conservatively
-// restores the old backup. The validator is required. Returns false if no valid
-// candidate can be restored.
+// restores the old backup. The validator is required. Unsupported candidates
+// are preserved without mutation. Returns false if no valid candidate can be restored.
 bool recover(const char* moduleName, const Paths& paths, ValidateCallback validator, const void* context = nullptr);
 
 // Writes and synchronizes a temp file, validates it, then promotes it while
 // retaining the previous final as a backup. The callback must check every
 // write it performs. The validator is required, and all three paths must share
 // one directory so promotion never crosses FAT directories. No authoritative
-// file is opened with O_TRUNC.
+// file is opened with O_TRUNC. A newer unsupported final or sidecar blocks the
+// write so data from a future firmware version is never discarded.
 bool write(const char* moduleName, const Paths& paths, WriteCallback writer, ValidateCallback validator,
            const void* context = nullptr);
 
