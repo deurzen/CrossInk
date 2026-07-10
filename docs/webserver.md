@@ -12,6 +12,7 @@ The web server is available while the device is in **File Transfer** or
 - Create folders
 - Edit many device settings from a browser
 - Manage saved Wi-Fi networks and OPDS servers
+- Browse, copy, and delete saved Word Inbox reading contexts
 - Upload and delete `.cpfont` SD-card font families
 - Accept WebDAV clients and Calibre wireless uploads
 
@@ -72,7 +73,7 @@ OPDS server.
 
 ## Web Interface
 
-The browser UI has four primary pages.
+The browser UI has five primary pages.
 
 ### Home
 
@@ -124,6 +125,18 @@ cards for:
 
 Passwords are accepted when adding or editing entries, but saved passwords are
 not returned by the API.
+
+### Word Inbox
+
+The Word Inbox page groups captured reading contexts by book. It displays the
+saved reader screenshot, chapter/page/progress metadata, and copyable visible
+text for EPUB and TXT/Markdown captures. XTC/XTCH captures are screenshot-only
+because those formats contain pre-rendered pages rather than source text.
+
+Use Previous/Next or the keyboard arrow keys to review captures. Individual
+contexts or all contexts for a book can be deleted from this page. Word Inbox
+data remains under `/.crosspoint/word_inbox/` when ordinary render caches are
+cleared.
 
 ### Fonts
 

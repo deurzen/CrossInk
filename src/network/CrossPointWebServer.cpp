@@ -32,6 +32,7 @@
 #include "html/LogoPng.generated.h"
 #include "html/SettingsPageHtml.generated.h"
 #include "html/StyleCss.generated.h"
+#include "html/WordInboxPageHtml.generated.h"
 #include "html/js/jszip_minJs.generated.h"
 #include "util/BookCacheUtils.h"
 #include "util/StringUtils.h"
@@ -308,6 +309,7 @@ void CrossPointWebServer::begin() {
   LOG_DBG("WEB", "Setting up routes...");
   server->on("/", HTTP_GET, [this] { handleRoot(); });
   server->on("/files", HTTP_GET, [this] { handleFileList(); });
+  server->on("/word-inbox", HTTP_GET, [this] { handleWordInboxPage(); });
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJszip(); });
   server->on("/style.css", HTTP_GET, [this] { handleStyleCss(); });
   server->on("/logo.png", HTTP_GET, [this] { handleLogo(); });
@@ -777,6 +779,10 @@ void CrossPointWebServer::handleDownload() const {
   file.close();
 }
 
+void CrossPointWebServer::handleWordInboxPage() const {
+  sendHtmlContent(server.get(), WordInboxPageHtml, sizeof(WordInboxPageHtml));
+}
+
 void CrossPointWebServer::handleWordInboxBooks() const {
   struct StreamState {
     WebServer* server;
@@ -799,8 +805,9 @@ void CrossPointWebServer::handleWordInboxBooks() const {
     stream.server->sendContent(",\"type\":");
     sendJsonString(stream.server, wordInboxBookTypeName(book.bookType));
     char numbers[96];
-    snprintf(numbers, sizeof(numbers), ",\"count\":%lu,\"latestId\":%lu}",
-             static_cast<unsigned long>(book.contextCount), static_cast<unsigned long>(book.latestContextId));
+    snprintf(numbers, sizeof(numbers), ",\"count\":%lu,\"earliestId\":%lu,\"latestId\":%lu}",
+             static_cast<unsigned long>(book.contextCount), static_cast<unsigned long>(book.earliestContextId),
+             static_cast<unsigned long>(book.latestContextId));
     stream.server->sendContent(numbers);
     esp_task_wdt_reset();
     return true;

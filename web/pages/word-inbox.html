@@ -1,0 +1,56 @@
+<div class="card inbox-header">
+  <div>
+    <h2>Word Inbox</h2>
+    <p class="hint">Review page contexts captured while reading.</p>
+  </div>
+  <label class="book-picker">Book
+    <select id="bookSelect" disabled><option>Loading…</option></select>
+  </label>
+</div>
+
+<div id="status" class="status" role="status"></div>
+
+<div id="emptyState" class="card empty-state" hidden>
+  <h2>No saved contexts</h2>
+  <p>Assign “Save to Word Inbox” to a reader shortcut, then capture a page while reading.</p>
+</div>
+
+<div id="viewer" hidden>
+  <div class="card context-toolbar">
+    <div class="nav-group">
+      <button id="oldestBtn" class="btn btn-secondary" type="button">First</button>
+      <button id="previousBtn" class="btn btn-secondary" type="button">← Previous</button>
+    </div>
+    <strong id="position">Context</strong>
+    <div class="nav-group">
+      <button id="nextBtn" class="btn btn-secondary" type="button">Next →</button>
+      <button id="latestBtn" class="btn btn-secondary" type="button">Latest</button>
+    </div>
+  </div>
+
+  <div class="context-grid">
+    <section class="card screenshot-card">
+      <div class="section-heading">
+        <h2>Page snapshot</h2>
+        <span id="formatBadge" class="badge"></span>
+      </div>
+      <div class="image-frame"><img id="contextImage" alt="Captured reader page" /></div>
+    </section>
+
+    <section class="card text-card">
+      <div class="section-heading">
+        <h2>Copyable text</h2>
+        <button id="copyBtn" class="btn btn-primary" type="button">Copy text</button>
+      </div>
+      <p id="metadata" class="metadata"></p>
+      <p id="truncatedWarning" class="warning" hidden>Text was truncated at the 8 KB capture limit.</p>
+      <pre id="contextText" tabindex="0"></pre>
+      <p id="noText" class="empty-text" hidden>Text is unavailable for pre-rendered XTC/XTCH pages.</p>
+    </section>
+  </div>
+
+  <div class="card danger-actions">
+    <button id="deleteContextBtn" class="btn btn-danger" type="button">Delete context</button>
+    <button id="deleteBookBtn" class="btn btn-danger" type="button">Delete all for this book</button>
+  </div>
+</div>

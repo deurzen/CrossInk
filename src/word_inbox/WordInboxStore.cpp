@@ -330,6 +330,7 @@ bool isValidContextFile(const char* const directory, const uint32_t id) {
 
 struct ContextScanResult {
   uint32_t count = 0;
+  uint32_t earliestId = 0;
   uint32_t latestId = 0;
   uint32_t position = 0;
   uint32_t previousId = 0;
@@ -357,6 +358,7 @@ bool scanContexts(const char* const directory, const uint32_t targetId, ContextS
     }
 
     result.count++;
+    if (result.earliestId == 0 || candidate < result.earliestId) result.earliestId = candidate;
     result.latestId = std::max(result.latestId, candidate);
     if (candidate == targetId) result.targetFound = true;
     if (targetId > 0 && candidate <= targetId) result.position++;
@@ -393,6 +395,7 @@ bool readBookInfo(const char* const directory, const char* const key, WordInboxB
   ContextScanResult scan;
   if (!scanContexts(directory, 0, scan)) return false;
   info.contextCount = scan.count;
+  info.earliestContextId = scan.earliestId;
   info.latestContextId = scan.latestId;
   return true;
 }

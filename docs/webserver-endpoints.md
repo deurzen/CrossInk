@@ -19,6 +19,7 @@ the IP address shown on the device screen.
 | `GET` | `/files` | File manager page |
 | `GET` | `/settings` | Web settings page |
 | `GET` | `/fonts` | SD-card font manager page |
+| `GET` | `/word-inbox` | Saved reading-context browser |
 | `GET` | `/js/jszip.min.js` | JavaScript asset used by the file manager |
 
 ## Device Status
@@ -52,6 +53,65 @@ Response:
 | `freeHeap` | number | Free heap in bytes |
 | `uptime` | number | Seconds since boot |
 | `device` | string | `"X3"` or `"X4"` hardware detection |
+
+## Word Inbox
+
+Book keys are internal identifiers such as `epub_1234567890`. The API accepts
+only `epub_`, `txt_`, or `xtc_` followed by a decimal CRC32 value; it never
+accepts an SD-card path.
+
+### `GET /api/word-inbox/books`
+
+Lists books that have at least one complete context:
+
+```json
+[{"key":"epub_1234567890","title":"Der Prozess","author":"Franz Kafka","type":"epub","count":3,"earliestId":1,"latestId":4}]
+```
+
+### `GET /api/word-inbox/context`
+
+Returns navigation and location metadata for one context:
+
+```bash
+curl "http://crosspoint.local/api/word-inbox/context?book=epub_1234567890&id=4"
+```
+
+```json
+{"id":4,"position":3,"count":3,"previousId":2,"nextId":0,"spineIndex":5,"page":8,"totalPages":21,"progress":37,"hasText":true,"textTruncated":false,"hasImage":true,"chapter":"Kapitel Drei"}
+```
+
+### `GET /api/word-inbox/text`
+
+Streams the visible UTF-8 text as `text/plain`. It returns `404` for
+screenshot-only XTC/XTCH contexts.
+
+```bash
+curl "http://crosspoint.local/api/word-inbox/text?book=epub_1234567890&id=4"
+```
+
+### `GET /api/word-inbox/image`
+
+Streams the saved 1-bit BMP screenshot:
+
+```bash
+curl -o context.bmp "http://crosspoint.local/api/word-inbox/image?book=epub_1234567890&id=4"
+```
+
+### `POST /api/word-inbox/delete`
+
+Deletes one context and its screenshot:
+
+```bash
+curl -X POST "http://crosspoint.local/api/word-inbox/delete?book=epub_1234567890&id=4"
+```
+
+### `POST /api/word-inbox/delete-book`
+
+Deletes every Word Inbox context for one book:
+
+```bash
+curl -X POST "http://crosspoint.local/api/word-inbox/delete-book?book=epub_1234567890"
+```
 
 ## File Management
 

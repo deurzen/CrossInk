@@ -14,7 +14,7 @@ import re
 import sys
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, "web")
@@ -26,6 +26,7 @@ PAGES = {
     "files":    ("/files",    "Files - CrossInk",           "files",    '  <script src="/js/jszip.min.js"></script>'),
     "settings": ("/settings", "Settings - CrossInk Reader", "settings", ""),
     "fonts":    ("/fonts",    "Fonts - CrossInk",           "fonts",    ""),
+    "word-inbox": ("/word-inbox", "Word Inbox - CrossInk",   "word_inbox", ""),
 }
 ROUTE_TO_SLUG = {route: slug for slug, (route, *_rest) in PAGES.items()}
 
@@ -41,7 +42,7 @@ def render_page(slug):
         "styles": read(WEB, "pages", f"{slug}.css"),
         "body": read(WEB, "pages", f"{slug}.html"),
         "script": f"<script>\n{js}\n</script>" if js else "",
-        "cls_home": "", "cls_files": "", "cls_settings": "", "cls_fonts": "",
+        "cls_home": "", "cls_files": "", "cls_settings": "", "cls_fonts": "", "cls_word_inbox": "",
     }
     values[f"cls_{active}"] = ' class="active"'
     base = read(WEB, "templates", "base.html")
@@ -68,6 +69,12 @@ MOCK_API = {
     "/api/opds": [
         {"name": "Project Gutenberg", "url": "https://m.gutenberg.org/ebooks.opds/",
          "username": "", "hasPassword": False, "filenameFormat": "author_title"},
+    ],
+    "/api/word-inbox/books": [
+        {"key": "epub_1234567890", "title": "Der Prozess", "author": "Franz Kafka", "type": "epub",
+         "count": 3, "earliestId": 7, "latestId": 12},
+        {"key": "xtc_987654321", "title": "Illustrated Reader", "author": "", "type": "xtc",
+         "count": 1, "earliestId": 1, "latestId": 1},
     ],
     "/api/settings": [
         {"key": "darkMode", "name": "Dark Mode", "category": "Display", "type": "toggle", "value": 1},
@@ -101,7 +108,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
         if path in ROUTE_TO_SLUG:
             try:
                 self._send(200, render_page(ROUTE_TO_SLUG[path]), "text/html; charset=utf-8")
@@ -112,6 +121,30 @@ class Handler(BaseHTTPRequestHandler):
             fpath, ctype = ASSETS[path]
             with open(fpath, "rb") as f:
                 self._send(200, f.read(), ctype)
+            return
+        if path == "/api/word-inbox/context":
+            context_id = int(query.get("id", ["12"])[0])
+            is_xtc = query.get("book", [""])[0].startswith("xtc_")
+            ids = [1] if is_xtc else [7, 9, 12]
+            if context_id not in ids:
+                self._send(404, "not found", "text/plain")
+                return
+            index = ids.index(context_id)
+            data = {"id": context_id, "position": index + 1, "count": len(ids),
+                    "previousId": ids[index - 1] if index > 0 else 0,
+                    "nextId": ids[index + 1] if index + 1 < len(ids) else 0,
+                    "spineIndex": -1 if is_xtc else 2, "page": 8, "totalPages": 21, "progress": 37,
+                    "hasText": not is_xtc, "textTruncated": False, "hasImage": True,
+                    "chapter": "" if is_xtc else "Kapitel Drei"}
+            self._send(200, json.dumps(data), "application/json")
+            return
+        if path == "/api/word-inbox/text":
+            self._send(200, "Das Gespräch wurde plötzlich still.\nEr kannte dieses Wort noch nicht.",
+                       "text/plain; charset=utf-8")
+            return
+        if path == "/api/word-inbox/image":
+            with open(os.path.join(WEB, "assets", "logo.png"), "rb") as f:
+                self._send(200, f.read(), "image/png")
             return
         if path in MOCK_API:
             self._send(200, json.dumps(MOCK_API[path]), "application/json")
