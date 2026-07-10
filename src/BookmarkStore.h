@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+class HalFile;
+
 // chapterTitle is always NUL-terminated within BOOKMARK_CHAPTER_TITLE_MAX bytes.
 // This size is part of the on-disk format — do not change without incrementing the file version.
 inline constexpr size_t BOOKMARK_CHAPTER_TITLE_MAX = 48;
@@ -84,6 +86,8 @@ class BookmarkStore {
   bool readFromFile();
   bool readFromFile(const std::string& path, std::vector<Bookmark>& out, bool& needsRewrite) const;
   bool writeToFile() const;
+
+  static bool writeAtomicFile(HalFile& file, const void* context);
 };
 
 #define BOOKMARKS BookmarkStore::getInstance()
