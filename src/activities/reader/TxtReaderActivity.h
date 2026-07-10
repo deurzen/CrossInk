@@ -17,6 +17,7 @@ class TxtReaderActivity final : public Activity {
   bool frontButtonLongPressHandled = false;
   bool longPowerButtonHandled = false;
   bool longPressBackHandled = false;
+  bool longPressMenuHandled = false;
 
   // Streaming text reader - stores file offsets for each page
   std::vector<size_t> pageOffsets;  // File offset for start of each page

@@ -34,6 +34,7 @@
 
 namespace {
 constexpr unsigned long MIN_READING_STATS_PAGE_MS = 2000UL;
+constexpr unsigned long LONG_PRESS_MENU_MS = 600UL;
 
 std::string confirmationHeading(const StrId actionLabelId) {
   return std::string(tr(STR_CONFIRM)) + ": " + std::string(I18N.get(actionLabelId));
@@ -137,6 +138,28 @@ void XtcReaderActivity::loop() {
       case EndOfBookOptions::Action::None:
         break;
     }
+  }
+
+  if (longPressMenuHandled) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+        !mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
+      longPressMenuHandled = false;
+    }
+    return;
+  }
+
+  if (!atEndOfBook && SETTINGS.longPressMenuAction == CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX &&
+      mappedInput.isPressed(MappedInputManager::Button::Confirm) && mappedInput.getHeldTime() >= LONG_PRESS_MENU_MS) {
+    longPressMenuHandled = true;
+    mappedInput.suppressNextConfirmRelease();
+    saveCurrentPageToWordInbox();
+    return;
+  }
+
+  if (!atEndOfBook && SETTINGS.longPressMenuAction == CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX &&
+      mappedInput.wasReleased(MappedInputManager::Button::Confirm) && mappedInput.getHeldTime() >= LONG_PRESS_MENU_MS) {
+    saveCurrentPageToWordInbox();
+    return;
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
