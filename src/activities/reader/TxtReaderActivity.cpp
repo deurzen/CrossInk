@@ -146,6 +146,8 @@ void TxtReaderActivity::onExit() {
 }
 
 void TxtReaderActivity::loop() {
+  dismissWordInboxFeedbackIfDue();
+
   if (consumeLongPowerButtonRelease()) {
     return;
   }
@@ -327,14 +329,18 @@ void TxtReaderActivity::saveCurrentPageToWordInbox() {
     LOG_ERR("WIN", "OOM: TXT visible page text buffer (%u bytes)",
             static_cast<unsigned>(VisiblePageText::MAX_TEXT_BYTES + 1));
     RenderLock lock(*this);
-    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    wordInboxFeedback.show(renderer, WordInboxSaveResult::InvalidInput);
     return;
   }
 
   RenderLock lock(*this);
+  if (!wordInboxFeedback.prepareForCapture(renderer)) {
+    requestUpdate();
+    return;
+  }
   if (!txt || pageOffsets.empty()) {
     LOG_ERR("WIN", "TXT page is unavailable for capture");
-    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    wordInboxFeedback.show(renderer, WordInboxSaveResult::InvalidInput);
     return;
   }
 
@@ -357,7 +363,22 @@ void TxtReaderActivity::saveCurrentPageToWordInbox() {
   capture.displayHeight = renderer.getDisplayHeight();
 
   uint32_t captureId = 0;
-  WordInboxFeedback::show(renderer, WordInboxStore::save(capture, captureId));
+  wordInboxFeedback.show(renderer, WordInboxStore::save(capture, captureId));
+}
+
+void TxtReaderActivity::dismissWordInboxFeedbackIfDue() {
+  if (!wordInboxFeedback.dismissalDue() || RenderLock::peek()) {
+    return;
+  }
+
+  WordInboxFeedback::Controller::DismissResult result;
+  {
+    RenderLock lock(*this);
+    result = wordInboxFeedback.dismissIfDue(renderer);
+  }
+  if (result == WordInboxFeedback::Controller::DismissResult::NeedsRender) {
+    requestUpdate();
+  }
 }
 
 bool TxtReaderActivity::executePowerButtonAction() {
@@ -575,6 +596,7 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>
 }
 
 void TxtReaderActivity::render(RenderLock&&) {
+  wordInboxFeedback.prepareForRender(renderer);
   if (!txt) {
     return;
   }

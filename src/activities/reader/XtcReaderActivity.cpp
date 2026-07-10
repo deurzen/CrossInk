@@ -113,6 +113,8 @@ void XtcReaderActivity::loop() {
     return;
   }
 
+  dismissWordInboxFeedbackIfDue();
+
   const bool atEndOfBook = currentPage >= xtc->getPageCount();
 
   // While the end screen suggestion menu is showing it owns Confirm/Back/navigation
@@ -659,9 +661,13 @@ void XtcReaderActivity::onReaderMenuConfirm(const int action) {
 
 void XtcReaderActivity::saveCurrentPageToWordInbox() {
   RenderLock lock(*this);
+  if (!wordInboxFeedback.prepareForCapture(renderer)) {
+    requestUpdate();
+    return;
+  }
   if (!xtc || currentPage >= xtc->getPageCount()) {
     LOG_ERR("WIN", "XTC page is unavailable for capture");
-    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    wordInboxFeedback.show(renderer, WordInboxSaveResult::InvalidInput);
     return;
   }
 
@@ -679,7 +685,22 @@ void XtcReaderActivity::saveCurrentPageToWordInbox() {
   capture.displayHeight = renderer.getDisplayHeight();
 
   uint32_t captureId = 0;
-  WordInboxFeedback::show(renderer, WordInboxStore::save(capture, captureId));
+  wordInboxFeedback.show(renderer, WordInboxStore::save(capture, captureId));
+}
+
+void XtcReaderActivity::dismissWordInboxFeedbackIfDue() {
+  if (!wordInboxFeedback.dismissalDue() || RenderLock::peek()) {
+    return;
+  }
+
+  WordInboxFeedback::Controller::DismissResult result;
+  {
+    RenderLock lock(*this);
+    result = wordInboxFeedback.dismissIfDue(renderer);
+  }
+  if (result == WordInboxFeedback::Controller::DismissResult::NeedsRender) {
+    requestUpdate();
+  }
 }
 
 bool XtcReaderActivity::executeLongPressBackAction() {
@@ -717,6 +738,7 @@ bool XtcReaderActivity::executeLongPressBackAction() {
 }
 
 void XtcReaderActivity::render(RenderLock&&) {
+  wordInboxFeedback.prepareForRender(renderer);
   if (!xtc) {
     return;
   }

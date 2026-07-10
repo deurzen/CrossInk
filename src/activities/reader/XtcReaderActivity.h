@@ -16,6 +16,7 @@
 #include "EndOfBookOptions.h"
 #include "GlobalReadingStats.h"
 #include "activities/Activity.h"
+#include "word_inbox/WordInboxFeedback.h"
 
 class XtcReaderActivity final : public Activity {
   std::shared_ptr<Xtc> xtc;
@@ -32,6 +33,7 @@ class XtcReaderActivity final : public Activity {
   bool frontButtonLongPressHandled = false;
   bool longPressBackHandled = false;
   bool longPressMenuHandled = false;
+  WordInboxFeedback::Controller wordInboxFeedback;
   // Next-book suggestion menu for the End-of-Book screen
   EndOfBookOptions endOfBookOptions;
 
@@ -63,6 +65,7 @@ class XtcReaderActivity final : public Activity {
   void deleteBookCache();
   void onReaderMenuConfirm(int action);
   void saveCurrentPageToWordInbox();
+  void dismissWordInboxFeedbackIfDue();
   bool executeLongPressBackAction();
 
  public:

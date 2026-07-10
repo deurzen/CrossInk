@@ -6,6 +6,7 @@
 
 #include "CrossPointSettings.h"
 #include "activities/Activity.h"
+#include "word_inbox/WordInboxFeedback.h"
 
 class TxtReaderActivity final : public Activity {
   std::unique_ptr<Txt> txt;
@@ -18,6 +19,7 @@ class TxtReaderActivity final : public Activity {
   bool longPowerButtonHandled = false;
   bool longPressBackHandled = false;
   bool longPressMenuHandled = false;
+  WordInboxFeedback::Controller wordInboxFeedback;
 
   // Streaming text reader - stores file offsets for each page
   std::vector<size_t> pageOffsets;  // File offset for start of each page
@@ -47,6 +49,7 @@ class TxtReaderActivity final : public Activity {
   void loadProgress();
   void toggleDarkMode();
   void saveCurrentPageToWordInbox();
+  void dismissWordInboxFeedbackIfDue();
   bool consumeLongPowerButtonRelease();
   bool consumeLongPowerButtonHold();
   bool executePowerButtonAction();
