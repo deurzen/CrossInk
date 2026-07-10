@@ -15,7 +15,7 @@ Host CMake tests:
 - Build with `cmake --build build/test -j2`.
 - Run with `ctest --test-dir build/test --output-on-failure`.
 - The `atomic_file` suite uses a fake storage backend and injected power cuts; it does not replace SD-card hardware testing.
-- The `sync_policy` suite covers bounded category permissions, ordered path rules, local/peer policy intersection, strict policy/pair-record codecs, atomic policy/pair-store power cuts, and MAC-bound device identity recovery.
+- The `sync_policy` suite covers bounded policies, strict pair records, atomic policy/pair-store power cuts, MAC-bound identity, strong-entropy nonce handling, role election, and persisted handshake counters.
 
 Simulator smoke test:
 - Run `./scripts/run_simulator_smoke_test.py` from the repo root.

@@ -558,7 +558,7 @@ Pair records contain authentication material and must never be logged or transmi
 
 The peer ID, pair secret, generation, and next local counter must be nonzero. A set/clear last-session flag requires a nonzero/zero SessionId respectively. Readers reject unknown flags, nonzero reserved fields, malformed UTF-8, truncation, trailing bytes, CRC mismatch, and a peer ID that differs from the lowercase hexadecimal filename; larger newer versions are preserved as unsupported.
 
-Updates use same-directory `.tmp` and `.bak` sidecars through `AtomicFile`. A complete interrupted first pairing is promoted; an incomplete first-pair temp is removed and reported as missing because no secret was committed. Unpairing removes sidecars before the final record so an interrupted deletion cannot resurrect authentication material.
+Updates use same-directory `.tmp` and `.bak` sidecars through `AtomicFile`. A local handshake counter is incremented and persisted before it is used; a new peer counter is persisted before acceptance is reported. Equal peer counters are idempotent duplicates, while lower counters are stale replays. A complete interrupted first pairing is promoted; an incomplete first-pair temp is removed and reported as missing because no secret was committed. Unpairing removes sidecars before the final record so an interrupted deletion cannot resurrect authentication material.
 
 ## `/.crosspoint/device-sync/config.bin`
 
