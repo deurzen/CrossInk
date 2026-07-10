@@ -15,30 +15,22 @@ struct RandomAccessSource {
 };
 
 struct ShardDirectoryRecord {
-  uint32_t firstRecord = 0;
+  uint32_t blobOffset = 0;
+  uint16_t blobLength = 0;
   uint16_t recordCount = 0;
   uint32_t sourceTokenStart = 0;
   uint32_t sourceTokenEnd = 0;
 };
 
-struct ShardCandidate {
+struct InlineCandidate {
   uint64_t surfaceHash = 0;
-  uint16_t localSurfaceId = UINT16_MAX;
-  uint16_t primaryLocalLemmaId = UINT16_MAX;
-  uint16_t alternateLocalLemmaId = UINT16_MAX;
-  uint8_t surfaceByteLength = 0;
-  uint8_t flags = 0;
-};
-
-struct SurfaceRecord {
-  uint32_t stringOffset = 0;
-  uint32_t firstAnalysis = 0;
-  uint32_t firstComponent = 0;
-  uint16_t stringLength = 0;
+  uint16_t recordSize = 0;
+  uint8_t surfaceLength = 0;
   uint8_t analysisCount = 0;
-  uint8_t componentCount = 0;
+  uint8_t flags = 0;
   uint16_t confidence = 0;
-  uint16_t flags = 0;
+  uint16_t localLemmaIds[kMaxInlineAnalyses]{};
+  char surface[256]{};
 };
 
 enum class ReaderError : uint8_t {
@@ -51,25 +43,17 @@ enum class ReaderError : uint8_t {
   CANDIDATE_INDEX_OUT_OF_RANGE,
   CANDIDATE_RECORD_INVALID,
   LOCAL_LEMMA_ID_OUT_OF_RANGE,
-  SURFACE_ID_OUT_OF_RANGE,
-  SURFACE_HEADER_INVALID,
-  SURFACE_RECORD_INVALID,
 };
 
-// Allocation-free random-access reader for a previously CRC-validated
-// language.bin. Every table record is range-checked before its data is used.
+// Allocation-free reader for the CRC-validated version-2 language artifact.
+// Shard records are consumed sequentially through one bounded cache.
 class BookLanguageReader {
  public:
   bool open(const RandomAccessSource& source, ReaderError& error);
   bool readShard(uint32_t shardId, ShardDirectoryRecord& out, ReaderError& error) const;
-  bool readCandidate(const ShardDirectoryRecord& shard, uint16_t index, ShardCandidate& out, ReaderError& error) const;
+  bool readCandidate(const ShardDirectoryRecord& shard, uint16_t index, const InlineCandidate*& out,
+                     ReaderError& error) const;
   bool readGlobalLexemeId(uint16_t localLemmaId, uint32_t& globalLexemeId, ReaderError& error) const;
-  bool readSurface(uint16_t localSurfaceId, SurfaceRecord& out, ReaderError& error) const;
-  bool surfaceEquals(const SurfaceRecord& surface, std::string_view expected, bool& equal, ReaderError& error) const;
-  bool readSurfaceAnalysis(const SurfaceRecord& surface, uint8_t index, uint16_t& localLemmaId,
-                           ReaderError& error) const;
-  bool readSurfaceComponent(const SurfaceRecord& surface, uint8_t index, uint16_t& localLemmaId,
-                            ReaderError& error) const;
 
   const Header& header() const { return header_; }
   bool isOpen() const { return open_; }
@@ -77,34 +61,17 @@ class BookLanguageReader {
  private:
   Header header_{};
   RandomAccessSource source_{};
-  uint32_t surfaceSectionSize_ = 0;
-  uint32_t surfaceRecordOffset_ = 0;
-  uint32_t analysisOffset_ = 0;
-  uint32_t componentOffset_ = 0;
-  uint32_t stringPoolOffset_ = 0;
-  uint32_t analysisCount_ = 0;
-  uint32_t componentCount_ = 0;
-  // Lookup scans these tables sequentially. Fixed block caches keep SD reads
-  // bounded while avoiding one read call per 16-byte record.
-  mutable uint8_t shardCache_[256]{};
-  mutable uint8_t candidateCache_[512]{};
-  mutable uint8_t surfaceRecordCache_[256]{};
-  mutable uint8_t surfaceDetailCache_[128]{};
-  mutable uint8_t surfaceStringCache_[128]{};
-  mutable uint32_t shardCacheStart_ = UINT32_MAX;
-  mutable uint32_t candidateCacheStart_ = UINT32_MAX;
-  mutable uint32_t surfaceRecordCacheStart_ = UINT32_MAX;
-  mutable uint32_t surfaceDetailCacheStart_ = UINT32_MAX;
-  mutable uint32_t surfaceStringCacheStart_ = UINT32_MAX;
-  mutable uint16_t shardCacheLength_ = 0;
-  mutable uint16_t candidateCacheLength_ = 0;
-  mutable uint16_t surfaceRecordCacheLength_ = 0;
-  mutable uint16_t surfaceDetailCacheLength_ = 0;
-  mutable uint16_t surfaceStringCacheLength_ = 0;
-  // Projection rebuilds visit local lemma IDs in ascending order. Cache 64
-  // contiguous records so that path-backed sources open the SD file once per
-  // block instead of once per lemma.
+  mutable uint8_t shardDirectoryCache_[256]{};
+  mutable uint8_t blobCache_[2048]{};
   mutable uint8_t localLemmaCache_[64 * kLocalLemmaRecordSize]{};
+  mutable InlineCandidate candidate_{};
+  mutable uint32_t shardDirectoryCacheStart_ = UINT32_MAX;
+  mutable uint32_t blobCacheStart_ = UINT32_MAX;
+  mutable uint32_t candidateCursor_ = 0;
+  mutable uint32_t activeBlobOffset_ = UINT32_MAX;
+  mutable uint16_t shardDirectoryCacheLength_ = 0;
+  mutable uint16_t blobCacheLength_ = 0;
+  mutable uint16_t nextCandidateIndex_ = 0;
   mutable uint16_t localLemmaCacheFirst_ = 0;
   mutable uint8_t localLemmaCacheCount_ = 0;
   bool open_ = false;
@@ -113,7 +80,7 @@ class BookLanguageReader {
                   uint32_t& cacheStart, uint16_t& cacheLength, void* output) const;
 };
 
-static_assert(sizeof(BookLanguageReader) <= 2048, "Book language reader exceeds its lookup-session memory budget");
+static_assert(sizeof(BookLanguageReader) <= 3072, "Book language reader exceeds its lookup-session memory budget");
 
 uint64_t fnv1a64(std::string_view text);
 const char* readerErrorName(ReaderError error);

@@ -32,9 +32,9 @@ void refreshCrcs(std::vector<uint8_t>& data) {
 }
 
 std::vector<uint8_t> makeValidArtifact() {
-  // Header + one spine + one shard directory entry + one candidate + one
-  // local lemma + one global-to-local entry + four metadata bytes.
-  std::vector<uint8_t> data(164, 0);
+  // Header + one spine + one v2 shard directory entry + one minimal blob
+  // record + one local lemma + four metadata bytes.
+  std::vector<uint8_t> data(160, 0);
   std::memcpy(data.data(), "CXLG", 4);
   writeU16(data, 4, dictionary::book_language::kFormatVersion);
   writeU16(data, 6, dictionary::book_language::kHeaderSize);
@@ -47,19 +47,17 @@ std::vector<uint8_t> makeValidArtifact() {
   writeU32(data, 52, 1);    // Shard count.
   writeU32(data, 56, 1);    // Shard candidate count.
   writeU32(data, 60, 1);    // Local lemma count.
-  writeU32(data, 64, 1);    // Local surface count.
+  writeU32(data, 64, 0);    // Reserved count.
   writeU32(data, 68, 108);  // Spine directory.
   writeU32(data, 72, 116);  // Shard directory.
-  writeU32(data, 76, 132);  // Shard candidates.
-  writeU32(data, 80, 148);  // Local lemmas.
-  writeU32(data, 84, 152);  // Global-to-local map.
-  writeU32(data, 88, 160);  // Surface details (empty).
-  writeU32(data, 92, 160);  // Metadata.
+  writeU32(data, 76, 136);  // Shard blobs.
+  writeU32(data, 80, 152);  // Local lemmas.
+  writeU32(data, 84, 156);  // Metadata.
   writeU32(data, 96, static_cast<uint32_t>(data.size()));
-  data[160] = 't';
-  data[161] = 'e';
-  data[162] = 's';
-  data[163] = 't';
+  data[156] = 't';
+  data[157] = 'e';
+  data[158] = 's';
+  data[159] = 't';
   refreshCrcs(data);
   return data;
 }
@@ -121,7 +119,7 @@ TEST(BookLanguageFormat, RejectsUnsupportedVersionAndFlags) {
   Header header;
   FormatError error;
 
-  writeU16(data, 4, 2);
+  writeU16(data, 4, 1);
   refreshCrcs(data);
   EXPECT_FALSE(parse(data, header, error));
   EXPECT_EQ(error, FormatError::UNSUPPORTED_VERSION);

@@ -66,9 +66,8 @@ bool tableFits(const uint32_t offset, const uint32_t count, const uint32_t recor
 }
 
 bool offsetsAreAligned(const Header& header) {
-  const uint32_t offsets[] = {header.spineDirectoryOffset,  header.shardDirectoryOffset,     header.shardRecordsOffset,
-                              header.localLemmaTableOffset, header.globalToLocalTableOffset, header.surfaceDetailOffset,
-                              header.metadataOffset};
+  const uint32_t offsets[] = {header.spineDirectoryOffset, header.shardDirectoryOffset, header.shardBlobOffset,
+                              header.localLemmaTableOffset, header.metadataOffset};
   return std::all_of(offsets, offsets + (sizeof(offsets) / sizeof(offsets[0])),
                      [](const uint32_t offset) { return (offset & 0x3U) == 0; });
 }
@@ -76,11 +75,9 @@ bool offsetsAreAligned(const Header& header) {
 bool offsetsAreOrdered(const Header& header) {
   return header.spineDirectoryOffset >= header.headerSize &&
          header.shardDirectoryOffset >= header.spineDirectoryOffset &&
-         header.shardRecordsOffset >= header.shardDirectoryOffset &&
-         header.localLemmaTableOffset >= header.shardRecordsOffset &&
-         header.globalToLocalTableOffset >= header.localLemmaTableOffset &&
-         header.surfaceDetailOffset >= header.globalToLocalTableOffset &&
-         header.metadataOffset >= header.surfaceDetailOffset && header.fileSize >= header.metadataOffset;
+         header.shardBlobOffset >= header.shardDirectoryOffset &&
+         header.localLemmaTableOffset >= header.shardBlobOffset &&
+         header.metadataOffset >= header.localLemmaTableOffset && header.fileSize >= header.metadataOffset;
 }
 
 }  // namespace
@@ -111,14 +108,14 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
   out.shardCount = readU32(data + 52);
   out.shardRecordCount = readU32(data + 56);
   out.localLemmaCount = readU32(data + 60);
-  out.localSurfaceCount = readU32(data + 64);
+  const uint32_t reservedCount = readU32(data + 64);
   out.spineDirectoryOffset = readU32(data + 68);
   out.shardDirectoryOffset = readU32(data + 72);
-  out.shardRecordsOffset = readU32(data + 76);
+  out.shardBlobOffset = readU32(data + 76);
   out.localLemmaTableOffset = readU32(data + 80);
-  out.globalToLocalTableOffset = readU32(data + 84);
-  out.surfaceDetailOffset = readU32(data + 88);
-  out.metadataOffset = readU32(data + 92);
+  out.metadataOffset = readU32(data + 84);
+  const uint32_t reservedOffset1 = readU32(data + 88);
+  const uint32_t reservedOffset2 = readU32(data + 92);
   out.fileSize = readU32(data + 96);
   out.payloadCrc32 = readU32(data + 100);
   out.headerCrc32 = readU32(data + kHeaderCrcOffset);
@@ -139,7 +136,7 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
     error = FormatError::UNSUPPORTED_FLAGS;
     return false;
   }
-  if (reserved != 0) {
+  if (reserved != 0 || reservedCount != 0 || reservedOffset1 != 0 || reservedOffset2 != 0) {
     error = FormatError::RESERVED_FIELD_NONZERO;
     return false;
   }
@@ -152,8 +149,7 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
     return false;
   }
   if (out.spineCount == 0 || out.spineCount > kMaxSpineCount || out.shardCount > kMaxShardCount ||
-      out.shardRecordCount > kMaxShardRecordCount || out.localLemmaCount > kMaxLocalLemmaCount ||
-      out.localSurfaceCount > kMaxLocalSurfaceCount) {
+      out.shardRecordCount > kMaxShardRecordCount || out.localLemmaCount > kMaxLocalLemmaCount) {
     error = FormatError::COUNT_OUT_OF_RANGE;
     return false;
   }
@@ -174,11 +170,8 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
     return false;
   }
   if (!tableFits(out.spineDirectoryOffset, out.spineCount, kSpineRecordSize, out.shardDirectoryOffset) ||
-      !tableFits(out.shardDirectoryOffset, out.shardCount, kShardDirectoryRecordSize, out.shardRecordsOffset) ||
-      !tableFits(out.shardRecordsOffset, out.shardRecordCount, kShardCandidateRecordSize, out.localLemmaTableOffset) ||
-      !tableFits(out.localLemmaTableOffset, out.localLemmaCount, kLocalLemmaRecordSize, out.globalToLocalTableOffset) ||
-      !tableFits(out.globalToLocalTableOffset, out.localLemmaCount, kGlobalToLocalRecordSize,
-                 out.surfaceDetailOffset)) {
+      !tableFits(out.shardDirectoryOffset, out.shardCount, kShardDirectoryRecordSize, out.shardBlobOffset) ||
+      !tableFits(out.localLemmaTableOffset, out.localLemmaCount, kLocalLemmaRecordSize, out.metadataOffset)) {
     error = FormatError::TABLE_OUT_OF_BOUNDS;
     return false;
   }

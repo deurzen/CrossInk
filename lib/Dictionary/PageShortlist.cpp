@@ -194,8 +194,6 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
     return false;
   }
 
-  // Visible order is retained in each token, so sorting the fixed workspace
-  // adds no allocation and lets every sorted shard use a linear merge.
   std::sort(tokens_, tokens_ + tokenCount_, [](const VisibleToken& left, const VisibleToken& right) {
     if (left.hash != right.hash) return left.hash < right.hash;
     if (left.length != right.length) return left.length < right.length;
@@ -206,13 +204,9 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
   const uint32_t shardsToScan = static_cast<uint32_t>(std::min<uint64_t>(requestedShardCount, kMaxPageShards));
   if (requestedShardCount > kMaxPageShards) output.truncated = true;
   uint32_t candidatesScanned = 0;
-  bool stopScanning = false;
   book_language::ReaderError readerError = book_language::ReaderError::NONE;
 
-  // First collect only bounded hash/length matches. Hydration is delayed so
-  // matches can be sorted by local surface ID and read from the split surface
-  // tables mostly sequentially.
-  for (uint32_t shardOffset = 0; shardOffset < shardsToScan && !stopScanning; ++shardOffset) {
+  for (uint32_t shardOffset = 0; shardOffset < shardsToScan; ++shardOffset) {
     book_language::ShardDirectoryRecord shard;
     if (!reader.readShard(firstShard + shardOffset, shard, readerError)) {
       error = GenerateError::READER_FAILED;
@@ -224,118 +218,52 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
     for (uint16_t candidateIndex = 0; candidateIndex < shard.recordCount; ++candidateIndex) {
       if (candidatesScanned++ >= kMaxScannedCandidates) {
         output.truncated = true;
-        stopScanning = true;
         break;
       }
-      book_language::ShardCandidate candidate;
-      if (!reader.readCandidate(shard, candidateIndex, candidate, readerError) ||
-          (havePreviousHash && candidate.surfaceHash < previousHash)) {
+      const book_language::InlineCandidate* candidate = nullptr;
+      if (!reader.readCandidate(shard, candidateIndex, candidate, readerError) || !candidate ||
+          (havePreviousHash && candidate->surfaceHash < previousHash)) {
         error = GenerateError::READER_FAILED;
         return false;
       }
-      previousHash = candidate.surfaceHash;
+      previousHash = candidate->surfaceHash;
       havePreviousHash = true;
-
-      while (tokenIndex < tokenCount_ && tokens_[tokenIndex].hash < candidate.surfaceHash) ++tokenIndex;
+      while (tokenIndex < tokenCount_ && tokens_[tokenIndex].hash < candidate->surfaceHash) ++tokenIndex;
       for (uint16_t matchIndex = tokenIndex;
-           matchIndex < tokenCount_ && tokens_[matchIndex].hash == candidate.surfaceHash; ++matchIndex) {
+           matchIndex < tokenCount_ && tokens_[matchIndex].hash == candidate->surfaceHash; ++matchIndex) {
         const auto& token = tokens_[matchIndex];
-        if (token.length != candidate.surfaceByteLength) continue;
-        bool pendingDuplicate = false;
+        if (token.length != candidate->surfaceLength ||
+            std::memcmp(tokenPool_ + token.offset, candidate->surface, token.length) != 0) {
+          continue;
+        }
+        bool duplicate = false;
         for (uint16_t itemIndex = 0; itemIndex < output.count; ++itemIndex) {
-          const auto& item = output.items[itemIndex];
-          if (item.localSurfaceId == candidate.localSurfaceId && item.surfaceOffset == token.offset) {
-            pendingDuplicate = true;
-            break;
-          }
+          duplicate = lemmasOverlap(output.items[itemIndex], candidate->localLemmaIds, candidate->analysisCount);
+          if (duplicate) break;
         }
-        if (pendingDuplicate) continue;
-        if (output.count >= kMaxItems) {
+        if (duplicate) break;
+        if (output.count >= kMaxItems || token.length > kShortlistSurfacePoolBytes - output.surfaceBytesUsed) {
           output.truncated = true;
-          stopScanning = true;
-          break;
+          return true;
         }
-        Item& pending = output.items[output.count++];
-        pending.surfaceOffset = token.offset;  // Temporary token-pool offset.
-        pending.localSurfaceId = candidate.localSurfaceId;
-        pending.primaryLocalLemmaId = candidate.primaryLocalLemmaId;
-        pending.alternateLocalLemmaId = candidate.alternateLocalLemmaId;
-        pending.surfaceLength = candidate.surfaceByteLength;
-        pending.flags = candidate.flags;
-        pending.visibleOrder = token.order;
+        Item& item = output.items[output.count++];
+        item.surfaceOffset = output.surfaceBytesUsed;
+        item.localSurfaceId = UINT16_MAX;
+        item.primaryLocalLemmaId = candidate->localLemmaIds[0];
+        item.alternateLocalLemmaId = candidate->analysisCount > 1 ? candidate->localLemmaIds[1] : UINT16_MAX;
+        item.surfaceLength = token.length;
+        item.flags = candidate->flags;
+        item.analysisCount = candidate->analysisCount;
+        item.componentCount = 0;
+        item.confidence = candidate->confidence;
+        item.visibleOrder = token.order;
+        std::copy(candidate->localLemmaIds, candidate->localLemmaIds + candidate->analysisCount, item.localLemmaIds);
+        std::memcpy(output.surfacePool + output.surfaceBytesUsed, tokenPool_ + token.offset, token.length);
+        output.surfaceBytesUsed = static_cast<uint16_t>(output.surfaceBytesUsed + token.length);
+        break;
       }
-      if (stopScanning) break;
     }
   }
-
-  std::sort(output.items, output.items + output.count, [](const Item& left, const Item& right) {
-    if (left.localSurfaceId != right.localSurfaceId) return left.localSurfaceId < right.localSurfaceId;
-    return left.visibleOrder < right.visibleOrder;
-  });
-
-  const uint16_t pendingCount = output.count;
-  output.count = 0;
-  for (uint16_t pendingIndex = 0; pendingIndex < pendingCount; ++pendingIndex) {
-    const Item pending = output.items[pendingIndex];
-    const std::string_view visibleSurface(tokenPool_ + pending.surfaceOffset, pending.surfaceLength);
-    book_language::SurfaceRecord surface;
-    bool equal = false;
-    if (!reader.readSurface(pending.localSurfaceId, surface, readerError) ||
-        !reader.surfaceEquals(surface, visibleSurface, equal, readerError)) {
-      error = GenerateError::READER_FAILED;
-      return false;
-    }
-    if (!equal) continue;
-    if (surface.analysisCount > kMaxAnalysesPerItem || surface.componentCount > kMaxComponentsPerItem) {
-      output.truncated = true;
-      continue;
-    }
-    // Compound-only matches currently have no whole-word lexeme to open.
-    if (surface.analysisCount == 0) continue;
-
-    uint16_t analysisIds[kMaxAnalysesPerItem]{};
-    for (uint8_t analysisIndex = 0; analysisIndex < surface.analysisCount; ++analysisIndex) {
-      if (!reader.readSurfaceAnalysis(surface, analysisIndex, analysisIds[analysisIndex], readerError)) {
-        error = GenerateError::READER_FAILED;
-        return false;
-      }
-    }
-    for (uint8_t componentIndex = 0; componentIndex < surface.componentCount; ++componentIndex) {
-      uint16_t localLemmaId = UINT16_MAX;
-      if (!reader.readSurfaceComponent(surface, componentIndex, localLemmaId, readerError)) {
-        error = GenerateError::READER_FAILED;
-        return false;
-      }
-    }
-    if (analysisIds[0] != pending.primaryLocalLemmaId ||
-        (surface.analysisCount > 1 ? analysisIds[1] : UINT16_MAX) != pending.alternateLocalLemmaId) {
-      error = GenerateError::READER_FAILED;
-      return false;
-    }
-
-    bool duplicate = false;
-    for (uint16_t itemIndex = 0; itemIndex < output.count; ++itemIndex) {
-      duplicate = output.items[itemIndex].localSurfaceId == pending.localSurfaceId ||
-                  lemmasOverlap(output.items[itemIndex], analysisIds, surface.analysisCount);
-      if (duplicate) break;
-    }
-    if (duplicate) continue;
-    if (visibleSurface.size() > kShortlistSurfacePoolBytes - output.surfaceBytesUsed) {
-      output.truncated = true;
-      continue;
-    }
-
-    Item item = pending;
-    item.surfaceOffset = output.surfaceBytesUsed;
-    item.analysisCount = surface.analysisCount;
-    item.componentCount = surface.componentCount;
-    item.confidence = surface.confidence;
-    std::copy(analysisIds, analysisIds + surface.analysisCount, item.localLemmaIds);
-    std::memcpy(output.surfacePool + output.surfaceBytesUsed, visibleSurface.data(), visibleSurface.size());
-    output.surfaceBytesUsed = static_cast<uint16_t>(output.surfaceBytesUsed + visibleSurface.size());
-    output.items[output.count++] = item;
-  }
-
   std::sort(output.items, output.items + output.count,
             [](const Item& left, const Item& right) { return left.visibleOrder < right.visibleOrder; });
   return true;

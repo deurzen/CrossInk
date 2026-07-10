@@ -13,22 +13,18 @@ import zlib
 from .compiler import _fnv1a64
 
 LANGUAGE_HEADER_SIZE = 108
-SURFACE_HEADER_SIZE = 40
 SHARD_TOKEN_COUNT = 64
 TOKENIZER_VERSION = 1
 ANALYZER_VERSION = 1
-UINT16_MAX = 0xFFFF
 
 MAX_SPINES = 4096
 MAX_SHARDS = 65535
 MAX_RECORDS = 1_000_000
 MAX_LOCAL_LEMMAS = 32768
-MAX_LOCAL_SURFACES = 65535
 MAX_SHARD_BLOB_BYTES = 24 * 1024
 LANGUAGE_FORMAT_VERSION = 2
 
 CANDIDATE_AMBIGUOUS = 0x01
-CANDIDATE_COMPOUND = 0x02
 CANDIDATE_NORMALIZED_FALLBACK = 0x04
 
 GERMAN_STOPWORDS = frozenset(
@@ -82,7 +78,6 @@ class Token:
 class Candidate:
     surface: str
     global_lexeme_ids: tuple[int, ...]
-    component_global_ids: tuple[int, ...]
     confidence: int
     flags: int
 
@@ -253,33 +248,6 @@ def _insert_markers(xhtml: str, tokens: list[Token], first_shard: int) -> str:
     return output
 
 
-def _compound_components(surface: str, dictionary: CompilerDictionary) -> tuple[int, ...]:
-    folded = surface.casefold()
-    if len(folded) < 8:
-        return ()
-    component_forms = dictionary.folded_forms
-
-    best: dict[int, tuple[int, ...]] = {0: ()}
-    for start in range(len(folded)):
-        prefix = best.get(start)
-        if prefix is None:
-            continue
-        for end in range(start + 3, len(folded) + 1):
-            analysis = component_forms.get(folded[start:end])
-            if analysis is None or (start == 0 and end == len(folded)):
-                continue
-            ids = analysis.lexeme_ids
-            if not ids:
-                continue
-            candidate = prefix + (ids[0],)
-            current = best.get(end)
-            is_better_tie = current is not None and len(candidate) == len(current) and candidate < current
-            if current is None or len(candidate) < len(current) or is_better_tie:
-                best[end] = candidate
-    result = best.get(len(folded), ())
-    return result if len(result) >= 2 else ()
-
-
 def _analyze(surface: str, dictionary: CompilerDictionary) -> Candidate | None:
     if surface.casefold() in GERMAN_STOPWORDS:
         return None
@@ -294,57 +262,8 @@ def _analyze(surface: str, dictionary: CompilerDictionary) -> Candidate | None:
         confidence = analysis.confidence if flags == 0 else min(analysis.confidence, 900)
         if len(analysis.lexeme_ids) > 1:
             flags |= CANDIDATE_AMBIGUOUS
-        return Candidate(surface, analysis.lexeme_ids, (), confidence, flags)
-
-    components = _compound_components(surface, dictionary)
-    if components:
-        return Candidate(surface, (), components, 700, CANDIDATE_COMPOUND)
+        return Candidate(surface, analysis.lexeme_ids, confidence, flags)
     return None
-
-
-def _build_surface_details(surfaces: list[Candidate], local_by_global: dict[int, int]) -> bytes:
-    records = bytearray()
-    analyses = bytearray()
-    components = bytearray()
-    strings = bytearray()
-    analysis_count = 0
-    component_count = 0
-    for candidate in surfaces:
-        encoded = candidate.surface.encode("utf-8")
-        local_analyses = tuple(local_by_global[item] for item in candidate.global_lexeme_ids)
-        local_components = tuple(local_by_global[item] for item in candidate.component_global_ids)
-        if len(local_analyses) > 255 or len(local_components) > 255:
-            raise BookCompileError(f"surface {candidate.surface!r} exceeds 255 analyses or components")
-        string_offset = len(strings)
-        strings.extend(encoded)
-        first_analysis = analysis_count
-        first_component = component_count
-        for local_id in local_analyses:
-            analyses.extend(struct.pack("<H", local_id))
-        for local_id in local_components:
-            components.extend(struct.pack("<H", local_id))
-        analysis_count += len(local_analyses)
-        component_count += len(local_components)
-        records.extend(struct.pack("<IIIHBBHH", string_offset, first_analysis, first_component, len(encoded),
-                                   len(local_analyses), len(local_components), candidate.confidence, candidate.flags))
-
-    output = bytearray(SURFACE_HEADER_SIZE)
-    surface_records_offset = SURFACE_HEADER_SIZE
-    output.extend(records)
-    _align4(output)
-    analysis_offset = len(output)
-    output.extend(analyses)
-    _align4(output)
-    component_offset = len(output)
-    output.extend(components)
-    _align4(output)
-    string_offset = len(output)
-    output.extend(strings)
-    _align4(output)
-    struct.pack_into("<4sHHIIIIIIII", output, 0, b"CXSD", 1, SURFACE_HEADER_SIZE, len(surfaces),
-                     analysis_count, component_count, surface_records_offset, analysis_offset,
-                     component_offset, string_offset, len(output))
-    return bytes(output)
 
 
 def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> CompiledBook:
@@ -382,10 +301,7 @@ def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> Com
     if record_count > MAX_RECORDS:
         raise BookCompileError(f"book exceeds {MAX_RECORDS} shard candidates")
 
-    # Version 2 emits only actionable whole-word analyses. Component-only
-    # guesses have no definition target and are intentionally excluded.
-    actionable_shards = [[candidate for candidate in candidates if candidate.global_lexeme_ids]
-                         for candidates in shard_candidates]
+    actionable_shards = shard_candidates
     record_count = sum(len(items) for items in actionable_shards)
     global_ids = {global_id for candidates in actionable_shards for candidate in candidates
                   for global_id in candidate.global_lexeme_ids}

@@ -2,11 +2,9 @@
   "use strict";
 
   const HEADER_SIZE = 108;
-  const SURFACE_HEADER_SIZE = 40;
   const SHARD_TOKENS = 64;
   const LANGUAGE_FORMAT_VERSION = 2;
   const MAX_SHARD_BLOB_BYTES = 24 * 1024;
-  const UINT16_MAX = 0xffff;
   const UTF8 = new TextEncoder();
   const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
   const STOPWORDS = new Set(
@@ -34,7 +32,6 @@
   ]);
 
   const FLAG_AMBIGUOUS = 0x01;
-  const FLAG_COMPOUND = 0x02;
   const FLAG_FOLDED = 0x04;
 
   function fail(message) {
@@ -281,26 +278,6 @@
     return output;
   }
 
-  function compoundComponents(surface, dictionary) {
-    const folded = germanFold(surface);
-    if (folded.length < 8) return [];
-    const best = new Map([[0, []]]);
-    for (let start = 0; start < folded.length; start++) {
-      const prefix = best.get(start);
-      if (!prefix) continue;
-      for (let end = start + 3; end <= folded.length; end++) {
-        const analysis = dictionary.foldedForms.get(folded.slice(start, end));
-        if (!analysis || (!start && end === folded.length) || !analysis.ids.length) continue;
-        const candidate = prefix.concat(analysis.ids[0]);
-        const current = best.get(end);
-        const tie = current && candidate.length === current.length && candidate.join(",") < current.join(",");
-        if (!current || candidate.length < current.length || tie) best.set(end, candidate);
-      }
-    }
-    const result = best.get(folded.length) || [];
-    return result.length >= 2 ? result : [];
-  }
-
   function analyze(surface, dictionary) {
     if (STOPWORDS.has(germanFold(surface))) return null;
     let analysis = dictionary.exactForms.get(surface);
@@ -314,68 +291,11 @@
       return {
         surface,
         globalIds: analysis.ids,
-        componentIds: [],
-        confidence: flags & FLAG_FOLDED ? Math.min(analysis.confidence, 900) : analysis.confidence,
+          confidence: flags & FLAG_FOLDED ? Math.min(analysis.confidence, 900) : analysis.confidence,
         flags,
       };
     }
-    const components = compoundComponents(surface, dictionary);
-    return components.length
-      ? { surface, globalIds: [], componentIds: components, confidence: 700, flags: FLAG_COMPOUND }
-      : null;
-  }
-
-  function buildSurfaceDetails(surfaces, localByGlobal) {
-    const records = [];
-    const analyses = [];
-    const components = [];
-    const strings = [];
-    for (const candidate of surfaces) {
-      const encoded = UTF8.encode(candidate.surface);
-      const localAnalyses = candidate.globalIds.map((id) => localByGlobal.get(id));
-      const localComponents = candidate.componentIds.map((id) => localByGlobal.get(id));
-      if (localAnalyses.length > 255 || localComponents.length > 255) fail("too many surface analyses");
-      const stringOffset = strings.length;
-      const firstAnalysis = analyses.length / 2;
-      const firstComponent = components.length / 2;
-      appendBytes(strings, encoded);
-      localAnalyses.forEach((id) => writeU16(analyses, id));
-      localComponents.forEach((id) => writeU16(components, id));
-      writeU32(records, stringOffset);
-      writeU32(records, firstAnalysis);
-      writeU32(records, firstComponent);
-      writeU16(records, encoded.length);
-      records.push(localAnalyses.length, localComponents.length);
-      writeU16(records, candidate.confidence);
-      writeU16(records, candidate.flags);
-    }
-    const output = new Array(SURFACE_HEADER_SIZE).fill(0);
-    const recordOffset = SURFACE_HEADER_SIZE;
-    appendBytes(output, records);
-    align4(output);
-    const analysisOffset = output.length;
-    appendBytes(output, analyses);
-    align4(output);
-    const componentOffset = output.length;
-    appendBytes(output, components);
-    align4(output);
-    const stringOffset = output.length;
-    appendBytes(output, strings);
-    align4(output);
-    const bytes = new Uint8Array(output);
-    bytes.set(UTF8.encode("CXSD"), 0);
-    const view = new DataView(bytes.buffer);
-    patchU16(view, 4, 1);
-    patchU16(view, 6, SURFACE_HEADER_SIZE);
-    patchU32(view, 8, surfaces.length);
-    patchU32(view, 12, analyses.length / 2);
-    patchU32(view, 16, components.length / 2);
-    patchU32(view, 20, recordOffset);
-    patchU32(view, 24, analysisOffset);
-    patchU32(view, 28, componentOffset);
-    patchU32(view, 32, stringOffset);
-    patchU32(view, 36, bytes.length);
-    return bytes;
+    return null;
   }
 
   function compileBook(spines, metaInput, formsInput, onProgress) {

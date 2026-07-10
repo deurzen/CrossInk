@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Firmware dictionary lookup now streams only version-2 self-contained shard records through a bounded 2 KB cache; the unreleased version-1 reader and tables were removed.
 - Dictionary EPUB compilation now emits version-2 self-contained shard blobs for bounded sequential firmware reads.
 - Dictionary installation now prepares absent global learning state before publishing the runtime package, avoiding first-lookup initialization.
 - Dictionary word lists now defer opening lexeme, headword, and entry files until a definition is selected.

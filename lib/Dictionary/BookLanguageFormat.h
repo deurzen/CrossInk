@@ -9,20 +9,20 @@ namespace dictionary::book_language {
 
 using dictionary::updateCrc32;
 
-constexpr uint16_t kFormatVersion = 1;
+constexpr uint16_t kFormatVersion = 2;
 constexpr size_t kHeaderSize = 108;
 constexpr uint32_t kMaxFileSize = 64U * 1024U * 1024U;
 constexpr uint16_t kMaxSpineCount = 4096;
 constexpr uint32_t kMaxShardCount = 65535;
 constexpr uint32_t kMaxShardRecordCount = 1000000;
 constexpr uint32_t kMaxLocalLemmaCount = 32768;
-constexpr uint32_t kMaxLocalSurfaceCount = 65535;
+constexpr uint32_t kMaxShardBlobSize = 24U * 1024U;
+constexpr uint8_t kMaxInlineAnalyses = 8;
 
 constexpr uint32_t kSpineRecordSize = 8;
-constexpr uint32_t kShardDirectoryRecordSize = 16;
-constexpr uint32_t kShardCandidateRecordSize = 16;
+constexpr uint32_t kShardDirectoryRecordSize = 20;
+constexpr uint32_t kInlineCandidateHeaderSize = 16;
 constexpr uint32_t kLocalLemmaRecordSize = 4;
-constexpr uint32_t kGlobalToLocalRecordSize = 8;
 
 struct Header {
   uint16_t formatVersion = 0;
@@ -37,13 +37,10 @@ struct Header {
   uint32_t shardCount = 0;
   uint32_t shardRecordCount = 0;
   uint32_t localLemmaCount = 0;
-  uint32_t localSurfaceCount = 0;
   uint32_t spineDirectoryOffset = 0;
   uint32_t shardDirectoryOffset = 0;
-  uint32_t shardRecordsOffset = 0;
+  uint32_t shardBlobOffset = 0;
   uint32_t localLemmaTableOffset = 0;
-  uint32_t globalToLocalTableOffset = 0;
-  uint32_t surfaceDetailOffset = 0;
   uint32_t metadataOffset = 0;
   uint32_t fileSize = 0;
   uint32_t payloadCrc32 = 0;
