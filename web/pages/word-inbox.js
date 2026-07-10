@@ -87,8 +87,18 @@ async function loadContext(id) {
     el('truncatedWarning').hidden = !context.textTruncated;
 
     const image = el('contextImage');
-    image.hidden = false;
-    image.src = '/api/word-inbox/image?' + query + '&v=' + Date.now();
+    const hasImage = context.hasImage === true;
+    el('screenshotCard').hidden = !hasImage;
+    el('viewer').querySelector('.context-grid').classList.toggle('no-image', !hasImage);
+    image.dataset.expected = hasImage ? 'true' : 'false';
+    if (hasImage) {
+      image.src = '/api/word-inbox/image?' + query + '&v=' + Date.now();
+    } else {
+      // An empty src causes browsers to request the current HTML document and
+      // then report it as a broken image, unnecessarily serializing that request
+      // ahead of the text fetch on the device's single web server.
+      image.removeAttribute('src');
+    }
 
     const text = el('contextText');
     const noText = el('noText');
@@ -163,7 +173,14 @@ el('latestBtn').addEventListener('click', () => state.book && loadContext(state.
 el('copyBtn').addEventListener('click', copyText);
 el('deleteContextBtn').addEventListener('click', deleteContext);
 el('deleteBookBtn').addEventListener('click', deleteBook);
-el('contextImage').addEventListener('error', () => showStatus('Could not display the saved screenshot.', true));
+el('contextImage').addEventListener('error', event => {
+  const image = event.currentTarget;
+  // Removing or replacing an in-flight image can itself emit an error. Report
+  // only a failure for the screenshot expected by the currently visible context.
+  if (image.dataset.expected === 'true' && state.context?.hasImage === true) {
+    showStatus('Could not display the saved screenshot.', true);
+  }
+});
 document.addEventListener('keydown', event => {
   if (event.target.matches('select, button, input, textarea')) return;
   if (event.key === 'ArrowLeft' && state.context && state.context.previousId) loadContext(state.context.previousId);

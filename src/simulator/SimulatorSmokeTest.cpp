@@ -54,7 +54,7 @@ class SimulatorSmokeTest {
   }
 
  private:
-  enum class ScriptActionType : uint8_t { Press, Release, Render };
+  enum class ScriptActionType : uint8_t { Press, Release, Render, Pause, EnableWordInboxScreenshots };
 
   struct ScriptAction {
     ScriptActionType type;
@@ -218,6 +218,14 @@ class SimulatorSmokeTest {
     return {ScriptActionType::Render, MappedInputManager::Button::Back, label, framesToSettle};
   }
 
+  static ScriptAction pause(int framesToSettle) {
+    return {ScriptActionType::Pause, MappedInputManager::Button::Back, nullptr, framesToSettle};
+  }
+
+  static ScriptAction enableWordInboxScreenshots() {
+    return {ScriptActionType::EnableWordInboxScreenshots, MappedInputManager::Button::Back, nullptr, 0};
+  }
+
   void addTap(MappedInputManager::Button button) {
     inputScript.push_back(press(button));
     inputScript.push_back(release(button));
@@ -234,8 +242,16 @@ class SimulatorSmokeTest {
     }
 
     SETTINGS.shortPwrBtn = CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX;
+    SETTINGS.wordInboxScreenshots = 0;
     addTap(MappedInputManager::Button::Power);
-    inputScript.push_back(render("Reader after Word Inbox capture", 5));
+    // Let the first, text-only capture toast expire without input or a page render.
+    inputScript.push_back(pause(140));
+    inputScript.push_back(enableWordInboxScreenshots());
+    // Capture twice more with screenshots, then turn immediately while the replacement toast is visible.
+    addTap(MappedInputManager::Button::Power);
+    addTap(MappedInputManager::Button::Power);
+    addTap(MappedInputManager::Button::PageForward);
+    inputScript.push_back(render("Reader after repeated Word Inbox capture and page turn", 5));
 
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("Reader Menu opened from EPUB", 4));
@@ -273,14 +289,22 @@ class SimulatorSmokeTest {
       return false;
     };
 
-    if (!WordInboxStore::visitBooks(&state, visitor) || !state.found || state.book.contextCount != 1 ||
-        state.book.latestContextId != 1) {
+    if (!WordInboxStore::visitBooks(&state, visitor) || !state.found || state.book.contextCount != 3 ||
+        state.book.latestContextId != 3) {
       fail("Word Inbox book enumeration failed");
     }
 
+    WordInboxContextInfo textOnlyCapture;
+    char screenshotPath[96];
+    if (!WordInboxStore::getContext(state.book.key, state.book.earliestContextId, textOnlyCapture) ||
+        !textOnlyCapture.hasText || textOnlyCapture.hasScreenshot ||
+        WordInboxStore::getScreenshotPath(state.book.key, textOnlyCapture.id, screenshotPath, sizeof(screenshotPath))) {
+      fail("Word Inbox text-only context validation failed");
+    }
+
     WordInboxContextInfo capture;
-    if (!WordInboxStore::getContext(state.book.key, state.book.latestContextId, capture) || capture.position != 1 ||
-        capture.contextCount != 1 || !capture.hasScreenshot || !capture.hasText || capture.textLength == 0) {
+    if (!WordInboxStore::getContext(state.book.key, state.book.latestContextId, capture) || capture.position != 3 ||
+        capture.contextCount != 3 || !capture.hasScreenshot || !capture.hasText || capture.textLength == 0) {
       fail("Word Inbox context metadata validation failed");
     }
 
@@ -292,18 +316,25 @@ class SimulatorSmokeTest {
     }
     textFile.close();
 
-    char screenshotPath[96];
     if (!WordInboxStore::getScreenshotPath(state.book.key, capture.id, screenshotPath, sizeof(screenshotPath))) {
       fail("Word Inbox screenshot validation failed");
     }
     if (!WordInboxStore::deleteContext(state.book.key, capture.id)) {
       fail("Word Inbox context deletion failed");
     }
-    ValidationState afterDelete;
-    if (!WordInboxStore::visitBooks(&afterDelete, visitor) || afterDelete.found) {
-      fail("Deleted Word Inbox context remained visible");
+    ValidationState afterContextDelete;
+    if (!WordInboxStore::visitBooks(&afterContextDelete, visitor) || !afterContextDelete.found ||
+        afterContextDelete.book.contextCount != 2) {
+      fail("Word Inbox context deletion count was incorrect");
     }
-    LOG_INF("SMOKE", "Validated Word Inbox context CRUD API");
+    if (!WordInboxStore::deleteBook(state.book.key)) {
+      fail("Word Inbox book deletion failed");
+    }
+    ValidationState afterBookDelete;
+    if (!WordInboxStore::visitBooks(&afterBookDelete, visitor) || afterBookDelete.found) {
+      fail("Deleted Word Inbox book remained visible");
+    }
+    LOG_INF("SMOKE", "Validated Word Inbox feedback races and context CRUD API");
   }
 
   void runReaderInputScript() {
@@ -323,6 +354,12 @@ class SimulatorSmokeTest {
         break;
       case ScriptActionType::Render:
         queueStep(action.label, SmokeStep::ReaderInput, action.settleFrames);
+        break;
+      case ScriptActionType::Pause:
+        settleFrames = action.settleFrames;
+        break;
+      case ScriptActionType::EnableWordInboxScreenshots:
+        SETTINGS.wordInboxScreenshots = 1;
         break;
     }
   }

@@ -261,7 +261,8 @@ bool writeContextTemporary(const char* const directory, const uint32_t id, const
     return false;
   }
 
-  uint8_t flags = FLAG_SCREENSHOT_AVAILABLE;
+  uint8_t flags = 0;
+  if (capture.framebuffer) flags |= FLAG_SCREENSHOT_AVAILABLE;
   if (!capture.text.empty()) flags |= FLAG_TEXT_AVAILABLE;
   if (capture.textTruncated) flags |= FLAG_TEXT_TRUNCATED;
   const uint8_t progress = std::min<uint8_t>(capture.progressPercent, 100);
@@ -322,10 +323,17 @@ bool isValidContextFile(const char* const directory, const uint32_t id) {
       std::memcmp(magic, CONTEXT_MAGIC, sizeof(magic)) != 0 || !readPod(file, version) || version != FORMAT_VERSION ||
       !readPod(file, flags) || !readPod(file, storedId) || storedId != id || !readPod(file, spineIndex) ||
       !readPod(file, currentPage) || !readPod(file, totalPages) || !readPod(file, progress) || progress > 100 ||
-      !skipString(file, MAX_CHAPTER_BYTES) || !readPod(file, textLength) || textLength > MAX_TEXT_BYTES) {
+      !skipString(file, MAX_CHAPTER_BYTES) || !readPod(file, textLength) || textLength > MAX_TEXT_BYTES ||
+      file.position() + textLength > file.size() || (((flags & FLAG_TEXT_AVAILABLE) != 0) != (textLength > 0))) {
+    file.close();
     return false;
   }
-  return file.position() + textLength <= file.size();
+  file.close();
+
+  if ((flags & FLAG_SCREENSHOT_AVAILABLE) == 0) return true;
+  char screenshotPath[PATH_CAPACITY];
+  return buildCapturePath(directory, id, "bmp", false, screenshotPath, sizeof(screenshotPath)) &&
+         Storage.exists(screenshotPath);
 }
 
 struct ContextScanResult {
@@ -350,12 +358,6 @@ bool scanContexts(const char* const directory, const uint32_t targetId, ContextS
     if (!parseContextId(name, candidate)) continue;
     entry.close();  // validation reopens the context file.
     if (!isValidContextFile(directory, candidate)) continue;
-
-    char screenshotPath[PATH_CAPACITY];
-    if (!buildCapturePath(directory, candidate, "bmp", false, screenshotPath, sizeof(screenshotPath)) ||
-        !Storage.exists(screenshotPath)) {
-      continue;
-    }
 
     result.count++;
     if (result.earliestId == 0 || candidate < result.earliestId) result.earliestId = candidate;
@@ -438,10 +440,10 @@ bool readContextInfo(const char* const directory, const uint32_t id, WordInboxCo
 
 WordInboxSaveResult WordInboxStore::save(const WordInboxCapture& capture, uint32_t& outCaptureId) {
   outCaptureId = 0;
-  if (!capture.framebuffer || capture.displayWidth <= 0 || capture.displayWidth % 8 != 0 ||
-      capture.displayHeight <= 0 || capture.title.size() > MAX_TITLE_BYTES ||
-      capture.author.size() > MAX_AUTHOR_BYTES || capture.chapterTitle.size() > MAX_CHAPTER_BYTES ||
-      capture.text.size() > MAX_TEXT_BYTES) {
+  const bool hasScreenshot = capture.framebuffer != nullptr;
+  if ((hasScreenshot && (capture.displayWidth <= 0 || capture.displayWidth % 8 != 0 || capture.displayHeight <= 0)) ||
+      capture.title.size() > MAX_TITLE_BYTES || capture.author.size() > MAX_AUTHOR_BYTES ||
+      capture.chapterTitle.size() > MAX_CHAPTER_BYTES || capture.text.size() > MAX_TEXT_BYTES) {
     LOG_ERR("WIN", "Invalid word inbox capture");
     return WordInboxSaveResult::InvalidInput;
   }
@@ -471,7 +473,7 @@ WordInboxSaveResult WordInboxStore::save(const WordInboxCapture& capture, uint32
   removeCaptureFile(directory, id, "bmp", true);
   removeCaptureFile(directory, id, "ctx", true);
 
-  if (!saveScreenshotTemporary(directory, id, capture)) {
+  if (hasScreenshot && !saveScreenshotTemporary(directory, id, capture)) {
     LOG_ERR("WIN", "Failed to save inbox screenshot");
     removeCaptureFile(directory, id, "bmp", true);
     return WordInboxSaveResult::ScreenshotError;
@@ -480,7 +482,7 @@ WordInboxSaveResult WordInboxStore::save(const WordInboxCapture& capture, uint32
     removeCaptureFile(directory, id, "bmp", true);
     return WordInboxSaveResult::StorageError;
   }
-  if (!promoteCaptureFile(directory, id, "bmp")) {
+  if (hasScreenshot && !promoteCaptureFile(directory, id, "bmp")) {
     LOG_ERR("WIN", "Failed to commit inbox screenshot");
     removeCaptureFile(directory, id, "bmp", true);
     removeCaptureFile(directory, id, "ctx", true);
@@ -544,7 +546,7 @@ bool WordInboxStore::getContext(const std::string_view bookKey, const uint32_t i
   out.hasScreenshot = out.hasScreenshot &&
                       buildCapturePath(directory, id, "bmp", false, screenshotPath, sizeof(screenshotPath)) &&
                       Storage.exists(screenshotPath);
-  return out.hasScreenshot;
+  return true;
 }
 
 bool WordInboxStore::openContextText(const std::string_view bookKey, const WordInboxContextInfo& context,

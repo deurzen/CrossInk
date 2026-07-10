@@ -19,6 +19,7 @@ select { width: 100%; padding: 9px 12px; border: 1px solid var(--border-color); 
 .btn-danger { color: var(--danger-color); background: transparent; border-color: rgba(220,38,38,.35); }
 .btn-danger:hover { color: white; background: var(--danger-color); }
 .context-grid { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(320px, 1.1fr); gap: 16px; }
+.context-grid.no-image { grid-template-columns: 1fr; }
 .context-grid .card { margin: 0; min-width: 0; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .badge { color: var(--accent-hover-color); background: var(--accent-soft); border-radius: 999px; padding: 3px 9px; font-size: .78em; font-weight: 700; text-transform: uppercase; }
