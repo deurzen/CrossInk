@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- Ambiguous dictionary analyses now render consecutively in one bounded definition stream, with subtle spacing between meanings and working page navigation when content overflows.
+- Dictionary shortlist side buttons move one word while the front/bottom navigation rocker jumps a full visible list page.
 - Dictionary shortlists can embed offline `wordfreq` familiarity scores and now sort all visible candidates hardest-first, with no device-side frequency database or allocation.
 - Browser-generated X-location manifests are stored without ZIP compression, avoiding long first-open decompression and a 32 KB inflater window on memory-constrained home screens.
 - Dictionary-enabled EPUB uploads now extract, validate, and receipt only the stored language artifact before reporting success, avoiding full EPUB parsing while WebUI memory is still in use.

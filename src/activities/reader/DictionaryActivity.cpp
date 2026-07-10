@@ -10,7 +10,6 @@
 #include <cstring>
 
 #include "MappedInputManager.h"
-#include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -20,6 +19,7 @@ constexpr int kHeaderY = 15;
 constexpr int kListTop = 58;
 constexpr int kRowHeight = 34;
 constexpr int kDefinitionLineGap = 3;
+constexpr int kDefinitionMeaningGap = 4;
 constexpr int kBottomReserved = 48;
 
 const char* statusLabel(const uint8_t index) {
@@ -116,13 +116,6 @@ int DictionaryActivity::definitionContentWidth() const {
   return std::max(1, renderer.getScreenWidth() - left - right - 2 * kSideMargin);
 }
 
-uint16_t DictionaryActivity::selectedLocalLemmaId() const {
-  if (!shortlist_ || selected_ >= shortlist_->count) return UINT16_MAX;
-  const auto& item = shortlist_->items[selected_];
-  if (analysisIndex_ >= item.analysisCount) return UINT16_MAX;
-  return item.localLemmaIds[analysisIndex_];
-}
-
 int DictionaryActivity::measureDefinitionText(void* context, const std::string_view text) {
   auto& activity = *static_cast<DictionaryActivity*>(context);
   if (text.size() >= sizeof(activity.lineScratch_)) return INT_MAX;
@@ -131,32 +124,40 @@ int DictionaryActivity::measureDefinitionText(void* context, const std::string_v
   return activity.renderer.getTextAdvanceX(UI_10_FONT_ID, activity.lineScratch_, EpdFontFamily::REGULAR);
 }
 
+bool DictionaryActivity::openAnalysisEntry(const uint8_t analysisIndex) {
+  if (!shortlist_ || selected_ >= shortlist_->count || analysisIndex >= shortlist_->items[selected_].analysisCount) {
+    return false;
+  }
+  uint32_t globalLexemeId = 0;
+  dictionary::PackageError packageError = dictionary::PackageError::NONE;
+  if (!session_->globalLexemeId(shortlist_->items[selected_].localLemmaIds[analysisIndex], globalLexemeId) ||
+      !session_->package().readLexeme(globalLexemeId, lexeme_, packageError) ||
+      !session_->package().getEntrySlice(lexeme_, entry_, packageError)) {
+    LOG_ERR("DICT", "Definition analysis %u failed: %s", static_cast<unsigned>(analysisIndex),
+            dictionary::packageErrorName(packageError));
+    return false;
+  }
+  return true;
+}
+
 bool DictionaryActivity::openDefinition() {
   const unsigned long startedAt = millis();
   const auto ioBefore = session_->sourceIoMetrics();
   definitionFailed_ = false;
   statusSaved_ = false;
-  const uint16_t localLemmaId = selectedLocalLemmaId();
-  uint32_t globalLexemeId = 0;
-  dictionary::PackageError packageError = dictionary::PackageError::NONE;
   dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
-  size_t headwordLength = 0;
-  if (localLemmaId == UINT16_MAX || !session_->openDefinitionPackage(sessionError) ||
-      !session_->globalLexemeId(localLemmaId, globalLexemeId) ||
-      !session_->package().readLexeme(globalLexemeId, lexeme_, packageError) ||
-      !session_->package().readHeadword(lexeme_, headword_, sizeof(headword_), headwordLength, packageError) ||
-      !session_->package().getEntrySlice(lexeme_, entry_, packageError)) {
-    const auto io = dictionary::io_metrics::difference(session_->sourceIoMetrics(), ioBefore);
-    LOG_ERR("DICT", "Definition lookup failed in %lu ms: %s (opens=%lu switches=%lu seeks=%lu reads=%lu bytes=%llu)",
-            millis() - startedAt, dictionary::packageErrorName(packageError),
-            static_cast<unsigned long>(io.openAttempts), static_cast<unsigned long>(io.sourceSwitches),
-            static_cast<unsigned long>(io.seekAttempts), static_cast<unsigned long>(io.readCalls),
-            static_cast<unsigned long long>(io.bytesRead));
+  if (!shortlist_ || selected_ >= shortlist_->count || !session_->openDefinitionPackage(sessionError)) {
+    LOG_ERR("DICT", "Definition package open failed: %s", dictionary::lookup::sessionErrorName(sessionError));
     definitionFailed_ = true;
     mode_ = Mode::Definition;
     requestUpdate();
     return false;
   }
+
+  const std::string_view surface = shortlist_->surface(selected_);
+  const size_t headwordLength = std::min(surface.size(), sizeof(headword_) - 1);
+  std::memcpy(headword_, surface.data(), headwordLength);
+  headword_[headwordLength] = '\0';
 
   if (!pager_) {
     // 644-byte wrapping workspace is retained and reused in definition mode;
@@ -164,8 +165,8 @@ bool DictionaryActivity::openDefinition() {
     pager_ = makeUniqueNoThrow<dictionary::definition::Pager>();
   }
   if (!definitionPage_) {
-    // One 4.4 KB rendered definition page is retained; the full entry can be
-    // 1 MiB and is therefore streamed instead of allocated.
+    // One 4.4 KB rendered definition page is retained; every analysis is
+    // streamed into it sequentially instead of materializing full entries.
     definitionPage_ = makeUniqueNoThrow<dictionary::definition::Page>();
   }
   if (!pager_ || !definitionPage_) {
@@ -178,6 +179,7 @@ bool DictionaryActivity::openDefinition() {
   }
 
   definitionPageStart_ = {};
+  definitionPageNext_ = {};
   definitionPageIndex_ = 0;
   mode_ = Mode::Definition;
   const bool loaded = loadDefinitionPage(definitionPageStart_, 0);
@@ -192,8 +194,8 @@ bool DictionaryActivity::openDefinition() {
   return loaded;
 }
 
-bool DictionaryActivity::loadDefinitionPage(const dictionary::definition::Cursor& start, const uint32_t pageIndex) {
-  if (!pager_ || !definitionPage_) return false;
+bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const uint32_t pageIndex) {
+  if (!pager_ || !definitionPage_ || !shortlist_ || selected_ >= shortlist_->count) return false;
   dictionary::definition::PagerError error = dictionary::definition::PagerError::NONE;
   const dictionary::definition::WidthMeasurer measurer{this, measureDefinitionText};
   const int lineStep = renderer.getLineHeight(UI_10_FONT_ID) + kDefinitionLineGap;
@@ -204,15 +206,44 @@ bool DictionaryActivity::loadDefinitionPage(const dictionary::definition::Cursor
   contentMargins(top, right, bottom, left);
   (void)right;
   (void)left;
-  const size_t visibleLines = static_cast<size_t>(
-      std::max(1, (renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved) / std::max(1, lineStep)));
-  if (!pager_->load(session_->package(), entry_, start, measurer, definitionContentWidth(),
-                    std::min(visibleLines, dictionary::definition::kMaxPageLines), *definitionPage_, error)) {
-    LOG_ERR("DICT", "Definition page failed: %s", dictionary::definition::pagerErrorName(error));
-    definitionFailed_ = true;
-    requestUpdate();
-    return false;
+  // Budget the small meaning separator on every line. This is conservative
+  // but guarantees that field gaps can never push a line below the viewport.
+  const size_t visibleLines =
+      static_cast<size_t>(std::max(1, (renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved) /
+                                          std::max(1, lineStep + kDefinitionMeaningGap)));
+  const size_t maxLines = std::min(visibleLines, dictionary::definition::kMaxPageLines);
+
+  DefinitionCursor cursor = start;
+  bool firstEntry = true;
+  *definitionPage_ = {};
+  const uint8_t analysisCount = shortlist_->items[selected_].analysisCount;
+  while (cursor.analysisIndex < analysisCount && definitionPage_->lineCount < maxLines) {
+    if (!openAnalysisEntry(cursor.analysisIndex)) {
+      definitionFailed_ = true;
+      requestUpdate();
+      return false;
+    }
+    const bool pageLoaded = firstEntry ? pager_->load(session_->package(), entry_, cursor.entry, measurer,
+                                                      definitionContentWidth(), maxLines, *definitionPage_, error)
+                                       : pager_->append(session_->package(), entry_, cursor.entry, measurer,
+                                                        definitionContentWidth(), maxLines, *definitionPage_, error);
+    if (!pageLoaded) {
+      LOG_ERR("DICT", "Definition page failed: %s", dictionary::definition::pagerErrorName(error));
+      definitionFailed_ = true;
+      requestUpdate();
+      return false;
+    }
+    firstEntry = false;
+    if (definitionPage_->hasNext) {
+      definitionPageNext_ = {definitionPage_->next, cursor.analysisIndex};
+      break;
+    }
+    ++cursor.analysisIndex;
+    cursor.entry = {};
+    definitionPageNext_ = {cursor.entry, cursor.analysisIndex};
   }
+
+  definitionPage_->hasNext = definitionPageNext_.analysisIndex < analysisCount;
   definitionFailed_ = false;
   definitionPageStart_ = start;
   definitionPageIndex_ = pageIndex;
@@ -223,7 +254,7 @@ bool DictionaryActivity::loadDefinitionPage(const dictionary::definition::Cursor
 void DictionaryActivity::changeDefinitionPage(const int delta) {
   if (definitionFailed_ || !definitionPage_) return;
   if (delta > 0 && definitionPage_->hasNext) {
-    loadDefinitionPage(definitionPage_->next, definitionPageIndex_ + 1);
+    loadDefinitionPage(definitionPageNext_, definitionPageIndex_ + 1);
     return;
   }
   if (delta >= 0 || definitionPageIndex_ == 0) return;
@@ -232,33 +263,28 @@ void DictionaryActivity::changeDefinitionPage(const int delta) {
   // memory independent of definition length; only explicit reverse navigation
   // pays the additional sequential SD reads.
   const uint32_t targetPage = definitionPageIndex_ - 1;
-  dictionary::definition::Cursor cursor{};
+  DefinitionCursor cursor{};
   for (uint32_t page = 0; page <= targetPage; ++page) {
     if (!loadDefinitionPage(cursor, page)) return;
     if (page < targetPage) {
       if (!definitionPage_->hasNext) return;
-      cursor = definitionPage_->next;
+      cursor = definitionPageNext_;
     }
   }
 }
 
-void DictionaryActivity::changeAnalysis(const int delta) {
-  if (!shortlist_ || selected_ >= shortlist_->count) return;
-  const uint8_t count = shortlist_->items[selected_].analysisCount;
-  if (count < 2) return;
-  analysisIndex_ = static_cast<uint8_t>((analysisIndex_ + count + delta) % count);
-  openDefinition();
-}
-
 void DictionaryActivity::saveSelectedStatus() {
   dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
-  if (!session_->setStatus(selectedLocalLemmaId(), statusValue(statusSelection_), error)) {
-    LOG_ERR("DICT", "Status update failed: %s", dictionary::lookup::sessionErrorName(error));
-    statusSaved_ = false;
-    mode_ = Mode::Definition;
-    definitionFailed_ = true;
-    requestUpdate();
-    return;
+  const auto& item = shortlist_->items[selected_];
+  for (uint8_t analysis = 0; analysis < item.analysisCount; ++analysis) {
+    if (!session_->setStatus(item.localLemmaIds[analysis], statusValue(statusSelection_), error)) {
+      LOG_ERR("DICT", "Status update failed: %s", dictionary::lookup::sessionErrorName(error));
+      statusSaved_ = false;
+      mode_ = Mode::Definition;
+      definitionFailed_ = true;
+      requestUpdate();
+      return;
+    }
   }
   statusSaved_ = true;
   mode_ = Mode::Definition;
@@ -275,7 +301,6 @@ void DictionaryActivity::returnToShortlist() {
     return;
   }
   if (selected_ >= shortlist_->count) selected_ = static_cast<uint16_t>(shortlist_->count - 1);
-  analysisIndex_ = 0;
   mode_ = Mode::Shortlist;
   requestUpdate();
 }
@@ -298,17 +323,19 @@ void DictionaryActivity::loop() {
       openDefinition();
       return;
     }
-    const bool previous = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
-                          mappedInput.wasReleased(MappedInputManager::Button::Left);
-    const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
-                      mappedInput.wasReleased(MappedInputManager::Button::Right);
-    if (previous) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
       selected_ = selected_ == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : selected_ - 1;
-      analysisIndex_ = 0;
       requestUpdate();
-    } else if (next) {
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
       selected_ = static_cast<uint16_t>((selected_ + 1) % shortlist_->count);
-      analysisIndex_ = 0;
+      requestUpdate();
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+      const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
+      selected_ = selected_ > rows ? static_cast<uint16_t>(selected_ - rows) : 0;
+      requestUpdate();
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+      const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
+      selected_ = static_cast<uint16_t>(std::min<size_t>(shortlist_->count - 1, selected_ + rows));
       requestUpdate();
     }
     return;
@@ -344,17 +371,9 @@ void DictionaryActivity::loop() {
   const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
                     mappedInput.wasReleased(MappedInputManager::Button::Right);
   if (previous) {
-    if (mappedInput.getHeldTime() >= ReaderUtils::SKIP_HOLD_MS) {
-      changeAnalysis(-1);
-    } else {
-      changeDefinitionPage(-1);
-    }
+    changeDefinitionPage(-1);
   } else if (next) {
-    if (mappedInput.getHeldTime() >= ReaderUtils::SKIP_HOLD_MS) {
-      changeAnalysis(1);
-    } else {
-      changeDefinitionPage(1);
-    }
+    changeDefinitionPage(1);
   }
 }
 
@@ -385,7 +404,7 @@ void DictionaryActivity::renderShortlist() {
     renderer.drawText(UI_10_FONT_ID, left + kSideMargin, y + 5, lineScratch_, !selected);
   }
 
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_OPEN), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_OPEN), tr(STR_PAGE_UP), tr(STR_PAGE_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 
@@ -396,14 +415,7 @@ void DictionaryActivity::renderDefinition() {
   int left = 0;
   contentMargins(top, right, bottom, left);
   char header[160]{};
-  uint8_t analyses = 1;
-  if (shortlist_ && selected_ < shortlist_->count) analyses = shortlist_->items[selected_].analysisCount;
-  if (analyses > 1) {
-    std::snprintf(header, sizeof(header), "%s · %u/%u", headword_, static_cast<unsigned>(analysisIndex_ + 1),
-                  static_cast<unsigned>(analyses));
-  } else {
-    std::snprintf(header, sizeof(header), "%s", headword_);
-  }
+  std::snprintf(header, sizeof(header), "%s", headword_);
   renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, header, true, EpdFontFamily::BOLD);
 
   if (definitionFailed_) {
@@ -412,6 +424,7 @@ void DictionaryActivity::renderDefinition() {
     int y = top + kListTop;
     const int lineStep = renderer.getLineHeight(UI_10_FONT_ID) + kDefinitionLineGap;
     for (uint8_t index = 0; index < definitionPage_->lineCount; ++index) {
+      if (definitionPage_->lines[index].gapBefore) y += kDefinitionMeaningGap;
       const auto text = definitionPage_->lineText(index);
       const size_t length = std::min(text.size(), sizeof(lineScratch_) - 1);
       std::memcpy(lineScratch_, text.data(), length);
@@ -422,17 +435,20 @@ void DictionaryActivity::renderDefinition() {
       y += lineStep;
       if (y >= renderer.getScreenHeight() - bottom - kBottomReserved) break;
     }
-    char pageLabel[16]{};
-    std::snprintf(pageLabel, sizeof(pageLabel), "%u%s", definitionPageIndex_ + 1, definitionPage_->hasNext ? "+" : "");
-    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - right - kSideMargin - 25,
-                      renderer.getScreenHeight() - bottom - kBottomReserved, pageLabel);
+    if (definitionPageIndex_ > 0 || definitionPage_->hasNext) {
+      char pageLabel[16]{};
+      std::snprintf(pageLabel, sizeof(pageLabel), "%u%s", definitionPageIndex_ + 1,
+                    definitionPage_->hasNext ? "+" : "");
+      renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - right - kSideMargin - 25,
+                        renderer.getScreenHeight() - bottom - kBottomReserved, pageLabel);
+    }
   }
 
   if (statusSaved_) {
     renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
                       tr(STR_WORD_STATUS_SAVED));
   }
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_PAGE_UP), tr(STR_PAGE_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 

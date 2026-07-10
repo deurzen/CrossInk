@@ -23,7 +23,8 @@ struct Line {
   uint16_t textOffset = 0;
   uint16_t textLength = 0;
   uint8_t fieldType = 0;
-  bool fieldStart = false;
+  bool fieldStart : 1 = false;
+  bool gapBefore : 1 = false;
 };
 
 struct Page {
@@ -58,6 +59,8 @@ class Pager {
  public:
   bool load(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
             const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
+  bool append(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
+              const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
 
  private:
   uint8_t chunk_[kReadChunkBytes]{};
@@ -67,6 +70,9 @@ class Pager {
 
   bool readByte(const DictionaryPackage& package, const EntrySlice& entry, uint32_t relativeOffset, uint8_t& value,
                 PagerError& error);
+  bool loadInternal(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
+                    const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, bool resetOutput, Page& output,
+                    PagerError& error);
 };
 
 static_assert(sizeof(Pager) <= 768, "Definition pager workspace exceeds its transient memory budget");

@@ -45,7 +45,20 @@ bool Pager::readByte(const DictionaryPackage& package, const EntrySlice& entry, 
 bool Pager::load(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
                  const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines, Page& output,
                  PagerError& error) {
-  output = {};
+  return loadInternal(package, entry, start, measurer, maxLineWidth, maxLines, true, output, error);
+}
+
+bool Pager::append(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
+                   const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines, Page& output,
+                   PagerError& error) {
+  return loadInternal(package, entry, start, measurer, maxLineWidth, maxLines, false, output, error);
+}
+
+bool Pager::loadInternal(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
+                         const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines,
+                         const bool resetOutput, Page& output, PagerError& error) {
+  if (resetOutput) output = {};
+  output.hasNext = false;
   error = PagerError::NONE;
   chunkStart_ = UINT32_MAX;
   chunkLength_ = 0;
@@ -82,6 +95,7 @@ bool Pager::load(const DictionaryPackage& package, const EntrySlice& entry, cons
       return false;
     }
 
+    bool gapBeforeNextLine = false;
     while (cursor.fieldByteOffset < field.length && output.lineCount < maxLines) {
       while (cursor.fieldByteOffset < field.length) {
         uint8_t byte = 0;
@@ -170,6 +184,8 @@ bool Pager::load(const DictionaryPackage& package, const EntrySlice& entry, cons
       outLine.textLength = static_cast<uint16_t>(lineLength);
       outLine.fieldType = field.type;
       outLine.fieldStart = lineStartInField == 0;
+      outLine.gapBefore = output.lineCount > 1 && (outLine.fieldStart || gapBeforeNextLine);
+      gapBeforeNextLine = endedByNewline && lineLength > 0;
       if (lineLength > 0) {
         std::memcpy(output.text + output.textBytesUsed, line_, lineLength);
         output.textBytesUsed = static_cast<uint16_t>(output.textBytesUsed + lineLength);

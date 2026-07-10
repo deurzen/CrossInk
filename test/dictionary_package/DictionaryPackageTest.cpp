@@ -289,8 +289,35 @@ TEST(DefinitionPager, StreamsWrappedPagesAcrossEntryFields) {
   EXPECT_EQ(page.lineText(1), "one two");
   EXPECT_EQ(page.lines[1].fieldType, 1);
   EXPECT_TRUE(page.lines[1].fieldStart);
+  EXPECT_TRUE(page.lines[1].gapBefore);
+  EXPECT_FALSE(page.lines[2].gapBefore);
   EXPECT_EQ(page.lineText(page.lineCount - 1), "example");
   EXPECT_FALSE(page.hasNext);
+}
+
+TEST(DefinitionPager, AppendsEntriesWithoutASecondPageBuffer) {
+  Fixture fixture = makeFixture();
+  replaceFirstEntry(fixture, {{1, "first meaning"}});
+  DictionaryPackage package;
+  PackageError packageError;
+  ASSERT_TRUE(openFixture(fixture, package, packageError));
+
+  dictionary::LexemeRecord lexeme;
+  dictionary::EntrySlice entry;
+  ASSERT_TRUE(package.readLexeme(0, lexeme, packageError));
+  ASSERT_TRUE(package.getEntrySlice(lexeme, entry, packageError));
+
+  dictionary::definition::Pager pager;
+  dictionary::definition::Page page;
+  dictionary::definition::PagerError error;
+  const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
+  ASSERT_TRUE(pager.load(package, entry, {}, measurer, 40, dictionary::definition::kMaxPageLines, page, error));
+  const uint8_t firstLineCount = page.lineCount;
+  ASSERT_TRUE(pager.append(package, entry, {}, measurer, 40, dictionary::definition::kMaxPageLines, page, error));
+
+  ASSERT_EQ(page.lineCount, firstLineCount * 2);
+  EXPECT_TRUE(page.lines[firstLineCount].gapBefore);
+  EXPECT_EQ(page.lineText(firstLineCount), "first meaning");
 }
 
 TEST(DefinitionPager, ReturnsBoundedContinuationCursorWithoutMaterializingEntry) {
