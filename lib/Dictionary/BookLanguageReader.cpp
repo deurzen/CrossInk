@@ -6,7 +6,7 @@
 
 namespace dictionary::book_language {
 namespace {
-constexpr uint8_t kKnownCandidateFlags = 0x07;
+constexpr uint8_t kKnownCandidateFlags = 0x0F;
 
 uint16_t readU16(const uint8_t* data) {
   return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8U);

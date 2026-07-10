@@ -33,6 +33,8 @@
 
   const FLAG_AMBIGUOUS = 0x01;
   const FLAG_FOLDED = 0x04;
+  const FLAG_ANALYSES_TRUNCATED = 0x08;
+  const MAX_INLINE_ANALYSES = 8;
 
   function fail(message) {
     throw new Error(message);
@@ -288,9 +290,10 @@
     }
     if (analysis) {
       if (analysis.ids.length > 1) flags |= FLAG_AMBIGUOUS;
+      if (analysis.ids.length > MAX_INLINE_ANALYSES) flags |= FLAG_ANALYSES_TRUNCATED;
       return {
         surface,
-        globalIds: analysis.ids,
+        globalIds: analysis.ids.slice(0, MAX_INLINE_ANALYSES),
           confidence: flags & FLAG_FOLDED ? Math.min(analysis.confidence, 900) : analysis.confidence,
         flags,
       };

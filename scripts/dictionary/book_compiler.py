@@ -26,6 +26,8 @@ LANGUAGE_FORMAT_VERSION = 2
 
 CANDIDATE_AMBIGUOUS = 0x01
 CANDIDATE_NORMALIZED_FALLBACK = 0x04
+CANDIDATE_ANALYSES_TRUNCATED = 0x08
+MAX_INLINE_ANALYSES = 8
 
 GERMAN_STOPWORDS = frozenset(
     "aber als am an auch auf aus bei bin bis bist da dadurch daher darum das dass dein deine dem den der des die "
@@ -262,7 +264,9 @@ def _analyze(surface: str, dictionary: CompilerDictionary) -> Candidate | None:
         confidence = analysis.confidence if flags == 0 else min(analysis.confidence, 900)
         if len(analysis.lexeme_ids) > 1:
             flags |= CANDIDATE_AMBIGUOUS
-        return Candidate(surface, analysis.lexeme_ids, confidence, flags)
+        if len(analysis.lexeme_ids) > MAX_INLINE_ANALYSES:
+            flags |= CANDIDATE_ANALYSES_TRUNCATED
+        return Candidate(surface, analysis.lexeme_ids[:MAX_INLINE_ANALYSES], confidence, flags)
     return None
 
 

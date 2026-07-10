@@ -67,7 +67,7 @@ surface:u8[surfaceLength]
 padding:u8[]         // zero, to four-byte record alignment
 ```
 
-The first and second inline analysis IDs are the primary and alternate analyses. Compound-only guesses with no whole-word analysis are not
+Candidate flag bit 0 marks ambiguity, bit 2 marks a case-folded fallback, and bit 3 records that a pathological surface had more than eight analyses and was deterministically capped. Other bits are invalid. The first and second inline analysis IDs are the primary and alternate analyses. Compound-only guesses with no whole-word analysis are not
 emitted. A record must fit completely inside its shard blob; all local IDs must
 be below the header's local-lemma count. Firmware processes one shard
 sequentially through bounded scratch storage and never allocates `blobLength`.

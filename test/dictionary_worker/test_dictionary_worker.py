@@ -42,11 +42,20 @@ class DictionaryWorkerTest(unittest.TestCase):
                 },
             ]
         )
+        for index in range(9):
+            source["lexemes"].append(
+                {
+                    "headword": f"Mehrdeutig{index}",
+                    "partOfSpeech": "noun",
+                    "forms": ["Mehrdeutig"],
+                    "fields": [{"type": "definition", "text": f"meaning {index}"}],
+                }
+            )
         bundle = compile_bundle(source)
         spines = [
             {
                 "path": "OPS/chapter1.xhtml",
-                "content": "<html><head><title>gehen</title></head><body><p>Die Ha\u0308u<em>sern</em>, Gingen! liebe Krankenhausaufnahme.</p></body></html>",
+                "content": "<html><head><title>gehen</title></head><body><p>Die Ha\u0308u<em>sern</em>, Gingen! liebe Krankenhausaufnahme Mehrdeutig.</p></body></html>",
             },
             {"path": "OPS/chapter2.xhtml", "content": "<p>" + " ".join(["gingen"] * 65) + "</p>"},
         ]

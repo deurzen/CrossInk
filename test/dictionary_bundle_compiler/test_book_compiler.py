@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from dictionary.book_compiler import (  # noqa: E402
     CANDIDATE_AMBIGUOUS,
+    CANDIDATE_ANALYSES_TRUNCATED,
     CANDIDATE_NORMALIZED_FALLBACK,
     compile_book,
     load_compiler_dictionary,
@@ -123,6 +124,23 @@ class GermanBookCompilerTest(unittest.TestCase):
         self.assertTrue(surfaces["liebe"]["flags"] & CANDIDATE_AMBIGUOUS)
         self.assertTrue(surfaces["Gingen"]["flags"] & CANDIDATE_NORMALIZED_FALLBACK)
         self.assertEqual(surfaces["Gingen"]["confidence"], 900)
+
+    def test_caps_pathological_surface_ambiguity_without_failing_book(self):
+        source = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        source = copy.deepcopy(source)
+        for index in range(9):
+            source["lexemes"].append({
+                "headword": f"Mehrdeutig{index}",
+                "partOfSpeech": "noun",
+                "forms": ["Mehrdeutig"],
+                "fields": [{"type": "definition", "text": f"meaning {index}"}],
+            })
+        bundle = compile_bundle(source)
+        dictionary = load_compiler_dictionary(bundle.files["device/meta.bin"], bundle.files["compiler/forms.bin"])
+        surfaces = decoded_surfaces(compile_book(["<p>Mehrdeutig</p>"], dictionary).language_artifact)
+
+        self.assertEqual(len(surfaces["Mehrdeutig"]["analyses"]), 8)
+        self.assertTrue(surfaces["Mehrdeutig"]["flags"] & CANDIDATE_ANALYSES_TRUNCATED)
 
     def test_shards_every_64_source_tokens_and_deduplicates_per_shard(self):
         dictionary = compiler_dictionary()
