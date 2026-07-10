@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- Dictionary lists no longer offer compound-only false positives that cannot open a whole-word definition.
+- Dictionary navigation now accepts both side and front directional buttons, and uses compact button labels that fit X3/X4 hint areas.
 - First dictionary lookup with a large bundle now initializes learning state in 2 KB writes and caches sequential lemma/status reads, avoiding thousands of tiny SD operations that could make X3/X4 appear frozen.
 - Dictionary runtime installation now uses resumable 256 KB uploads, preserving staged progress and retrying automatically after short Wi-Fi interruptions.
 - EPUB optimization now preserves the package document selected by `META-INF/container.xml` and any auxiliary OPF files, fixing books with multiple package documents becoming unopenable.

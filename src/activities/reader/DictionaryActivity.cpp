@@ -265,11 +265,15 @@ void DictionaryActivity::loop() {
       openDefinition();
       return;
     }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+    const bool previous = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
+                          mappedInput.wasReleased(MappedInputManager::Button::Left);
+    const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
+                      mappedInput.wasReleased(MappedInputManager::Button::Right);
+    if (previous) {
       selected_ = selected_ == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : selected_ - 1;
       analysisIndex_ = 0;
       requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+    } else if (next) {
       selected_ = static_cast<uint16_t>((selected_ + 1) % shortlist_->count);
       analysisIndex_ = 0;
       requestUpdate();
@@ -280,12 +284,18 @@ void DictionaryActivity::loop() {
   if (mode_ == Mode::Status) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       saveSelectedStatus();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
-      statusSelection_ = statusSelection_ == 0 ? 2 : statusSelection_ - 1;
-      requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
-      statusSelection_ = static_cast<uint8_t>((statusSelection_ + 1) % 3);
-      requestUpdate();
+    } else {
+      const bool previous = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
+                            mappedInput.wasReleased(MappedInputManager::Button::Left);
+      const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
+                        mappedInput.wasReleased(MappedInputManager::Button::Right);
+      if (previous) {
+        statusSelection_ = statusSelection_ == 0 ? 2 : statusSelection_ - 1;
+        requestUpdate();
+      } else if (next) {
+        statusSelection_ = static_cast<uint8_t>((statusSelection_ + 1) % 3);
+        requestUpdate();
+      }
     }
     return;
   }
@@ -296,13 +306,17 @@ void DictionaryActivity::loop() {
     requestUpdate();
     return;
   }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+  const bool previous = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
+                        mappedInput.wasReleased(MappedInputManager::Button::Left);
+  const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
+                    mappedInput.wasReleased(MappedInputManager::Button::Right);
+  if (previous) {
     if (mappedInput.getHeldTime() >= ReaderUtils::SKIP_HOLD_MS) {
       changeAnalysis(-1);
     } else {
       changeDefinitionPage(-1);
     }
-  } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+  } else if (next) {
     if (mappedInput.getHeldTime() >= ReaderUtils::SKIP_HOLD_MS) {
       changeAnalysis(1);
     } else {
@@ -338,7 +352,7 @@ void DictionaryActivity::renderShortlist() {
     renderer.drawText(UI_10_FONT_ID, left + kSideMargin, y + 5, lineScratch_, !selected);
   }
 
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DEFINITION), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_OPEN), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 
@@ -385,8 +399,7 @@ void DictionaryActivity::renderDefinition() {
     renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
                       tr(STR_WORD_STATUS_SAVED));
   }
-  const auto labels =
-      mappedInput.mapLabels(tr(STR_BACK), tr(STR_SET_WORD_STATUS), tr(STR_PREV_PAGE), tr(STR_NEXT_PAGE));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 

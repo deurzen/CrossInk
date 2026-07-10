@@ -239,6 +239,11 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
           output.truncated = true;
           break;
         }
+        // Compound-only matches currently have no whole-word lexeme to open.
+        // Do not expose them as actionable definitions: the browser's bounded
+        // splitter can otherwise produce false positives such as foreign words
+        // assembled from unrelated short dictionary forms.
+        if (surface.analysisCount == 0) break;
         uint16_t analysisIds[kMaxAnalysesPerItem]{};
         for (uint8_t analysisIndex = 0; analysisIndex < surface.analysisCount; ++analysisIndex) {
           if (!reader.readSurfaceAnalysis(surface, analysisIndex, analysisIds[analysisIndex], readerError)) {

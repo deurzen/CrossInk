@@ -242,6 +242,32 @@ TEST(PageShortlist, IntersectsLexicalTokensAndRetainsAmbiguity) {
   EXPECT_FALSE(shortlist.truncated);
 }
 
+TEST(PageShortlist, OmitsCompoundOnlyMatchesWithoutWholeWordDefinitions) {
+  auto data = makeArtifact();
+  writeU16(data, 142, UINT16_MAX);  // No primary whole-word analysis.
+  writeU16(data, 144, UINT16_MAX);  // No alternate whole-word analysis.
+  writeU32(data, 184, 0);           // Surface analysis count.
+  writeU32(data, 188, 2);           // Surface component count.
+  writeU32(data, 196, 60);          // Empty analyses start.
+  writeU32(data, 200, 60);          // Components start.
+  data[226] = 0;
+  data[227] = 2;
+  refreshHeaderCrc(data);
+
+  BookLanguageReader reader;
+  ReaderError readerError;
+  ASSERT_TRUE(reader.open(sourceFor(data), readerError));
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  ASSERT_TRUE(generator.addRenderedWord("liebe", false));
+  generator.finishRenderedPage();
+
+  dictionary::page_shortlist::Shortlist shortlist;
+  dictionary::page_shortlist::GenerateError error;
+  ASSERT_TRUE(generator.generate(reader, 0, 0, shortlist, error));
+  EXPECT_EQ(shortlist.count, 0);
+}
+
 TEST(PageShortlist, JoinsLayoutInsertedHyphensBeforeHashing) {
   const auto data = makeArtifact();
   BookLanguageReader reader;
