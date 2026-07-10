@@ -531,6 +531,33 @@ At runtime, `DeviceId` is the first 16 bytes of SHA-256 over the bytes of `Cross
 
 Updates use same-directory `.tmp` and `.bak` sidecars. A valid interrupted first write is promoted; an incomplete first-write temp can be discarded because no identity was committed. Corrupt committed records and any backup remnants fail closed rather than silently creating a new identity. Newer versions are preserved even when their declared layout is larger.
 
+## `/.crosspoint/device-sync/peers/<peer-device-id>.bin`
+
+### Version 1
+
+Pair records contain authentication material and must never be logged or transmitted outside the authenticated handshake. Multi-byte integers are little-endian; display names are valid UTF-8 limited to 28 bytes.
+
+```text
+[0-3]    magic "DSPR"
+[4-5]    schema version (u16, currently 1)
+[6-9]    declared total file length (u32, 147-174)
+[10]     display-name byte length (u8, 1-28)
+[11]     flags (u8; bit 0 indicates a last successful session)
+[12-13]  reserved (u16, must be zero)
+[14-29]  peer DeviceId (16 bytes)
+[30-61]  pair secret (32 bytes)
+[62-69]  first-paired local generation (u64)
+[70-85]  last successful SessionId (16 bytes; zero when flag is clear)
+[86-93]  capability snapshot (u64)
+[94-125] last observed policy digest (32 bytes)
+[126-133] next local handshake counter (u64, nonzero)
+[134-141] last accepted peer handshake counter (u64)
+[142...] UTF-8 display-name bytes without a terminator
+[last 4] CRC-32 over all preceding bytes (u32)
+```
+
+The peer ID, pair secret, generation, and next local counter must be nonzero. A set/clear last-session flag requires a nonzero/zero SessionId respectively. Readers reject unknown flags, nonzero reserved fields, malformed UTF-8, truncation, trailing bytes, and CRC mismatch; larger newer versions are preserved as unsupported.
+
 ## `/.crosspoint/device-sync/config.bin`
 
 ### Version 1

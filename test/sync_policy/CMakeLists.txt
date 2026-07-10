@@ -3,9 +3,12 @@ add_executable(SyncPolicyTest
   SyncPolicyCodecTest.cpp
   SyncPolicyStoreTest.cpp
   DeviceIdentityTest.cpp
+  PairRecordTest.cpp
   ${REPO_ROOT}/lib/DeviceSync/Crc32.cpp
   ${REPO_ROOT}/lib/DeviceSync/DeviceIdentity.cpp
   ${REPO_ROOT}/lib/DeviceSync/DeviceIdentityPlatform.cpp
+  ${REPO_ROOT}/lib/DeviceSync/PairRecord.cpp
+  ${REPO_ROOT}/lib/DeviceSync/PairRecordCodec.cpp
   ${REPO_ROOT}/lib/DeviceSync/SyncPolicy.cpp
   ${REPO_ROOT}/lib/DeviceSync/SyncPolicyCodec.cpp
   ${REPO_ROOT}/lib/DeviceSync/SyncPolicyStore.cpp

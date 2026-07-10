@@ -5,7 +5,7 @@ Status: implementation in progress on `v1.4.0-custom` from CrossInk `v1.4.0`.
 Implemented foundation:
 
 - Phase 0 host and simulator build blockers are repaired in the custom branch.
-- Phase 2 groundwork defines stable MAC-bound device identity material, bounded category/path policy with two-peer intersection, and crash-safe persistence for both versioned length/CRC-validated formats, with host power-cut tests.
+- Phase 2 groundwork defines stable MAC-bound device identity material, a bounded versioned pair-record format, category/path policy with two-peer intersection, and crash-safe persistence for identity/policy state, with host corruption and power-cut tests.
 - `lib/AtomicFile` provides no-heap, callback-based old-or-new replacement, future-format preservation, and non-resurrecting removal primitives with host power-cut fault injection.
 - The pinned FreeInk fork adds one uncached, result-returning SD space query; CrossInk's HAL exposes it plus SdFat's existing 64-bit truncate operation. No separate SDK metadata-sync API is required by the current SdFat implementation.
 - Global `global_stats.bin`, per-book `stats_v5.bin`, EPUB `progress.bin`, `reader_settings.bin`, bookmark stores, clipping stores, device settings/state, and the shared recent/Wi-Fi/OPDS/KOReader JSON stores use the new primitives; journals and Device Sync transport remain pending.
