@@ -13,7 +13,7 @@ class DictionaryActivity final : public Activity {
   DictionaryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                      std::unique_ptr<dictionary::lookup::Session> session,
                      std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist,
-                     std::unique_ptr<uint8_t[]> suppressionBitset);
+                     std::unique_ptr<uint8_t[]> suppressionBitset, unsigned long lookupStartedAt);
 
   void onEnter() override;
   void onExit() override;
@@ -39,6 +39,7 @@ class DictionaryActivity final : public Activity {
   uint8_t statusSelection_ = 0;
   char headword_[dictionary::kMaxHeadwordBytes + 1]{};
   char lineScratch_[dictionary::definition::kMaxLineBytes + 1]{};
+  unsigned long lookupStartedAt_ = 0;
   bool definitionFailed_ = false;
   bool statusSaved_ = false;
 

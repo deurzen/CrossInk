@@ -88,6 +88,17 @@ constexpr uint16_t FOOTNOTE_PREVIEW_MAX_PAGES = 3;
 constexpr uint8_t PUBLISHER_PAGE_NUMBER_LEFT_MARGIN_MIN = 15;
 constexpr int PUBLISHER_PAGE_NUMBER_X = 5;
 
+void logDictionaryIoMetrics(const char* stage, const dictionary::io_metrics::Counters& metrics) {
+  LOG_INF("DICT",
+          "%s I/O: meta=%lu opens=%lu switches=%lu seeks=%lu reads=%lu bytes=%llu writes=%lu "
+          "written=%llu syncs=%lu",
+          stage, static_cast<unsigned long>(metrics.metadataCalls), static_cast<unsigned long>(metrics.openAttempts),
+          static_cast<unsigned long>(metrics.sourceSwitches), static_cast<unsigned long>(metrics.seekAttempts),
+          static_cast<unsigned long>(metrics.readCalls), static_cast<unsigned long long>(metrics.bytesRead),
+          static_cast<unsigned long>(metrics.writeCalls), static_cast<unsigned long long>(metrics.bytesWritten),
+          static_cast<unsigned long>(metrics.syncCalls));
+}
+
 uint32_t pagesCentipages(const float pages) {
   if (pages <= 0.0f) {
     return 0;
@@ -3148,18 +3159,21 @@ void EpubReaderActivity::startDictionaryLookup() {
         LOG_ERR("DICT", "OOM: shortlist generator (%u bytes)",
                 static_cast<unsigned>(sizeof(dictionary::page_shortlist::Generator)));
       } else {
+        const unsigned long pageLoadStartedAt = millis();
         auto page = section->loadPageFromSectionFile();
+        LOG_INF("DICT", "Page cache load: %lu ms", millis() - pageLoadStartedAt);
         if (!page || !page->hasLanguageShards()) {
           LOG_ERR("DICT", "Current page has no dictionary shard range");
         } else {
           const uint32_t firstShard = page->languageShardFirst;
           const uint32_t lastShard = page->languageShardLast;
+          const unsigned long tokenCollectStartedAt = millis();
           const auto collected = dictionary::current_page_shortlist::collectVisibleTokens(*page, *generator);
           page.reset();
-          LOG_INF("DICT", "Visible tokens ready in %lu ms: words=%u tokens=%u shards=%lu-%lu",
-                  millis() - lookupStartedAt, static_cast<unsigned>(collected.renderedWordsVisited),
-                  static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned long>(firstShard),
-                  static_cast<unsigned long>(lastShard));
+          LOG_INF("DICT", "Visible token collection: %lu ms total=%lu ms words=%u tokens=%u shards=%lu-%lu",
+                  millis() - tokenCollectStartedAt, millis() - lookupStartedAt,
+                  static_cast<unsigned>(collected.renderedWordsVisited), static_cast<unsigned>(collected.visibleTokens),
+                  static_cast<unsigned long>(firstShard), static_cast<unsigned long>(lastShard));
 
           // Session retains only bounded paths/readers and global-state handles;
           // heap ownership avoids roughly 2.5 KB of reader-task stack use.
@@ -3169,6 +3183,7 @@ void EpubReaderActivity::startDictionaryLookup() {
                     static_cast<unsigned>(sizeof(dictionary::lookup::Session)));
           } else {
             dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
+            const unsigned long readersStartedAt = millis();
             if (!session->openReaders(epub->getBookLanguageArtifactPath().c_str(), epub->getCachePath().c_str(),
                                       epub->getDictionaryBundleUuid(), sessionError)) {
               LOG_ERR("DICT", "Lookup session failed: %s", dictionary::lookup::sessionErrorName(sessionError));
@@ -3176,9 +3191,10 @@ void EpubReaderActivity::startDictionaryLookup() {
                             ? LookupOutcome::MissingDictionary
                             : LookupOutcome::Failed;
             } else {
-              LOG_INF("DICT", "Readers open in %lu ms: local=%lu global=%lu", millis() - lookupStartedAt,
-                      static_cast<unsigned long>(session->book().header().localLemmaCount),
+              LOG_INF("DICT", "Readers open: %lu ms total=%lu ms local=%lu global=%lu", millis() - readersStartedAt,
+                      millis() - lookupStartedAt, static_cast<unsigned long>(session->book().header().localLemmaCount),
                       static_cast<unsigned long>(session->package().metadata().lexemeCount));
+              logDictionaryIoMetrics("Reader open", session->sourceIoMetrics());
               const size_t suppressionBytes = session->requiredSuppressionBytes();
               // Allocate exactly one bit per local lemma (maximum 4,096 bytes),
               // rather than retaining the much larger global status table.
@@ -3187,10 +3203,13 @@ void EpubReaderActivity::startDictionaryLookup() {
                 LOG_ERR("DICT", "OOM: suppression projection (%u bytes)", static_cast<unsigned>(suppressionBytes));
               } else {
                 LOG_INF("DICT", "Loading learning state: projection=%u bytes", static_cast<unsigned>(suppressionBytes));
+                const unsigned long learningStateStartedAt = millis();
                 if (!session->loadLearningState(suppressionBitset.get(), suppressionBytes, sessionError)) {
                   LOG_ERR("DICT", "Learning state failed: %s", dictionary::lookup::sessionErrorName(sessionError));
                 } else {
-                  LOG_INF("DICT", "Learning state ready in %lu ms", millis() - lookupStartedAt);
+                  LOG_INF("DICT", "Learning state ready: %lu ms total=%lu ms", millis() - learningStateStartedAt,
+                          millis() - lookupStartedAt);
+                  logDictionaryIoMetrics("Learning state", session->stateIoMetrics());
                   // The 3.6 KB fixed shortlist outlives this function in the
                   // activity, so stack/static storage is unsuitable.
                   shortlist = makeUniqueNoThrow<dictionary::page_shortlist::Shortlist>();
@@ -3200,15 +3219,18 @@ void EpubReaderActivity::startDictionaryLookup() {
                   } else {
                     dictionary::page_shortlist::GenerateError generateError =
                         dictionary::page_shortlist::GenerateError::NONE;
+                    const unsigned long shortlistStartedAt = millis();
                     if (!generator->generate(session->book(), firstShard, lastShard, *shortlist, generateError)) {
                       LOG_ERR("DICT", "Shortlist generation failed: %s",
                               dictionary::page_shortlist::generateErrorName(generateError));
                     } else {
                       session->projection().filter(*shortlist);
-                      LOG_DBG("DICT", "Shortlist ready: words=%u tokens=%u candidates=%u%s",
+                      LOG_INF("DICT", "Shortlist ready: %lu ms total=%lu ms words=%u tokens=%u candidates=%u%s",
+                              millis() - shortlistStartedAt, millis() - lookupStartedAt,
                               static_cast<unsigned>(collected.renderedWordsVisited),
                               static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned>(shortlist->count),
                               shortlist->truncated ? " truncated" : "");
+                      logDictionaryIoMetrics("Shortlist cumulative", session->sourceIoMetrics());
                       outcome = shortlist->count == 0 ? LookupOutcome::NoWords : LookupOutcome::Ready;
                     }
                   }
@@ -3234,8 +3256,8 @@ void EpubReaderActivity::startDictionaryLookup() {
     return;
   }
 
-  auto dictionaryActivity = makeUniqueNoThrow<DictionaryActivity>(renderer, mappedInput, std::move(session),
-                                                                  std::move(shortlist), std::move(suppressionBitset));
+  auto dictionaryActivity = makeUniqueNoThrow<DictionaryActivity>(
+      renderer, mappedInput, std::move(session), std::move(shortlist), std::move(suppressionBitset), lookupStartedAt);
   if (!dictionaryActivity) {
     LOG_ERR("DICT", "OOM: dictionary activity (%u bytes)", static_cast<unsigned>(sizeof(DictionaryActivity)));
     {
@@ -3248,6 +3270,8 @@ void EpubReaderActivity::startDictionaryLookup() {
   }
 
   pauseReadingPaceTimer("dictionary");
+  LOG_INF("DICT", "Activity launch queued: total=%lu ms free=%u maxAlloc=%u", millis() - lookupStartedAt,
+          ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   startActivityForResult(std::move(dictionaryActivity), [this](const ActivityResult&) {
     resumeReadingPaceTimer("dictionary_return");
     requestUpdate();

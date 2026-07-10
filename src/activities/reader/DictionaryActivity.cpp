@@ -35,6 +35,19 @@ const char* statusLabel(const uint8_t index) {
   }
 }
 
+const char* modeName(const uint8_t mode) {
+  switch (mode) {
+    case 0:
+      return "shortlist";
+    case 1:
+      return "definition";
+    case 2:
+      return "status";
+    default:
+      return "unknown";
+  }
+}
+
 dictionary::lexeme_state::Status statusValue(const uint8_t index) {
   switch (index) {
     case 0:
@@ -53,11 +66,13 @@ dictionary::lexeme_state::Status statusValue(const uint8_t index) {
 DictionaryActivity::DictionaryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                        std::unique_ptr<dictionary::lookup::Session> session,
                                        std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist,
-                                       std::unique_ptr<uint8_t[]> suppressionBitset)
+                                       std::unique_ptr<uint8_t[]> suppressionBitset,
+                                       const unsigned long lookupStartedAt)
     : Activity("Dictionary", renderer, mappedInput),
       session_(std::move(session)),
       shortlist_(std::move(shortlist)),
-      suppressionBitset_(std::move(suppressionBitset)) {}
+      suppressionBitset_(std::move(suppressionBitset)),
+      lookupStartedAt_(lookupStartedAt) {}
 
 void DictionaryActivity::onEnter() {
   Activity::onEnter();
@@ -120,6 +135,8 @@ int DictionaryActivity::measureDefinitionText(void* context, const std::string_v
 }
 
 bool DictionaryActivity::openDefinition() {
+  const unsigned long startedAt = millis();
+  const auto ioBefore = session_->sourceIoMetrics();
   definitionFailed_ = false;
   statusSaved_ = false;
   const uint16_t localLemmaId = selectedLocalLemmaId();
@@ -130,7 +147,12 @@ bool DictionaryActivity::openDefinition() {
       !session_->package().readLexeme(globalLexemeId, lexeme_, packageError) ||
       !session_->package().readHeadword(lexeme_, headword_, sizeof(headword_), headwordLength, packageError) ||
       !session_->package().getEntrySlice(lexeme_, entry_, packageError)) {
-    LOG_ERR("DICT", "Definition lookup failed: %s", dictionary::packageErrorName(packageError));
+    const auto io = dictionary::io_metrics::difference(session_->sourceIoMetrics(), ioBefore);
+    LOG_ERR("DICT", "Definition lookup failed in %lu ms: %s (opens=%lu switches=%lu seeks=%lu reads=%lu bytes=%llu)",
+            millis() - startedAt, dictionary::packageErrorName(packageError),
+            static_cast<unsigned long>(io.openAttempts), static_cast<unsigned long>(io.sourceSwitches),
+            static_cast<unsigned long>(io.seekAttempts), static_cast<unsigned long>(io.readCalls),
+            static_cast<unsigned long long>(io.bytesRead));
     definitionFailed_ = true;
     mode_ = Mode::Definition;
     requestUpdate();
@@ -159,7 +181,16 @@ bool DictionaryActivity::openDefinition() {
   definitionPageStart_ = {};
   definitionPageIndex_ = 0;
   mode_ = Mode::Definition;
-  return loadDefinitionPage(definitionPageStart_, 0);
+  const bool loaded = loadDefinitionPage(definitionPageStart_, 0);
+  const auto io = dictionary::io_metrics::difference(session_->sourceIoMetrics(), ioBefore);
+  LOG_INF("DICT",
+          "Definition prepared: %lu ms opens=%lu switches=%lu seeks=%lu reads=%lu bytes=%llu free=%u "
+          "maxAlloc=%u",
+          millis() - startedAt, static_cast<unsigned long>(io.openAttempts),
+          static_cast<unsigned long>(io.sourceSwitches), static_cast<unsigned long>(io.seekAttempts),
+          static_cast<unsigned long>(io.readCalls), static_cast<unsigned long long>(io.bytesRead), ESP.getFreeHeap(),
+          ESP.getMaxAllocHeap());
+  return loaded;
 }
 
 bool DictionaryActivity::loadDefinitionPage(const dictionary::definition::Cursor& start, const uint32_t pageIndex) {
@@ -423,6 +454,7 @@ void DictionaryActivity::renderStatus() {
 }
 
 void DictionaryActivity::render(RenderLock&&) {
+  const unsigned long renderStartedAt = millis();
   renderer.clearScreen();
   switch (mode_) {
     case Mode::Shortlist:
@@ -435,5 +467,9 @@ void DictionaryActivity::render(RenderLock&&) {
       renderStatus();
       break;
   }
+  const unsigned long displayStartedAt = millis();
   renderer.displayBuffer();
+  LOG_INF("DICT", "Display %s: draw=%lu ms refresh=%lu ms lookupTotal=%lu ms free=%u maxAlloc=%u",
+          modeName(static_cast<uint8_t>(mode_)), displayStartedAt - renderStartedAt, millis() - displayStartedAt,
+          lookupStartedAt_ == 0 ? 0 : millis() - lookupStartedAt_, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
 }

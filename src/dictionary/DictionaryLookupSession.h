@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "DictionaryIoMetrics.h"
+
 namespace dictionary::lookup {
 
 inline constexpr char DICTIONARY_ROOT_PATH[] = "/.crosspoint/dictionaries";
@@ -46,11 +48,15 @@ class Session {
   const suppression::Projection& projection() const { return projection_; }
   suppression::Projection& projection() { return projection_; }
   uint32_t stateGeneration() const { return state_.generation(); }
+  const io_metrics::Counters& sourceIoMetrics() const { return sourceIoMetrics_; }
+  const io_metrics::Counters& stateIoMetrics() const { return stateIoMetrics_; }
 
  private:
   struct SourceContext {
     char path[kMaxLookupPath]{};
     uint64_t size = 0;
+    io_metrics::Counters* metrics = nullptr;
+    uint8_t sourceToken = 0;
   };
 
   SourceContext languageSource_{};
@@ -64,11 +70,13 @@ class Session {
   DictionaryPackage package_{};
   lexeme_state::Store state_{};
   suppression::Projection projection_{};
+  io_metrics::Counters sourceIoMetrics_{};
+  io_metrics::Counters stateIoMetrics_{};
   bool readersOpen_ = false;
   bool stateOpen_ = false;
 
   static bool readAt(void* context, uint32_t offset, void* output, size_t length);
-  static bool initializeSource(SourceContext& context, const char* path);
+  bool initializeSource(SourceContext& context, const char* path, uint8_t sourceToken);
 };
 
 const char* sessionErrorName(SessionError error);

@@ -22,14 +22,27 @@ bool appendPath(char* output, const size_t capacity, const char* directory, cons
 bool Session::readAt(void* context, const uint32_t offset, void* output, const size_t length) {
   const auto& source = *static_cast<const SourceContext*>(context);
   if (static_cast<uint64_t>(offset) + length > source.size) return false;
+  if (source.metrics) {
+    source.metrics->noteSource(source.sourceToken);
+    ++source.metrics->openAttempts;
+  }
   HalFile file;
-  return Storage.openFileForRead("DICT", source.path, file) && file.seek(offset) &&
-         file.read(output, length) == static_cast<int>(length);
+  if (!Storage.openFileForRead("DICT", source.path, file)) return false;
+  if (source.metrics) ++source.metrics->seekAttempts;
+  if (!file.seek(offset)) return false;
+  if (source.metrics) ++source.metrics->readCalls;
+  const int bytesRead = file.read(output, length);
+  if (bytesRead > 0 && source.metrics) source.metrics->bytesRead += static_cast<uint32_t>(bytesRead);
+  return bytesRead == static_cast<int>(length);
 }
 
-bool Session::initializeSource(SourceContext& context, const char* path) {
+bool Session::initializeSource(SourceContext& context, const char* path, const uint8_t sourceToken) {
   if (!path || path[0] == '\0' || std::strlen(path) >= sizeof(context.path)) return false;
   std::strcpy(context.path, path);
+  context.metrics = &sourceIoMetrics_;
+  context.sourceToken = sourceToken;
+  sourceIoMetrics_.noteSource(sourceToken);
+  ++sourceIoMetrics_.openAttempts;
   HalFile file;
   if (!Storage.openFileForRead("DICT", path, file)) return false;
   context.size = file.fileSize64();
@@ -40,6 +53,8 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
                           const std::array<uint8_t, 16>& expectedBundleUuid, SessionError& error) {
   readersOpen_ = false;
   stateOpen_ = false;
+  sourceIoMetrics_.reset();
+  stateIoMetrics_.reset();
   error = SessionError::NONE;
   if (!languageArtifactPath || !bookCachePath || languageArtifactPath[0] == '\0' || bookCachePath[0] == '\0') {
     error = SessionError::INVALID_INPUT;
@@ -52,7 +67,7 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
   std::strcpy(cachePath_, bookCachePath);
   std::memcpy(bundleUuid_, expectedBundleUuid.data(), sizeof(bundleUuid_));
 
-  if (!initializeSource(languageSource_, languageArtifactPath)) {
+  if (!initializeSource(languageSource_, languageArtifactPath, 1)) {
     error = std::strlen(languageArtifactPath) >= sizeof(languageSource_.path) ? SessionError::PATH_TOO_LONG
                                                                               : SessionError::BOOK_ARTIFACT_UNAVAILABLE;
     return false;
@@ -86,12 +101,13 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
                {"lexemes.bin", &lexemesSource_},
                {"headwords.bin", &headwordsSource_},
                {"entries.bin", &entriesSource_}};
+  uint8_t sourceToken = 2;
   for (const auto& file : files) {
     if (!appendPath(path, sizeof(path), directory, file.leaf)) {
       error = SessionError::PATH_TOO_LONG;
       return false;
     }
-    if (!initializeSource(*file.source, path)) {
+    if (!initializeSource(*file.source, path, sourceToken++)) {
       error = SessionError::DICTIONARY_MISSING;
       return false;
     }
@@ -122,23 +138,24 @@ size_t Session::requiredSuppressionBytes() const {
 
 bool Session::loadLearningState(uint8_t* suppressionBitset, const size_t capacity, SessionError& error) {
   stateOpen_ = false;
+  stateIoMetrics_.reset();
   error = SessionError::NONE;
   if (!readersOpen_ || !suppressionBitset || capacity < requiredSuppressionBytes()) {
     error = SessionError::INVALID_INPUT;
     return false;
   }
 
+  const auto storage = language_state_storage::backend(&stateIoMetrics_);
   lexeme_state::StateError stateError = lexeme_state::StateError::NONE;
-  if (!state_.open(language_state_storage::backend(), language_state_storage::ROOT_PATH, bundleUuid_,
-                   package_.metadata().lexemeCount, stateError)) {
+  if (!state_.open(storage, language_state_storage::ROOT_PATH, bundleUuid_, package_.metadata().lexemeCount,
+                   stateError)) {
     error = SessionError::STATE_FAILED;
     return false;
   }
 
   suppression::ProjectionError projectionError = suppression::ProjectionError::NONE;
-  if (!projection_.loadOrRebuild(language_state_storage::backend(), cachePath_, bundleUuid_,
-                                 suppression::localLemmaSource(book_), state_, suppressionBitset, capacity,
-                                 projectionError)) {
+  if (!projection_.loadOrRebuild(storage, cachePath_, bundleUuid_, suppression::localLemmaSource(book_), state_,
+                                 suppressionBitset, capacity, projectionError)) {
     error = SessionError::PROJECTION_FAILED;
     return false;
   }
