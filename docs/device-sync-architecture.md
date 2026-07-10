@@ -5,7 +5,7 @@ Status: implementation in progress on `v1.4.0-custom` from CrossInk `v1.4.0`.
 Implemented foundation:
 
 - Phase 0 host and simulator build blockers are repaired in the custom branch.
-- Phase 2 policy groundwork defines bounded category permissions, ordered path rules, FAT-style matching, and two-peer policy intersection with host tests.
+- Phase 2 policy groundwork defines bounded category permissions, ordered path rules, FAT-style matching, two-peer policy intersection, and a versioned length/CRC-validated binary codec with host tests.
 - `lib/AtomicFile` provides no-heap, callback-based old-or-new replacement, future-format preservation, and non-resurrecting removal primitives with host power-cut fault injection.
 - Global `global_stats.bin`, per-book `stats_v5.bin`, EPUB `progress.bin`, `reader_settings.bin`, bookmark stores, clipping stores, device settings/state, and the shared recent/Wi-Fi/OPDS/KOReader JSON stores use the new primitives; journals and Device Sync transport remain pending.
 

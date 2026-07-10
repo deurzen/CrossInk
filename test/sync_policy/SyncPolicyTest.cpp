@@ -5,7 +5,8 @@ namespace {
 using namespace DeviceSync;
 
 TEST(SyncPolicyTest, DefaultsEnablePortableReadingCategoriesOnly) {
-  const SyncPolicy policy = SyncPolicy::defaults();
+  SyncPolicy policy;
+  policy.setDefaults();
 
   EXPECT_EQ(policy.direction(Category::BookContent), Direction::Bidirectional);
   EXPECT_EQ(policy.direction(Category::EpubProgress), Direction::Bidirectional);
@@ -24,7 +25,8 @@ TEST(SyncPolicyTest, DefaultsEnablePortableReadingCategoriesOnly) {
 }
 
 TEST(SyncPolicyTest, DefaultsExcludePrivateAndInternalPaths) {
-  const SyncPolicy policy = SyncPolicy::defaults();
+  SyncPolicy policy;
+  policy.setDefaults();
 
   EXPECT_TRUE(policy.pathAllowed("/Books/Novel.epub"));
   EXPECT_TRUE(policy.pathAllowed("/Novel.epub"));
@@ -41,7 +43,8 @@ TEST(SyncPolicyTest, DefaultsExcludePrivateAndInternalPaths) {
 }
 
 TEST(SyncPolicyTest, LaterMatchingRuleOverridesEarlierRule) {
-  SyncPolicy policy = SyncPolicy::defaults();
+  SyncPolicy policy;
+  policy.setDefaults();
   ASSERT_TRUE(policy.addPathRule(PathRuleAction::Include, "/sleep/shared/**"));
 
   EXPECT_FALSE(policy.pathAllowed("/sleep/private/cover.png"));
@@ -85,8 +88,10 @@ TEST(SyncPolicyTest, RejectsUnsafeOrNonCanonicalPathsAndRules) {
 }
 
 TEST(SyncPolicyTest, EnforcesBothPeersDirectionAndPathPolicy) {
-  SyncPolicy sender = SyncPolicy::defaults();
-  SyncPolicy receiver = SyncPolicy::defaults();
+  SyncPolicy sender;
+  sender.setDefaults();
+  SyncPolicy receiver;
+  receiver.setDefaults();
   ASSERT_TRUE(sender.setDirection(Category::BookContent, Direction::SendOnly));
   ASSERT_TRUE(receiver.setDirection(Category::BookContent, Direction::ReceiveOnly));
 

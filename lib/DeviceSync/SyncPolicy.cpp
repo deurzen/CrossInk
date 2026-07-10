@@ -34,11 +34,11 @@ bool patternIsSafe(const char* pattern) {
   return true;
 }
 
-bool globMatches(const char* pattern, const char* path) {
+// Keep the bounded 192-byte DP workspace out of the caller's directory-scan frame.
+__attribute__((noinline)) bool globMatches(const char* pattern, const char* path) {
   const size_t patternLength = std::strlen(pattern);
   const size_t pathLength = std::strlen(path);
-  if (patternLength >= 3 && std::strcmp(pattern + patternLength - 3, "/**") == 0 &&
-      pathLength == patternLength - 3) {
+  if (patternLength >= 3 && std::strcmp(pattern + patternLength - 3, "/**") == 0 && pathLength == patternLength - 3) {
     bool samePrefix = true;
     for (size_t i = 0; i < pathLength; ++i) {
       samePrefix = samePrefix && foldAscii(pattern[i]) == foldAscii(path[i]);
@@ -76,17 +76,23 @@ bool globMatches(const char* pattern, const char* path) {
 
 }  // namespace
 
-SyncPolicy::SyncPolicy() { directions_.fill(Direction::Disabled); }
+SyncPolicy::SyncPolicy() { reset(); }
 
-SyncPolicy SyncPolicy::defaults() {
-  SyncPolicy policy;
-  policy.setDirection(Category::BookContent, Direction::Bidirectional);
-  policy.setDirection(Category::EpubProgress, Direction::Bidirectional);
-  policy.setDirection(Category::XtcTxtProgress, Direction::Bidirectional);
-  policy.setDirection(Category::Bookmarks, Direction::Bidirectional);
-  policy.setDirection(Category::Clippings, Direction::Bidirectional);
-  policy.setDirection(Category::PortableBookSettings, Direction::Bidirectional);
-  policy.setDirection(Category::FinishedState, Direction::Bidirectional);
+void SyncPolicy::reset() {
+  directions_.fill(Direction::Disabled);
+  clearPathRules();
+  mirrorDeletions_ = false;
+}
+
+void SyncPolicy::setDefaults() {
+  reset();
+  setDirection(Category::BookContent, Direction::Bidirectional);
+  setDirection(Category::EpubProgress, Direction::Bidirectional);
+  setDirection(Category::XtcTxtProgress, Direction::Bidirectional);
+  setDirection(Category::Bookmarks, Direction::Bidirectional);
+  setDirection(Category::Clippings, Direction::Bidirectional);
+  setDirection(Category::PortableBookSettings, Direction::Bidirectional);
+  setDirection(Category::FinishedState, Direction::Bidirectional);
 
   static constexpr const char* DEFAULT_RULES[] = {
       "/**",
@@ -99,11 +105,10 @@ SyncPolicy SyncPolicy::defaults() {
       "/.device-sync-*",
       "/**/.device-sync-*",
   };
-  policy.addPathRule(PathRuleAction::Include, DEFAULT_RULES[0]);
+  addPathRule(PathRuleAction::Include, DEFAULT_RULES[0]);
   for (size_t i = 1; i < std::size(DEFAULT_RULES); ++i) {
-    policy.addPathRule(PathRuleAction::Exclude, DEFAULT_RULES[i]);
+    addPathRule(PathRuleAction::Exclude, DEFAULT_RULES[i]);
   }
-  return policy;
 }
 
 Direction SyncPolicy::direction(const Category category) const {
@@ -119,7 +124,10 @@ bool SyncPolicy::setDirection(const Category category, const Direction direction
 }
 
 void SyncPolicy::clearPathRules() {
-  rules_ = {};
+  for (auto& rule : rules_) {
+    rule.action = PathRuleAction::Exclude;
+    rule.pattern[0] = '\0';
+  }
   ruleCount_ = 0;
 }
 

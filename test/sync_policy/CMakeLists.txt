@@ -1,6 +1,8 @@
 add_executable(SyncPolicyTest
   SyncPolicyTest.cpp
+  SyncPolicyCodecTest.cpp
   ${REPO_ROOT}/lib/DeviceSync/SyncPolicy.cpp
+  ${REPO_ROOT}/lib/DeviceSync/SyncPolicyCodec.cpp
 )
 
 target_include_directories(SyncPolicyTest PRIVATE

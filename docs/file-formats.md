@@ -512,3 +512,27 @@ if (parsedSize != fileSize) {
     std::warning(std::format("Unparsed data detected: {} bytes remaining at offset 0x{:X}", fileSize - parsedSize, parsedSize));
 }
 ```
+
+## `/.crosspoint/device-sync/config.bin`
+
+### Version 1
+
+Device Sync policy is a bounded binary record. Multi-byte integers are little-endian. The trailing CRC-32 covers every preceding byte, using the standard reflected CRC-32 polynomial.
+
+```text
+[0-3]   magic "DSPC"
+[4-5]   schema version (u16, currently 1)
+[6-9]   declared total file length (u32)
+[10]    category count (u8, must match this schema)
+[11]    path-rule count (u8, maximum 12)
+[12-13] flags (u16; bit 0 enables deletion mirroring)
+[14...] one direction byte per category
+         0 = disabled, 1 = send only, 2 = receive only, 3 = bidirectional
+[...]    repeated path rules:
+           action (u8; 0 = exclude, 1 = include)
+           UTF-8 pattern byte length (u8; 1-79)
+           pattern bytes without a terminator
+[last 4] CRC-32 (u32)
+```
+
+Readers require the exact declared length, category count, bounded rule lengths, known flags/actions/directions, canonical absolute patterns, and a valid CRC. A newer schema is reported as unsupported rather than overwritten.
