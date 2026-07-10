@@ -2,6 +2,7 @@
 
 #include <BookLanguageReader.h>
 #include <DictionaryPackage.h>
+#include <HalStorage.h>
 #include <LexemeStateStore.h>
 #include <LocalSuppressionProjection.h>
 
@@ -10,6 +11,7 @@
 #include <cstdint>
 
 #include "DictionaryIoMetrics.h"
+#include "SwitchingFileReader.h"
 
 namespace dictionary::lookup {
 
@@ -35,12 +37,15 @@ enum class SessionError : uint8_t {
 // and state handles are too large for the reader task stack.
 class Session {
  public:
+  Session();
+
   bool openReaders(const char* languageArtifactPath, const char* bookCachePath,
                    const std::array<uint8_t, 16>& expectedBundleUuid, SessionError& error);
   bool loadLearningState(uint8_t* suppressionBitset, size_t capacity, SessionError& error);
 
   bool globalLexemeId(uint16_t localLemmaId, uint32_t& globalLexemeId) const;
   bool setStatus(uint16_t localLemmaId, lexeme_state::Status status, SessionError& error);
+  void closeSourceFile() { sourceReader_.close(); }
 
   size_t requiredSuppressionBytes() const;
   const book_language::BookLanguageReader& book() const { return book_; }
@@ -55,6 +60,7 @@ class Session {
   struct SourceContext {
     char path[kMaxLookupPath]{};
     uint64_t size = 0;
+    io::SwitchingFileReader<HalFile>* reader = nullptr;
     io_metrics::Counters* metrics = nullptr;
     uint8_t sourceToken = 0;
   };
@@ -72,9 +78,11 @@ class Session {
   suppression::Projection projection_{};
   io_metrics::Counters sourceIoMetrics_{};
   io_metrics::Counters stateIoMetrics_{};
+  io::SwitchingFileReader<HalFile> sourceReader_;
   bool readersOpen_ = false;
   bool stateOpen_ = false;
 
+  static bool openForRead(void* context, const char* path, HalFile& file);
   static bool readAt(void* context, uint32_t offset, void* output, size_t length);
   bool initializeSource(SourceContext& context, const char* path, uint8_t sourceToken);
 };

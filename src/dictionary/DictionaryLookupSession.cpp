@@ -17,42 +17,34 @@ bool appendPath(char* output, const size_t capacity, const char* directory, cons
 
 }  // namespace
 
+Session::Session() : sourceReader_(nullptr, openForRead) {}
+
+bool Session::openForRead(void*, const char* path, HalFile& file) {
+  return Storage.openFileForRead("DICT", path, file);
+}
+
 // Callback ABI requires void* even though the source descriptor is read-only.
 // cppcheck-suppress constParameterPointer
 bool Session::readAt(void* context, const uint32_t offset, void* output, const size_t length) {
   const auto& source = *static_cast<const SourceContext*>(context);
-  if (static_cast<uint64_t>(offset) + length > source.size) return false;
-  if (source.metrics) {
-    source.metrics->noteSource(source.sourceToken);
-    ++source.metrics->openAttempts;
-  }
-  HalFile file;
-  if (!Storage.openFileForRead("DICT", source.path, file)) return false;
-  if (source.metrics) ++source.metrics->seekAttempts;
-  if (!file.seek(offset)) return false;
-  if (source.metrics) ++source.metrics->readCalls;
-  const int bytesRead = file.read(output, length);
-  if (bytesRead > 0 && source.metrics) source.metrics->bytesRead += static_cast<uint32_t>(bytesRead);
-  return bytesRead == static_cast<int>(length);
+  return source.reader &&
+         source.reader->readAt(source.path, source.sourceToken, source.size, offset, output, length, source.metrics);
 }
 
 bool Session::initializeSource(SourceContext& context, const char* path, const uint8_t sourceToken) {
   if (!path || path[0] == '\0' || std::strlen(path) >= sizeof(context.path)) return false;
   std::strcpy(context.path, path);
+  context.reader = &sourceReader_;
   context.metrics = &sourceIoMetrics_;
   context.sourceToken = sourceToken;
-  sourceIoMetrics_.noteSource(sourceToken);
-  ++sourceIoMetrics_.openAttempts;
-  HalFile file;
-  if (!Storage.openFileForRead("DICT", path, file)) return false;
-  context.size = file.fileSize64();
-  return true;
+  return sourceReader_.fileSize(path, sourceToken, &sourceIoMetrics_, context.size);
 }
 
 bool Session::openReaders(const char* languageArtifactPath, const char* bookCachePath,
                           const std::array<uint8_t, 16>& expectedBundleUuid, SessionError& error) {
   readersOpen_ = false;
   stateOpen_ = false;
+  sourceReader_.close();
   sourceIoMetrics_.reset();
   stateIoMetrics_.reset();
   error = SessionError::NONE;
@@ -138,6 +130,9 @@ size_t Session::requiredSuppressionBytes() const {
 
 bool Session::loadLearningState(uint8_t* suppressionBitset, const size_t capacity, SessionError& error) {
   stateOpen_ = false;
+  // Learning-state callbacks open their own files, so release the package
+  // reader first to preserve the hardware's single-reader invariant.
+  sourceReader_.close();
   stateIoMetrics_.reset();
   error = SessionError::NONE;
   if (!readersOpen_ || !suppressionBitset || capacity < requiredSuppressionBytes()) {
@@ -179,6 +174,9 @@ bool Session::setStatus(const uint16_t localLemmaId, const lexeme_state::Status 
     error = SessionError::BOOK_ARTIFACT_INVALID;
     return false;
   }
+  // globalLexemeId() may leave language.bin open. Close it before the state
+  // backend performs WAL/status operations through separate handles.
+  sourceReader_.close();
   lexeme_state::StateError stateError = lexeme_state::StateError::NONE;
   if (!state_.set(globalId, status, stateError)) {
     error = SessionError::STATE_FAILED;

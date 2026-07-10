@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Dictionary lookup now reuses one switching SD reader instead of reopening a file for every small record read, reducing word-list and definition latency on hardware.
 - Dictionary lists no longer offer compound-only false positives that cannot open a whole-word definition.
 - Dictionary navigation now accepts both side and front directional buttons, and uses compact button labels that fit X3/X4 hint areas.
 - First dictionary lookup with a large bundle now initializes learning state in 2 KB writes and caches sequential lemma/status reads, avoiding thousands of tiny SD operations that could make X3/X4 appear frozen.
