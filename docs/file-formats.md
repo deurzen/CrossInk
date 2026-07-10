@@ -234,12 +234,28 @@ Each `.ctx` layout:
 - chapter title (`String`, maximum 512 bytes)
 - visible text (`String`, maximum 8192 bytes)
 
-Writes use `.tmp` files. When present, the BMP is renamed first and the `.ctx`
-file last, so the final context rename is the commit point. Readers ignore
-temporary files and treat a missing same-ID BMP as incomplete only when bit 2
-is set. The stored
-source path also detects the unlikely case where two paths produce the same
-CRC32 directory name.
+Each book directory also contains `index.bin` and normally `index.bin.bak`.
+The version-1 index layout is:
+
+- magic `WIIX` (`char[4]`)
+- index version (`uint8_t`, currently `1`)
+- generation, context count, earliest ID, latest ID, and next ID (`uint32_t` each)
+- sorted context IDs (`uint32_t[count]`)
+
+The fixed-width ID array supports binary-search navigation without scanning or
+opening every context. Existing directories build this index once on first use.
+Invalid indexes, interrupted additions, and missing indexed neighbors trigger a
+bounded-memory rebuild from valid `.ctx` files. Index replacement uses a synced
+`.tmp` plus the previous `.bak` generation; no ID vector is retained in RAM.
+
+Capture writes use `.tmp` files. When present, the BMP is renamed first and the
+`.ctx` file next; publishing the updated index makes the capture visible.
+Readers ignore temporary files and treat a missing same-ID BMP as incomplete
+only when bit 2 is set. Deletion records the ID in `delete.pending`, renames the
+context to `.ctx.del`, then publishes an index without that ID. The next access
+finishes any interrupted sequence, and rebuilds cannot resurrect deleted
+contexts. The stored source path also detects the unlikely case
+where two paths produce the same CRC32 directory name.
 
 ## `stats_v5.bin`
 

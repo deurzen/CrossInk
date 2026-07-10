@@ -8,6 +8,7 @@
 
 - Word Inbox save notifications now dismiss automatically without re-rendering the page and remain safe across repeated captures or page turns.
 - Text-only Word Inbox contexts now open without a redundant image request, avoiding a broken-screenshot warning and reducing WebUI load time.
+- Word Inbox storage now maintains a recoverable per-book index, keeping context lookup responsive as the inbox grows.
 
 ## [v1.4.0] - 2026-07-10
 
