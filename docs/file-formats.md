@@ -196,6 +196,49 @@ book is renamed or moved outside CrossInk, the path hash changes, so the old
 clipping file may no longer be associated with the book until the file is moved
 back or the clipping store is migrated.
 
+## `/.crosspoint/word_inbox/<bookType>_<crc32(path)>/`
+
+### Version 1
+
+Word Inbox data is kept outside render-cache directories so clearing an EPUB,
+TXT, or XTC cache does not remove saved learning contexts. The directory suffix
+is `uzlib_crc32()` of the source book's SD-card path. A valid capture consists
+of a context file and a BMP with the same eight-digit ID:
+
+```text
+/.crosspoint/word_inbox/epub_1234567890/book.bin
+/.crosspoint/word_inbox/epub_1234567890/00000001.ctx
+/.crosspoint/word_inbox/epub_1234567890/00000001.bmp
+```
+
+`book.bin` layout:
+
+- magic `WIBK` (`char[4]`)
+- version (`uint8_t`, currently `1`)
+- book type (`uint8_t`: `1` EPUB, `2` TXT/Markdown, `3` XTC/XTCH)
+- title (`String`, maximum 512 bytes)
+- author (`String`, maximum 512 bytes)
+- source path (`String`, maximum 1024 bytes)
+
+Each `.ctx` layout:
+
+- magic `WICT` (`char[4]`)
+- version (`uint8_t`, currently `1`)
+- flags (`uint8_t`: bit 0 text available, bit 1 text truncated, bit 2 screenshot available)
+- capture ID (`uint32_t`)
+- spine index (`int32_t`, `-1` when unavailable)
+- current page (`uint32_t`)
+- total pages (`uint32_t`)
+- progress percentage (`uint8_t`, clamped to 0–100)
+- chapter title (`String`, maximum 512 bytes)
+- visible text (`String`, maximum 8192 bytes)
+
+Writes use `.tmp` files. The BMP is renamed first and the `.ctx` file last, so
+the final context rename is the commit point. Readers ignore temporary files and
+must treat a missing same-ID BMP as an incomplete/corrupt capture. The stored
+source path also detects the unlikely case where two paths produce the same
+CRC32 directory name.
+
 ## `stats_v5.bin`
 
 ### Version 5
