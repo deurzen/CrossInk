@@ -135,11 +135,12 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
   } deferred[] = {{"lexemes.bin", &lexemesSource_, 3},
                   {"headwords.bin", &headwordsSource_, 4},
                   {"entries.bin", &entriesSource_, 5}};
-  for (const auto& file : deferred) {
-    if (!appendPath(path, sizeof(path), directory, file.leaf) || !setSourcePath(*file.source, path, file.token)) {
-      error = SessionError::PATH_TOO_LONG;
-      return false;
-    }
+  const bool sourcesReady = std::all_of(std::begin(deferred), std::end(deferred), [&](const auto& file) {
+    return appendPath(path, sizeof(path), directory, file.leaf) && setSourcePath(*file.source, path, file.token);
+  });
+  if (!sourcesReady) {
+    error = SessionError::PATH_TOO_LONG;
+    return false;
   }
 
   readersOpen_ = true;
