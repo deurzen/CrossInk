@@ -167,4 +167,15 @@ bool write(const char* moduleName, const Paths& paths, WriteCallback writer, Val
   return false;
 }
 
+bool remove(const char* moduleName, const Paths& paths) {
+  if (!validPaths(paths)) {
+    LOG_ERR(logModule(moduleName), "Invalid atomic file removal paths");
+    return false;
+  }
+  // Sidecars go first. If power is lost before the final is removed, the
+  // authoritative file remains and no recovery candidate can resurrect it.
+  return removeIfPresent(moduleName, paths.tempPath) && removeIfPresent(moduleName, paths.backupPath) &&
+         removeIfPresent(moduleName, paths.finalPath);
+}
+
 }  // namespace AtomicFile

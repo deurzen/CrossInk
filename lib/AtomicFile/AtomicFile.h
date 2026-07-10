@@ -27,4 +27,8 @@ bool recover(const char* moduleName, const Paths& paths, ValidateCallback valida
 bool write(const char* moduleName, const Paths& paths, WriteCallback writer, ValidateCallback validator,
            const void* context = nullptr);
 
+// Removes temp and backup before the final so an interrupted deletion cannot
+// resurrect old state. Missing files are treated as success.
+bool remove(const char* moduleName, const Paths& paths);
+
 }  // namespace AtomicFile

@@ -172,6 +172,49 @@ TEST_F(AtomicFileTest, InvalidFinalRestoresValidBackup) {
   EXPECT_EQ(*Storage.getFile(kPaths.finalPath), kOldPayload);
 }
 
+TEST_F(AtomicFileTest, RemoveDeletesSidecarsBeforeFinal) {
+  Storage.setFile(kPaths.tempPath, kNewPayload);
+  Storage.setFile(kPaths.backupPath, kOldPayload);
+
+  ASSERT_TRUE(AtomicFile::remove("TEST", kPaths));
+  EXPECT_EQ(Storage.getFile(kPaths.tempPath), nullptr);
+  EXPECT_EQ(Storage.getFile(kPaths.backupPath), nullptr);
+  EXPECT_EQ(Storage.getFile(kPaths.finalPath), nullptr);
+}
+
+TEST_F(AtomicFileTest, EveryRemovePowerCutCanBeRetriedWithoutResurrection) {
+  Storage.setFile(kPaths.tempPath, kNewPayload);
+  Storage.setFile(kPaths.backupPath, kOldPayload);
+  ASSERT_TRUE(AtomicFile::remove("TEST", kPaths));
+  const size_t successfulMutationCount = Storage.mutationCount();
+  ASSERT_EQ(successfulMutationCount, 3u);
+
+  for (size_t cut = 1; cut <= successfulMutationCount; ++cut) {
+    Storage.reset();
+    Storage.setFile(kPaths.finalPath, kOldPayload);
+    Storage.setFile(kPaths.tempPath, kNewPayload);
+    Storage.setFile(kPaths.backupPath, kOldPayload);
+    Storage.cutPowerAfterMutation(cut);
+
+    EXPECT_THROW(AtomicFile::remove("TEST", kPaths), FakePowerLoss) << "cut=" << cut;
+
+    Storage.disablePowerCut();
+    ASSERT_TRUE(AtomicFile::remove("TEST", kPaths)) << "cut=" << cut;
+    EXPECT_EQ(Storage.getFile(kPaths.tempPath), nullptr);
+    EXPECT_EQ(Storage.getFile(kPaths.backupPath), nullptr);
+    EXPECT_EQ(Storage.getFile(kPaths.finalPath), nullptr);
+  }
+}
+
+TEST_F(AtomicFileTest, BackupRemovalFailureKeepsFinalAuthoritative) {
+  Storage.setFile(kPaths.backupPath, kOldPayload);
+  Storage.setRemoveFailure(true);
+
+  EXPECT_FALSE(AtomicFile::remove("TEST", kPaths));
+  ASSERT_NE(Storage.getFile(kPaths.finalPath), nullptr);
+  EXPECT_EQ(*Storage.getFile(kPaths.finalPath), kOldPayload);
+}
+
 TEST_F(AtomicFileTest, RejectsOverlappingPaths) {
   const AtomicFile::Paths invalid{kPaths.finalPath, kPaths.finalPath, kPaths.backupPath};
   EXPECT_FALSE(AtomicFile::write("TEST", invalid, writePayload, validatePayload, &context));
