@@ -152,11 +152,18 @@ cache removes only this reproducible projection, never global learning state.
 
 ### Native dictionary package version 1
 
-An installed runtime dictionary is a directory committed under its 128-bit
-bundle UUID. Installation uses a temporary directory and publishes the final
-directory name only after all file sizes and CRCs match `meta.bin`. The runtime
-package contains no morphology tables; those remain in the desktop compiler
-half of the `.cpdict` distribution.
+An installed runtime dictionary is a directory committed under its lowercase,
+32-digit 128-bit bundle UUID. Installation first writes only to
+`.installing-<bundle-uuid>`, then validates required files, exact sizes,
+`meta.bin`, the requested UUID, and all three payload CRCs with caller-owned
+bounded scratch storage. A directory rename publishes the final name only after
+validation succeeds. Same-UUID replacement renames the prior package to
+`.backup-<bundle-uuid>` until the new directory is visible. Recovery restores
+the backup when the final directory is absent, or removes it when the final
+directory already exists. Removal uses the same backup rename so interruption
+leaves either the complete package or no package, never a partially visible
+one. The runtime package contains no morphology tables; those remain in the
+desktop compiler half of the `.cpdict` distribution.
 
 ```text
 meta.bin

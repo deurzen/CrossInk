@@ -1,0 +1,103 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+#include "DictionaryPackage.h"
+
+namespace dictionary::installer {
+
+constexpr size_t kMaxRootPath = 128;
+constexpr size_t kMaxInstallPath = 192;
+constexpr uint32_t kMaxLicenseBytes = 1024U * 1024U;
+constexpr size_t kMinimumValidationScratch = 64;
+
+enum class RuntimeFile : uint8_t {
+  Meta = 0,
+  Lexemes,
+  Headwords,
+  Entries,
+  Licenses,
+};
+
+struct StorageBackend {
+  void* context = nullptr;
+  bool (*ensureDirectory)(void* context, const char* path) = nullptr;
+  bool (*exists)(void* context, const char* path) = nullptr;
+  bool (*removeTree)(void* context, const char* path) = nullptr;
+  bool (*rename)(void* context, const char* oldPath, const char* newPath) = nullptr;
+  uint64_t (*fileSize)(void* context, const char* path) = nullptr;
+  bool (*readAt)(void* context, const char* path, uint32_t offset, void* output, size_t length) = nullptr;
+};
+
+struct PackageInfo {
+  uint8_t bundleUuid[16]{};
+  char sourceLanguage[8]{};
+  char targetLanguage[8]{};
+  uint32_t lexemeCount = 0;
+};
+
+enum class InstallError : uint8_t {
+  NONE = 0,
+  INVALID_INPUT,
+  STORAGE_UNAVAILABLE,
+  DIRECTORY_FAILED,
+  PATH_TOO_LONG,
+  STAGING_MISSING,
+  REQUIRED_FILE_MISSING,
+  LICENSE_INVALID,
+  PACKAGE_INVALID,
+  UUID_MISMATCH,
+  CRC_MISMATCH,
+  RENAME_FAILED,
+  REMOVE_FAILED,
+};
+
+// Manages one package UUID at a time. Upload handlers write only to paths
+// returned by stagingFilePath(); commit validates every runtime file before a
+// directory rename publishes it. A same-UUID replacement retains the previous
+// directory as a recoverable backup until the new directory is visible.
+class Installer {
+ public:
+  bool open(const StorageBackend& storage, const char* rootPath, InstallError& error);
+
+  bool begin(const uint8_t (&bundleUuid)[16], InstallError& error);
+  bool stagingFilePath(const uint8_t (&bundleUuid)[16], RuntimeFile file, char* output, size_t capacity,
+                       InstallError& error);
+  bool installedDirectoryPath(const uint8_t (&bundleUuid)[16], char* output, size_t capacity,
+                              InstallError& error) const;
+  bool validateStaged(const uint8_t (&bundleUuid)[16], uint8_t* scratch, size_t scratchSize, PackageInfo& info,
+                      InstallError& error);
+  bool commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, size_t scratchSize, PackageInfo& info,
+              InstallError& error);
+  bool remove(const uint8_t (&bundleUuid)[16], InstallError& error);
+  bool recover(const uint8_t (&bundleUuid)[16], InstallError& error);
+
+ private:
+  struct SourceContext {
+    Installer* installer = nullptr;
+    const uint8_t* bundleUuid = nullptr;
+    const char* prefix = nullptr;
+    RuntimeFile file = RuntimeFile::Meta;
+  };
+
+  StorageBackend storage_{};
+  char rootPath_[kMaxRootPath]{};
+  mutable char pathScratch_[kMaxInstallPath]{};
+  mutable char pathScratch2_[kMaxInstallPath]{};
+  mutable char pathScratch3_[kMaxInstallPath]{};
+  bool open_ = false;
+
+  bool directoryPath(const uint8_t (&bundleUuid)[16], const char* prefix, char* output, size_t capacity,
+                     InstallError& error) const;
+  bool filePath(const uint8_t (&bundleUuid)[16], const char* prefix, RuntimeFile file, char* output, size_t capacity,
+                InstallError& error) const;
+  bool makeSource(SourceContext& context, const uint8_t (&bundleUuid)[16], const char* prefix, RuntimeFile file,
+                  RandomAccessSource& source, InstallError& error);
+  static bool sourceReadAt(void* context, uint32_t offset, void* output, size_t length);
+};
+
+const char* runtimeFileName(RuntimeFile file);
+const char* installErrorName(InstallError error);
+
+}  // namespace dictionary::installer
