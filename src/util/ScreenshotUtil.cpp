@@ -175,6 +175,11 @@ bool ScreenshotUtil::saveFramebufferAsBmp(const char* filename, const uint8_t* f
     memset(rowBuffer, 0, rowSizePadded);  // Clear the buffer for the next row
   }
 
+  if (!write_error && !file.sync()) {
+    LOG_ERR("SCR", "Failed to sync screenshot: %s", filename);
+    write_error = true;
+  }
+
   // Explicitly close() file before calling Storage.remove()
   file.close();
 
