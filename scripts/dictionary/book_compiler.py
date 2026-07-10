@@ -22,7 +22,7 @@ MAX_SHARDS = 65535
 MAX_RECORDS = 1_000_000
 MAX_LOCAL_LEMMAS = 32768
 MAX_SHARD_BLOB_BYTES = 24 * 1024
-LANGUAGE_FORMAT_VERSION = 2
+LANGUAGE_FORMAT_VERSION = 3
 
 CANDIDATE_AMBIGUOUS = 0x01
 CANDIDATE_NORMALIZED_FALLBACK = 0x04
@@ -58,6 +58,7 @@ class BookCompileError(ValueError):
 class FormAnalysis:
     lexeme_ids: tuple[int, ...]
     confidence: int
+    difficulty: int
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,7 @@ class Candidate:
     global_lexeme_ids: tuple[int, ...]
     confidence: int
     flags: int
+    difficulty: int
 
 
 @dataclass(frozen=True)
@@ -120,7 +122,7 @@ def load_compiler_dictionary(meta: bytes, forms_data: bytes) -> CompilerDictiona
     if len(forms_data) < 64 or forms_data[:4] != b"CXDF":
         raise BookCompileError("invalid forms table")
     (version, header_size) = struct.unpack_from("<HH", forms_data, 4)
-    if version != 1 or header_size != 64 or forms_data[8:24] != bundle_uuid:
+    if version != 2 or header_size != 64 or forms_data[8:24] != bundle_uuid:
         raise BookCompileError("forms table is incompatible with dictionary metadata")
     (form_count, analysis_count, directory_offset, analysis_offset, strings_offset, strings_size,
      file_size, reserved, payload_crc, header_crc) = struct.unpack_from("<IIIIIIIIII", forms_data, 24)
@@ -140,7 +142,8 @@ def load_compiler_dictionary(meta: bytes, forms_data: bytes) -> CompilerDictiona
         surface_hash, string_offset, first_analysis, string_length, count, flags = struct.unpack_from(
             "<QIIHBB", forms_data, record_offset
         )
-        if flags != 0 or count == 0 or string_offset + string_length > strings_size:
+        difficulty = flags
+        if count == 0 or string_offset + string_length > strings_size:
             raise BookCompileError("invalid form record")
         if first_analysis + count > analysis_count:
             raise BookCompileError("form analysis range is out of bounds")
@@ -165,16 +168,20 @@ def load_compiler_dictionary(meta: bytes, forms_data: bytes) -> CompilerDictiona
                 raise BookCompileError("invalid form analysis")
             lexeme_ids.append(lexeme_id)
             confidence = max(confidence, item_confidence)
-        forms[surface] = FormAnalysis(tuple(lexeme_ids), confidence)
+        forms[surface] = FormAnalysis(tuple(lexeme_ids), confidence, difficulty)
 
     folded_ids: dict[str, set[int]] = {}
     folded_confidence: dict[str, int] = {}
+    folded_difficulty: dict[str, int] = {}
     for surface, analysis in forms.items():
         folded = surface.casefold()
         folded_ids.setdefault(folded, set()).update(analysis.lexeme_ids)
         folded_confidence[folded] = max(folded_confidence.get(folded, 0), analysis.confidence)
+        previous_difficulty = folded_difficulty.get(folded, 0)
+        folded_difficulty[folded] = (analysis.difficulty if previous_difficulty == 0 else
+                                     min(previous_difficulty, analysis.difficulty or previous_difficulty))
     folded_forms = {
-        surface: FormAnalysis(tuple(sorted(lexeme_ids)), folded_confidence[surface])
+        surface: FormAnalysis(tuple(sorted(lexeme_ids)), folded_confidence[surface], folded_difficulty[surface])
         for surface, lexeme_ids in folded_ids.items()
     }
     return CompilerDictionary(bundle_uuid, source_language, target_language, lexeme_count, forms, folded_forms)
@@ -266,7 +273,7 @@ def _analyze(surface: str, dictionary: CompilerDictionary) -> Candidate | None:
             flags |= CANDIDATE_AMBIGUOUS
         if len(analysis.lexeme_ids) > MAX_INLINE_ANALYSES:
             flags |= CANDIDATE_ANALYSES_TRUNCATED
-        return Candidate(surface, analysis.lexeme_ids[:MAX_INLINE_ANALYSES], confidence, flags)
+        return Candidate(surface, analysis.lexeme_ids[:MAX_INLINE_ANALYSES], confidence, flags, analysis.difficulty)
     return None
 
 
@@ -330,7 +337,7 @@ def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> Com
                     raise BookCompileError("surface analysis count exceeds version-2 limit")
                 record_start = len(blob)
                 blob.extend(struct.pack("<QHBBBBH", _fnv1a64(encoded), 0, len(encoded), len(local_ids),
-                                        candidate.flags, 0, candidate.confidence))
+                                        candidate.flags, candidate.difficulty, candidate.confidence))
                 blob.extend(struct.pack(f"<{len(local_ids)}H", *local_ids))
                 blob.extend(encoded)
                 _align4(blob)
@@ -346,6 +353,7 @@ def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> Com
     local_lemmas = b"".join(struct.pack("<I", global_id) for global_id in ordered_global_ids)
     metadata_json = json.dumps(
         {"analyzer": "crossink-exact-forms-de", "analyzerVersion": ANALYZER_VERSION,
+         "ranking": "wordfreq" if any(item.difficulty for shard in actionable_shards for item in shard) else "none",
          "languageFormatVersion": LANGUAGE_FORMAT_VERSION, "shardTokenCount": SHARD_TOKEN_COUNT,
          "tokenizerVersion": TOKENIZER_VERSION}, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")

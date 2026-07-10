@@ -255,6 +255,7 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
         item.flags = candidate->flags;
         item.analysisCount = candidate->analysisCount;
         item.componentCount = 0;
+        item.difficulty = candidate->difficulty;
         item.confidence = candidate->confidence;
         item.visibleOrder = token.order;
         std::copy(candidate->localLemmaIds, candidate->localLemmaIds + candidate->analysisCount, item.localLemmaIds);
@@ -264,9 +265,16 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
       }
     }
   }
-  std::sort(output.items, output.items + output.count,
-            [](const Item& left, const Item& right) { return left.visibleOrder < right.visibleOrder; });
+  sortForDisplay(output);
   return true;
+}
+
+void sortForDisplay(Shortlist& shortlist) {
+  std::sort(shortlist.items, shortlist.items + shortlist.count, [](const Item& left, const Item& right) {
+    if (left.difficulty != right.difficulty) return left.difficulty > right.difficulty;
+    if (left.confidence != right.confidence) return left.confidence > right.confidence;
+    return left.visibleOrder < right.visibleOrder;
+  });
 }
 
 const char* generateErrorName(const GenerateError error) {

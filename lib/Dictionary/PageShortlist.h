@@ -26,6 +26,7 @@ struct Item {
   uint8_t flags = 0;
   uint8_t analysisCount = 0;
   uint8_t componentCount = 0;
+  uint8_t difficulty = 0;
   uint16_t confidence = 0;
   uint16_t visibleOrder = 0;
   uint16_t localLemmaIds[kMaxAnalysesPerItem]{};
@@ -86,6 +87,7 @@ class Generator {
 static_assert(sizeof(Generator) <= 6656, "Shortlist generator exceeds its transient memory budget");
 static_assert(sizeof(Shortlist) <= 4096, "Shortlist output exceeds its transient memory budget");
 
+void sortForDisplay(Shortlist& shortlist);
 const char* generateErrorName(GenerateError error);
 
 }  // namespace dictionary::page_shortlist

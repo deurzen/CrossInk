@@ -40,7 +40,7 @@ std::vector<uint8_t> makeArtifact() {
   constexpr size_t metadataOffset = 172;
   std::vector<uint8_t> data(176, 0);
   std::memcpy(data.data(), "CXLG", 4);
-  writeU16(data, 4, 2);
+  writeU16(data, 4, dictionary::book_language::kFormatVersion);
   writeU16(data, 6, 108);
   writeU16(data, 12, 1);
   writeU16(data, 14, 1);
@@ -72,6 +72,7 @@ std::vector<uint8_t> makeArtifact() {
   data[blobOffset + 10] = surface.size();
   data[blobOffset + 11] = 2;
   data[blobOffset + 12] = 1;
+  data[blobOffset + 13] = 200;
   writeU16(data, blobOffset + 14, 900);
   writeU16(data, blobOffset + 16, 0);
   writeU16(data, blobOffset + 18, 1);
@@ -118,6 +119,7 @@ TEST(BookLanguageReader, ReadsInlineCandidateAndLocalLemmas) {
   ASSERT_NE(candidate, nullptr);
   EXPECT_EQ(std::string_view(candidate->surface, candidate->surfaceLength), "liebe");
   EXPECT_EQ(candidate->analysisCount, 2);
+  EXPECT_EQ(candidate->difficulty, 200);
   EXPECT_EQ(candidate->localLemmaIds[0], 0);
   EXPECT_EQ(candidate->localLemmaIds[1], 1);
   uint32_t global = 0;
@@ -158,7 +160,7 @@ TEST(BookLanguageReader, RejectsMalformedShardAndCandidateRecords) {
   EXPECT_EQ(error, ReaderError::SHARD_RECORD_INVALID);
 
   data = makeArtifact();
-  data[149] = 1;  // Candidate reserved byte.
+  data[148] = 0x80;  // Unknown candidate flag.
   refreshCrc(data);
   ASSERT_TRUE(reader.open(sourceFor(data), error));
   ASSERT_TRUE(reader.readShard(0, shard, error));
@@ -186,6 +188,26 @@ TEST(PageShortlist, IntersectsInlineCandidatesAndRetainsAmbiguity) {
   EXPECT_EQ(shortlist.items[0].analysisCount, 2);
   EXPECT_EQ(shortlist.items[0].localLemmaIds[0], 0);
   EXPECT_EQ(shortlist.items[0].localLemmaIds[1], 1);
+}
+
+TEST(PageShortlist, SortsHardestFirstWithStablePageOrderTies) {
+  dictionary::page_shortlist::Shortlist shortlist;
+  shortlist.count = 3;
+  shortlist.items[0].difficulty = 40;
+  shortlist.items[0].confidence = 1000;
+  shortlist.items[0].visibleOrder = 0;
+  shortlist.items[1].difficulty = 200;
+  shortlist.items[1].confidence = 900;
+  shortlist.items[1].visibleOrder = 1;
+  shortlist.items[2].difficulty = 200;
+  shortlist.items[2].confidence = 900;
+  shortlist.items[2].visibleOrder = 2;
+
+  dictionary::page_shortlist::sortForDisplay(shortlist);
+
+  EXPECT_EQ(shortlist.items[0].visibleOrder, 1);
+  EXPECT_EQ(shortlist.items[1].visibleOrder, 2);
+  EXPECT_EQ(shortlist.items[2].visibleOrder, 0);
 }
 
 TEST(PageShortlist, JoinsLayoutInsertedHyphensBeforeHashing) {

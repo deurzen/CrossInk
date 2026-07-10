@@ -7,14 +7,14 @@ fixed-size char buffer.
 
 ## EPUB `META-INF/crossink/language.bin`
 
-### Version 2 (current)
+### Version 3 (current)
 
-Version 2 uses a 108-byte header followed by self-contained shard blobs. All integers are unsigned little-endian; offsets are absolute and four-byte aligned.
+Version 3 retains the version-2 108-byte header and self-contained shard blobs, and assigns the former candidate reserved byte to an optional language-neutral difficulty score. All integers are unsigned little-endian; offsets are absolute and four-byte aligned.
 
 | Offset | Size | Field |
 | ---: | ---: | --- |
 | 0 | 4 | Magic `CXLG` |
-| 4 | 2 | Format version (`2`) |
+| 4 | 2 | Format version (`3`) |
 | 6 | 2 | Header size (`108`) |
 | 8 | 4 | Flags; must be zero |
 | 12 | 2 | Tokenizer version |
@@ -38,7 +38,7 @@ Version 2 uses a 108-byte header followed by self-contained shard blobs. All int
 | 100 | 4 | Payload CRC32 over bytes `[108, fileSize)` |
 | 104 | 4 | Header CRC32 over bytes `[0, 104)` |
 
-The spine directory uses an eight-byte record. Each version-2
+The spine directory uses an eight-byte record. Each version-3
 shard-directory record is 20 bytes:
 
 ```text
@@ -60,7 +60,7 @@ recordSize:u16       // header + analyses + surface + zero padding
 surfaceLength:u8     // 1..255
 analysisCount:u8     // 1..8
 flags:u8
-reserved:u8          // zero
+difficulty:u8        // 0 unavailable; 1 easiest through 255 hardest
 confidence:u16       // 0..1000
 localLemmaIds:u16[analysisCount]
 surface:u8[surfaceLength]
@@ -73,14 +73,14 @@ be below the header's local-lemma count. Firmware processes one shard
 sequentially through bounded scratch storage and never allocates `blobLength`.
 
 The local-lemma table remains `globalLexemeId:u32` indexed by local ID and
-sorted by global ID. Version 2 removes the global-to-local table and the entire
+sorted by global ID. Version 3 retains version 2's removal of the global-to-local table and the entire
 surface-detail section. The metadata section retains the `CXLM` envelope and
 records shard size plus compiler/tokenizer/analyzer versions. The same 64 MiB
 file cap, 4096-spine cap, 65535-shard cap, 32768-local-lemma cap, payload CRC,
-and header CRC apply. Version-2 compilers fail on oversized records/blobs rather
+and header CRC apply. Version-3 compilers fail on oversized records/blobs rather
 than truncating structural data.
 
-Firmware accepts only version 2 and streams shards sequentially into the same bounded `Shortlist` and global learning-state IDs. Old experimental EPUBs must be recompiled.
+Firmware accepts only version 3 and streams shards sequentially into the same bounded `Shortlist` and global learning-state IDs. It sorts scored candidates hardest-first using confidence and original page order as deterministic tie-breakers; unscored artifacts preserve page order. Older EPUBs must be recompiled.
 
 After full extraction validation, firmware writes a 44-byte `language.valid` receipt: `CXLR`, version/header size (`u16`, `u16`), embedded size (`u32`), ZIP central-directory CRC (`u32`), payload CRC (`u32`), header CRC (`u32`), bundle UUID (16 bytes), and receipt CRC32 over the first 40 bytes. On later opens, matching ZIP identity plus the cached artifact's size and validated 108-byte header avoids rereading the full payload. Missing, stale, or corrupt receipts fall back to full streaming validation and are replaced atomically through `language.valid.tmp`.
 
@@ -219,7 +219,7 @@ Its fixed 64-byte header is:
 | Offset | Size | Field |
 | ---: | ---: | --- |
 | 0 | 4 | Magic `CXDF` |
-| 4 | 2 | Format version (`1`) |
+| 4 | 2 | Format version (`2`) |
 | 6 | 2 | Header size (`64`) |
 | 8 | 16 | Dictionary bundle UUID |
 | 24 | 4 | Form count |
@@ -235,11 +235,12 @@ Its fixed 64-byte header is:
 
 Each 20-byte form-directory record contains `surfaceHash:u64`,
 `stringOffset:u32`, `firstAnalysis:u32`, `stringLength:u16`,
-`analysisCount:u8`, and `flags:u8`. Records are ordered by FNV-1a-64 hash and
+`analysisCount:u8`, and `difficulty:u8`. Difficulty is zero when unavailable,
+otherwise 1 (easiest) through 255 (hardest). Records are ordered by FNV-1a-64 hash and
 then exact UTF-8 bytes; hash matches must therefore still compare the string.
 Each 8-byte analysis contains `globalLexemeId:u32`, `confidence:u16` in the
-range 0–1000, and `flags:u16`. Version 1 emits confidence 1000 for explicit
-source forms and zero flags. A form can retain up to 255 analyses.
+range 0–1000, and `flags:u16`. Version 2 emits confidence 1000 for explicit
+source forms and zero analysis flags. A form can retain up to 255 analyses.
 
 Compiler caps are 2,000,000 forms, 4,000,000 analyses, 255 UTF-8 bytes per form,
 and a 512 MiB string pool. These are desktop bounds; none of these tables are

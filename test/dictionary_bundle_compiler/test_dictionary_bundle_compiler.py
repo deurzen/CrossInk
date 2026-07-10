@@ -58,7 +58,7 @@ def decoded_forms(bundle):
         _reserved,
     ) = struct.unpack_from("<4sHH16sIIIIIIII", data, 0)
     assert magic == b"CXDF"
-    assert version == 1
+    assert version == 2
     assert header_size == 64
     assert file_size == len(data)
     assert strings_offset + strings_size == len(data)
@@ -70,7 +70,7 @@ def decoded_forms(bundle):
         _, string_offset, first_analysis, string_length, count, flags = struct.unpack_from(
             "<QIIHBB", data, record_offset
         )
-        assert flags == 0
+        assert 0 <= flags <= 255
         form = data[strings_offset + string_offset : strings_offset + string_offset + string_length].decode("utf-8")
         ids = []
         for analysis_index in range(first_analysis, first_analysis + count):
@@ -147,6 +147,21 @@ class DictionaryBundleCompilerTest(unittest.TestCase):
         self.assertEqual(forms["Häusern"], [0])
         self.assertEqual(forms["gingen"], [2])
 
+    def test_embeds_language_neutral_frequency_difficulty(self):
+        scores = {"Haus": 6.0, "Häusern": 3.0, "Liebe": 5.0, "liebe": 4.0, "gehen": 5.5,
+                  "gingen": 4.5, "lieben": 4.0}
+        bundle = compile_bundle(load_fixture(), lambda surface, _language: scores.get(surface, 0.0))
+        data = bundle.files["compiler/forms.bin"]
+        form_count, directory_offset, strings_offset = struct.unpack_from("<I4xI4xI", data, 24)
+        priorities = {}
+        for index in range(form_count):
+            offset = directory_offset + index * 20
+            _, string_offset, _, string_length, _, difficulty = struct.unpack_from("<QIIHBB", data, offset)
+            surface = data[strings_offset + string_offset:strings_offset + string_offset + string_length].decode("utf-8")
+            priorities[surface] = difficulty
+        self.assertGreater(priorities["Häusern"], priorities["Haus"])
+        self.assertEqual(priorities["Haus"], 65)
+
     def test_normalizes_forms_to_nfc(self):
         source = load_fixture()
         source["lexemes"][0]["forms"].append("Ha\u0308usern")
@@ -162,6 +177,7 @@ class DictionaryBundleCompilerTest(unittest.TestCase):
         self.assertEqual(manifest["license"]["spdx"], "CC0-1.0")
         self.assertIn(b"Synthetic German dictionary fixture", bundle.files["device/licenses.txt"])
         self.assertEqual(manifest["lexemeCount"], 4)
+        self.assertEqual(manifest["frequencyRanking"], "none")
         self.assertEqual(set(manifest["files"]), set(bundle.files) - {"manifest.json"})
         self.assertTrue(all(len(file_info["sha256"]) == 64 for file_info in manifest["files"].values()))
 

@@ -16,13 +16,13 @@ import uuid
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 import zlib
 
 PACKAGE_VERSION = 1
 META_SIZE = 80
 LEXEME_RECORD_SIZE = 24
-FORMS_VERSION = 1
+FORMS_VERSION = 2
 FORMS_HEADER_SIZE = 64
 FORM_RECORD_SIZE = 20
 FORM_ANALYSIS_SIZE = 8
@@ -85,6 +85,9 @@ class LexemeInput:
     flags: int = 0
     fields: set[tuple[int, str]] = field(default_factory=set)
     forms: set[str] = field(default_factory=set)
+
+
+FrequencyProvider = Callable[[str, str], float]
 
 
 @dataclass(frozen=True)
@@ -262,7 +265,20 @@ def _build_device_files(lexemes: list[LexemeInput], bundle_uuid: bytes, source_l
     }
 
 
-def _build_forms(lexemes: list[LexemeInput], bundle_uuid: bytes) -> bytes:
+def _difficulty_score(surface: str, lexeme_ids: list[int], lemma_frequencies: list[float], source_language: str,
+                      frequency_provider: FrequencyProvider | None) -> int:
+    if frequency_provider is None:
+        return 0
+    surface_zipf = frequency_provider(surface, source_language)
+    lemma_zipf = max((lemma_frequencies[index] - 0.5 for index in lexeme_ids), default=0.0)
+    familiarity = max(0.0, min(8.0, max(surface_zipf, lemma_zipf)))
+    return 1 + round((8.0 - familiarity) * 254.0 / 8.0)
+
+
+def _build_forms(lexemes: list[LexemeInput], bundle_uuid: bytes, source_language: str,
+                 frequency_provider: FrequencyProvider | None) -> bytes:
+    lemma_frequencies = ([frequency_provider(lexeme.headword, source_language) for lexeme in lexemes]
+                         if frequency_provider is not None else [])
     form_to_lexemes: dict[bytes, list[int]] = {}
     for lexeme_id, lexeme in enumerate(lexemes):
         for form in lexeme.forms:
@@ -291,8 +307,11 @@ def _build_forms(lexemes: list[LexemeInput], bundle_uuid: bytes) -> bytes:
         for lexeme_id in lexeme_ids:
             analyses.extend(struct.pack("<IHH", lexeme_id, 1000, 0))
         analysis_count += len(lexeme_ids)
+        difficulty = _difficulty_score(
+            form.decode("utf-8"), lexeme_ids, lemma_frequencies, source_language, frequency_provider
+        )
         directory.extend(struct.pack("<QIIHBB", _fnv1a64(form), string_offset, first_analysis,
-                                     len(form), len(lexeme_ids), 0))
+                                     len(form), len(lexeme_ids), difficulty))
 
     directory_offset = FORMS_HEADER_SIZE
     analysis_offset = directory_offset + len(directory)
@@ -332,7 +351,7 @@ def _archive(files: dict[str, bytes]) -> bytes:
     return output.getvalue()
 
 
-def compile_bundle(source: dict[str, Any]) -> CompiledBundle:
+def compile_bundle(source: dict[str, Any], frequency_provider: FrequencyProvider | None = None) -> CompiledBundle:
     source = _require_object(source, "source")
     try:
         bundle_uuid = uuid.UUID(_require_string(source.get("bundleUuid"), "bundleUuid")).bytes
@@ -348,14 +367,22 @@ def compile_bundle(source: dict[str, Any]) -> CompiledBundle:
 
     files = _build_device_files(lexemes, bundle_uuid, source_language, target_language)
     files["device/licenses.txt"] = license_text.encode("utf-8")
-    files["compiler/forms.bin"] = _build_forms(lexemes, bundle_uuid)
+    source_language_text = source_language.rstrip(b"\0").decode("ascii")
+    files["compiler/forms.bin"] = _build_forms(
+        lexemes, bundle_uuid, source_language_text, frequency_provider
+    )
+    frequency_provider_id = getattr(frequency_provider, "provider_id", "custom") if frequency_provider else "none"
+    frequency_license = getattr(frequency_provider, "license_text", None) if frequency_provider else None
+    if frequency_license:
+        files["compiler/frequency-license.txt"] = frequency_license.encode("utf-8")
 
     manifest = {
         "formatVersion": 1,
         "bundleUuid": str(uuid.UUID(bytes=bundle_uuid)),
-        "sourceLanguage": source_language.rstrip(b"\0").decode("ascii"),
+        "sourceLanguage": source_language_text,
         "targetLanguage": target_language.rstrip(b"\0").decode("ascii"),
         "lexemeCount": len(lexemes),
+        "frequencyRanking": frequency_provider_id,
         "license": license_manifest,
         "files": {
             path: {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
@@ -367,13 +394,13 @@ def compile_bundle(source: dict[str, Any]) -> CompiledBundle:
     return CompiledBundle(archive_bytes=_archive(files), files=files)
 
 
-def compile_file(source_path: Path, output_path: Path) -> None:
+def compile_file(source_path: Path, output_path: Path, frequency_provider: FrequencyProvider | None = None) -> None:
     try:
         source = json.loads(source_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CompileError(f"cannot read dictionary source: {exc}") from exc
 
-    bundle = compile_bundle(source)
+    bundle = compile_bundle(source, frequency_provider)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = output_path.with_name(output_path.name + ".tmp")
     try:

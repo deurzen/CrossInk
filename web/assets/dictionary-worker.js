@@ -3,7 +3,7 @@
 
   const HEADER_SIZE = 108;
   const SHARD_TOKENS = 64;
-  const LANGUAGE_FORMAT_VERSION = 2;
+  const LANGUAGE_FORMAT_VERSION = 3;
   const MAX_SHARD_BLOB_BYTES = 24 * 1024;
   const UTF8 = new TextEncoder();
   const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
@@ -118,7 +118,7 @@
 
     if (formsBytes.length < 64 || UTF8_DECODER.decode(formsBytes.subarray(0, 4)) !== "CXDF") fail("invalid forms table");
     const view = new DataView(formsBytes.buffer, formsBytes.byteOffset, formsBytes.byteLength);
-    if (view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 64) fail("unsupported forms table");
+    if (view.getUint16(4, true) !== 2 || view.getUint16(6, true) !== 64) fail("unsupported forms table");
     if (bundleUuid.some((value, index) => value !== formsBytes[8 + index])) fail("dictionary UUID mismatch");
     const formCount = view.getUint32(24, true);
     const analysisCount = view.getUint32(28, true);
@@ -137,6 +137,7 @@
     const exactForms = new Map();
     const foldedIds = new Map();
     const foldedConfidence = new Map();
+    const foldedDifficulty = new Map();
     let previousHash = -1n;
     let previousBytes = null;
     for (let index = 0; index < formCount; index++) {
@@ -146,7 +147,8 @@
       const firstAnalysis = view.getUint32(offset + 12, true);
       const stringLength = view.getUint16(offset + 16, true);
       const count = view.getUint8(offset + 18);
-      if (!count || view.getUint8(offset + 19) || stringOffset + stringLength > stringsSize ||
+      const difficulty = view.getUint8(offset + 19);
+      if (!count || stringOffset + stringLength > stringsSize ||
           firstAnalysis + count > analysisCount) fail("invalid form record");
       const encoded = formsBytes.slice(stringsOffset + stringOffset, stringsOffset + stringOffset + stringLength);
       if (fnv1a64(encoded) !== hash || hash < previousHash ||
@@ -166,15 +168,21 @@
         ids.push(lexemeId);
         confidence = Math.max(confidence, itemConfidence);
       }
-      exactForms.set(surface, { ids, confidence });
+      exactForms.set(surface, { ids, confidence, difficulty });
       const folded = germanFold(surface);
       if (!foldedIds.has(folded)) foldedIds.set(folded, new Set());
       ids.forEach((id) => foldedIds.get(folded).add(id));
       foldedConfidence.set(folded, Math.max(foldedConfidence.get(folded) || 0, confidence));
+      const previousDifficulty = foldedDifficulty.get(folded) || 0;
+      foldedDifficulty.set(folded, previousDifficulty === 0 ? difficulty : Math.min(previousDifficulty, difficulty || previousDifficulty));
     }
     const foldedForms = new Map();
     for (const [surface, ids] of foldedIds) {
-      foldedForms.set(surface, { ids: [...ids].sort((a, b) => a - b), confidence: foldedConfidence.get(surface) });
+      foldedForms.set(surface, {
+        ids: [...ids].sort((a, b) => a - b),
+        confidence: foldedConfidence.get(surface),
+        difficulty: foldedDifficulty.get(surface),
+      });
     }
     return {
       bundleUuid,
@@ -296,6 +304,7 @@
         globalIds: analysis.ids.slice(0, MAX_INLINE_ANALYSES),
           confidence: flags & FLAG_FOLDED ? Math.min(analysis.confidence, 900) : analysis.confidence,
         flags,
+        difficulty: analysis.difficulty,
       };
     }
     return null;
@@ -360,11 +369,11 @@
         for (const candidate of candidates) {
           const encoded = UTF8.encode(candidate.surface);
           const localIds = candidate.globalIds.map((id) => localByGlobal.get(id));
-          if (!localIds.length || localIds.length > 8) fail("surface analysis count exceeds version-2 limit");
+          if (!localIds.length || localIds.length > 8) fail("surface analysis count exceeds version-3 limit");
           const recordStart = blob.length;
           writeU64(blob, fnv1a64(encoded));
           writeU16(blob, 0);
-          blob.push(encoded.length, localIds.length, candidate.flags, 0);
+          blob.push(encoded.length, localIds.length, candidate.flags, candidate.difficulty);
           writeU16(blob, candidate.confidence);
           localIds.forEach((id) => writeU16(blob, id));
           appendBytes(blob, encoded);
@@ -372,7 +381,7 @@
           blob[recordStart + 8] = (blob.length - recordStart) & 0xff;
           blob[recordStart + 9] = ((blob.length - recordStart) >>> 8) & 0xff;
         }
-        if (blob.length > MAX_SHARD_BLOB_BYTES) fail("shard blob exceeds version-2 limit");
+        if (blob.length > MAX_SHARD_BLOB_BYTES) fail("shard blob exceeds version-3 limit");
         const tokenStart = range.sourceTokenBase + localShard * SHARD_TOKENS;
         const tokenEnd = Math.min(range.sourceTokenBase + range.tokenCount, tokenStart + SHARD_TOKENS);
         writeU32(shardDirectory, shardBlobs.length);
@@ -387,7 +396,14 @@
     const localLemmas = [];
     globalIds.forEach((globalId) => writeU32(localLemmas, globalId));
     const metadataJson = UTF8.encode(
-      JSON.stringify({ analyzer: "crossink-exact-forms-de", analyzerVersion: 1, languageFormatVersion: 2, shardTokenCount: 64, tokenizerVersion: 1 }),
+      JSON.stringify({
+        analyzer: "crossink-exact-forms-de",
+        analyzerVersion: 1,
+        languageFormatVersion: 3,
+        ranking: actionableShards.some((shard) => shard.some((candidate) => candidate.difficulty)) ? "wordfreq" : "none",
+        shardTokenCount: 64,
+        tokenizerVersion: 1,
+      }),
     );
     const metadata = [];
     appendBytes(metadata, UTF8.encode("CXLM"));

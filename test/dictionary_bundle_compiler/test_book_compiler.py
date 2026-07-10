@@ -22,7 +22,7 @@ from dictionary.compiler import compile_bundle  # noqa: E402
 FIXTURE = ROOT / "test" / "data" / "dictionary-sources" / "german-small.json"
 
 
-def compiler_dictionary():
+def compiler_dictionary(frequency_provider=None):
     source = json.loads(FIXTURE.read_text(encoding="utf-8"))
     source = copy.deepcopy(source)
     source["lexemes"].extend(
@@ -41,7 +41,7 @@ def compiler_dictionary():
             },
         ]
     )
-    bundle = compile_bundle(source)
+    bundle = compile_bundle(source, frequency_provider)
     return load_compiler_dictionary(bundle.files["device/meta.bin"], bundle.files["compiler/forms.bin"])
 
 
@@ -80,9 +80,8 @@ def decoded_surfaces(data):
         cursor = header["recordsOffset"] + blob_offset
         blob_end = cursor + blob_length
         for _ in range(count):
-            _hash, record_size, length, analysis_count, flags, record_reserved, confidence = struct.unpack_from(
+            _hash, record_size, length, analysis_count, flags, difficulty, confidence = struct.unpack_from(
                 "<QHBBBBH", data, cursor)
-            assert record_reserved == 0
             local_ids = struct.unpack_from(f"<{analysis_count}H", data, cursor + 16)
             text_start = cursor + 16 + analysis_count * 2
             surface = data[text_start:text_start + length].decode("utf-8")
@@ -90,6 +89,7 @@ def decoded_surfaces(data):
                 "analyses": [global_ids[local_id] for local_id in local_ids],
                 "components": [],
                 "confidence": confidence,
+                "difficulty": difficulty,
                 "flags": flags,
             }
             cursor += record_size
@@ -142,6 +142,13 @@ class GermanBookCompilerTest(unittest.TestCase):
         self.assertEqual(len(surfaces["Mehrdeutig"]["analyses"]), 8)
         self.assertTrue(surfaces["Mehrdeutig"]["flags"] & CANDIDATE_ANALYSES_TRUNCATED)
 
+    def test_propagates_frequency_difficulty_into_candidates(self):
+        scores = {"Haus": 4.0, "Häusern": 3.0, "gehen": 6.0, "gingen": 4.5}
+        dictionary = compiler_dictionary(lambda surface, _language: scores.get(surface, 0.0))
+        surfaces = decoded_surfaces(compile_book(["<p>Häusern gingen.</p>"], dictionary).language_artifact)
+
+        self.assertGreater(surfaces["Häusern"]["difficulty"], surfaces["gingen"]["difficulty"])
+
     def test_shards_every_64_source_tokens_and_deduplicates_per_shard(self):
         dictionary = compiler_dictionary()
         compiled = compile_book(["<p>" + " ".join(["gingen"] * 65) + "</p>"], dictionary)
@@ -162,7 +169,7 @@ class GermanBookCompilerTest(unittest.TestCase):
         data = compiled.language_artifact
         header = artifact_header(data)
 
-        self.assertEqual((header["magic"], header["version"], header["headerSize"]), (b"CXLG", 2, 108))
+        self.assertEqual((header["magic"], header["version"], header["headerSize"]), (b"CXLG", 3, 108))
         self.assertEqual(header["spineCount"], 2)
         self.assertEqual(header["fileSize"], len(data))
         self.assertEqual(header["payloadCrc"], zlib.crc32(data[108:]) & 0xFFFFFFFF)

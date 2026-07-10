@@ -155,14 +155,13 @@ bool BookLanguageReader::readCandidate(const ShardDirectoryRecord& shard, const 
   candidate_.surfaceLength = fixed[10];
   candidate_.analysisCount = fixed[11];
   candidate_.flags = fixed[12];
-  const uint8_t reserved = fixed[13];
+  candidate_.difficulty = fixed[13];
   candidate_.confidence = readU16(fixed + 14);
   const uint32_t contentSize =
       kInlineCandidateHeaderSize + candidate_.analysisCount * sizeof(uint16_t) + candidate_.surfaceLength;
   const uint32_t expectedRecordSize = (contentSize + 3U) & ~3U;
   if (candidate_.recordSize != expectedRecordSize || candidateCursor_ + candidate_.recordSize > blobEnd ||
-      candidate_.surfaceLength == 0 ||
-      candidate_.analysisCount == 0 || candidate_.analysisCount > kMaxInlineAnalyses || reserved != 0 ||
+      candidate_.surfaceLength == 0 || candidate_.analysisCount == 0 || candidate_.analysisCount > kMaxInlineAnalyses ||
       (candidate_.flags & ~kKnownCandidateFlags) != 0 || candidate_.confidence > 1000) {
     error = ReaderError::CANDIDATE_RECORD_INVALID;
     return false;

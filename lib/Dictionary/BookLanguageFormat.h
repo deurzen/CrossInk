@@ -9,7 +9,7 @@ namespace dictionary::book_language {
 
 using dictionary::updateCrc32;
 
-constexpr uint16_t kFormatVersion = 2;
+constexpr uint16_t kFormatVersion = 3;
 constexpr size_t kHeaderSize = 108;
 constexpr uint32_t kMaxFileSize = 64U * 1024U * 1024U;
 constexpr uint16_t kMaxSpineCount = 4096;
