@@ -17,6 +17,7 @@
 #include "activities/reader/EpubReaderMenuActivity.h"
 #include "activities/reader/ReaderOptionsActivity.h"
 #include "components/UITheme.h"
+#include "word_inbox/WordInboxStore.h"
 
 extern ActivityManager activityManager;
 extern GfxRenderer renderer;
@@ -260,8 +261,47 @@ class SimulatorSmokeTest {
     LOG_INF("SMOKE", "Running reader input script with %d page turn(s)", turns);
   }
 
+  static void validateWordInboxCapture() {
+    struct ValidationState {
+      bool found = false;
+      WordInboxBookInfo book;
+    } state;
+    const auto visitor = [](void* context, const WordInboxBookInfo& book) {
+      auto& validation = *static_cast<ValidationState*>(context);
+      validation.found = true;
+      validation.book = book;
+      return false;
+    };
+
+    if (!WordInboxStore::visitBooks(&state, visitor) || !state.found || state.book.contextCount != 1 ||
+        state.book.latestContextId != 1) {
+      fail("Word Inbox book enumeration failed");
+    }
+
+    WordInboxContextInfo capture;
+    if (!WordInboxStore::getContext(state.book.key, state.book.latestContextId, capture) || capture.position != 1 ||
+        capture.contextCount != 1 || !capture.hasScreenshot || !capture.hasText || capture.textLength == 0) {
+      fail("Word Inbox context metadata validation failed");
+    }
+
+    HalFile textFile;
+    char firstByte = 0;
+    if (!WordInboxStore::openContextText(state.book.key, capture, textFile) || textFile.read(&firstByte, 1) != 1 ||
+        firstByte == 0) {
+      fail("Word Inbox text streaming validation failed");
+    }
+    textFile.close();
+
+    char screenshotPath[96];
+    if (!WordInboxStore::getScreenshotPath(state.book.key, capture.id, screenshotPath, sizeof(screenshotPath))) {
+      fail("Word Inbox screenshot validation failed");
+    }
+    LOG_INF("SMOKE", "Validated Word Inbox context API");
+  }
+
   void runReaderInputScript() {
     if (scriptIndex >= inputScript.size()) {
+      validateWordInboxCapture();
       step = SmokeStep::Done;
       return;
     }

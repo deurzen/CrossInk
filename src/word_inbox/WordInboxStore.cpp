@@ -55,6 +55,13 @@ bool readPod(HalFile& file, T& value) {
   return file.read(&value, sizeof(value)) == static_cast<int>(sizeof(value));
 }
 
+bool readString(HalFile& file, std::string& value, const uint32_t maximumLength) {
+  uint32_t length = 0;
+  if (!readPod(file, length) || length > maximumLength) return false;
+  value.resize(length);
+  return length == 0 || file.read(value.data(), length) == static_cast<int>(length);
+}
+
 bool writeString(HalFile& file, const std::string_view value, const uint32_t maximumLength) {
   if (value.size() > maximumLength || value.size() > std::numeric_limits<uint32_t>::max()) return false;
   const uint32_t length = static_cast<uint32_t>(value.size());
@@ -86,6 +93,35 @@ StringComparison compareString(HalFile& file, const std::string_view expected, c
     offset += chunk;
   }
   return StringComparison::Match;
+}
+
+bool isValidBookKeyInternal(const std::string_view key) {
+  size_t prefixLength = 0;
+  if (key.size() > 5 && key.substr(0, 5) == "epub_") {
+    prefixLength = 5;
+  } else if (key.size() > 4 && (key.substr(0, 4) == "txt_" || key.substr(0, 4) == "xtc_")) {
+    prefixLength = 4;
+  } else {
+    return false;
+  }
+
+  if (key.size() - prefixLength > 10) return false;
+  for (size_t index = prefixLength; index < key.size(); ++index) {
+    if (key[index] < '0' || key[index] > '9') return false;
+  }
+  return true;
+}
+
+WordInboxBookType bookTypeFromKey(const std::string_view key) {
+  return key.substr(0, 5) == "epub_"  ? WordInboxBookType::Epub
+         : key.substr(0, 4) == "txt_" ? WordInboxBookType::Txt
+                                      : WordInboxBookType::Xtc;
+}
+
+bool buildDirectoryForKey(const std::string_view key, char* const output, const size_t outputSize) {
+  if (!isValidBookKeyInternal(key)) return false;
+  const int written = snprintf(output, outputSize, "%s/%.*s", ROOT_DIR, static_cast<int>(key.size()), key.data());
+  return written > 0 && static_cast<size_t>(written) < outputSize;
 }
 
 bool buildBookDirectory(const WordInboxCapture& capture, char* const output, const size_t outputSize) {
@@ -267,6 +303,107 @@ void removeCaptureFile(const char* const directory, const uint32_t id, const cha
   }
 }
 
+struct ContextScanResult {
+  uint32_t count = 0;
+  uint32_t latestId = 0;
+  uint32_t position = 0;
+  uint32_t previousId = 0;
+  uint32_t nextId = 0;
+  bool targetFound = false;
+};
+
+bool scanContexts(const char* const directory, const uint32_t targetId, ContextScanResult& result) {
+  HalFile root = Storage.open(directory);
+  if (!root || !root.isDirectory()) return false;
+
+  for (HalFile entry = root.openNextFile(); entry; entry = root.openNextFile()) {
+    if (entry.isDirectory()) continue;
+    char name[32];
+    if (entry.getName(name, sizeof(name)) == 0) continue;
+    uint32_t candidate = 0;
+    if (!parseContextId(name, candidate)) continue;
+
+    char screenshotPath[PATH_CAPACITY];
+    if (!buildCapturePath(directory, candidate, "bmp", false, screenshotPath, sizeof(screenshotPath)) ||
+        !Storage.exists(screenshotPath)) {
+      continue;
+    }
+
+    result.count++;
+    result.latestId = std::max(result.latestId, candidate);
+    if (candidate == targetId) result.targetFound = true;
+    if (targetId > 0 && candidate <= targetId) result.position++;
+    if (targetId > 0 && candidate < targetId) result.previousId = std::max(result.previousId, candidate);
+    if (targetId > 0 && candidate > targetId && (result.nextId == 0 || candidate < result.nextId)) {
+      result.nextId = candidate;
+    }
+  }
+
+  return true;
+}
+
+bool readBookInfo(const char* const directory, const char* const key, WordInboxBookInfo& info) {
+  char path[PATH_CAPACITY];
+  if (!buildBookMetadataPath(directory, false, path, sizeof(path))) return false;
+
+  HalFile file;
+  if (!Storage.openFileForRead("WIN", path, file)) return false;
+  char magic[sizeof(BOOK_MAGIC) - 1];
+  uint8_t version = 0;
+  uint8_t type = 0;
+  if (file.read(magic, sizeof(magic)) != static_cast<int>(sizeof(magic)) ||
+      std::memcmp(magic, BOOK_MAGIC, sizeof(magic)) != 0 || !readPod(file, version) || version != FORMAT_VERSION ||
+      !readPod(file, type) || type != static_cast<uint8_t>(bookTypeFromKey(key)) ||
+      !readString(file, info.title, MAX_TITLE_BYTES) || !readString(file, info.author, MAX_AUTHOR_BYTES) ||
+      !readString(file, info.bookPath, MAX_BOOK_PATH_BYTES)) {
+    LOG_ERR("WIN", "Invalid Word Inbox book metadata: %s", path);
+    return false;
+  }
+
+  file.close();
+  snprintf(info.key, sizeof(info.key), "%s", key);
+  info.bookType = static_cast<WordInboxBookType>(type);
+  ContextScanResult scan;
+  if (!scanContexts(directory, 0, scan)) return false;
+  info.contextCount = scan.count;
+  info.latestContextId = scan.latestId;
+  return true;
+}
+
+bool readContextInfo(const char* const directory, const uint32_t id, WordInboxContextInfo& info) {
+  char path[PATH_CAPACITY];
+  if (!buildCapturePath(directory, id, "ctx", false, path, sizeof(path))) return false;
+
+  HalFile file;
+  if (!Storage.openFileForRead("WIN", path, file)) return false;
+  char magic[sizeof(CONTEXT_MAGIC) - 1];
+  uint8_t version = 0;
+  uint8_t flags = 0;
+  uint32_t storedId = 0;
+  if (file.read(magic, sizeof(magic)) != static_cast<int>(sizeof(magic)) ||
+      std::memcmp(magic, CONTEXT_MAGIC, sizeof(magic)) != 0 || !readPod(file, version) || version != FORMAT_VERSION ||
+      !readPod(file, flags) || !readPod(file, storedId) || storedId != id || !readPod(file, info.spineIndex) ||
+      !readPod(file, info.currentPage) || !readPod(file, info.totalPages) || !readPod(file, info.progressPercent) ||
+      info.progressPercent > 100 || !readString(file, info.chapterTitle, MAX_CHAPTER_BYTES) ||
+      !readPod(file, info.textLength) || info.textLength > MAX_TEXT_BYTES) {
+    LOG_ERR("WIN", "Invalid Word Inbox context: %s", path);
+    return false;
+  }
+
+  const size_t textOffset = file.position();
+  if (textOffset > std::numeric_limits<uint32_t>::max() || textOffset + info.textLength > file.size()) {
+    LOG_ERR("WIN", "Truncated Word Inbox context: %s", path);
+    return false;
+  }
+
+  info.id = id;
+  info.textOffset = static_cast<uint32_t>(textOffset);
+  info.hasText = (flags & FLAG_TEXT_AVAILABLE) != 0 && info.textLength > 0;
+  info.textTruncated = (flags & FLAG_TEXT_TRUNCATED) != 0;
+  info.hasScreenshot = (flags & FLAG_SCREENSHOT_AVAILABLE) != 0;
+  return true;
+}
+
 }  // namespace
 
 WordInboxSaveResult WordInboxStore::save(const WordInboxCapture& capture, uint32_t& outCaptureId) {
@@ -329,4 +466,102 @@ WordInboxSaveResult WordInboxStore::save(const WordInboxCapture& capture, uint32
   outCaptureId = id;
   LOG_INF("WIN", "Saved word inbox context %lu", static_cast<unsigned long>(id));
   return WordInboxSaveResult::Saved;
+}
+
+bool WordInboxStore::isValidBookKey(const std::string_view key) { return isValidBookKeyInternal(key); }
+
+bool WordInboxStore::visitBooks(void* const context, const WordInboxBookVisitor visitor) {
+  if (!visitor) return false;
+  if (!Storage.exists(ROOT_DIR)) return true;
+
+  HalFile root = Storage.open(ROOT_DIR);
+  if (!root || !root.isDirectory()) {
+    LOG_ERR("WIN", "Failed to open Word Inbox root");
+    return false;
+  }
+
+  for (HalFile entry = root.openNextFile(); entry; entry = root.openNextFile()) {
+    if (!entry.isDirectory()) continue;
+    char key[64];
+    if (entry.getName(key, sizeof(key)) == 0) continue;
+    const char* baseName = std::strrchr(key, '/');
+    baseName = baseName ? baseName + 1 : key;
+    if (!isValidBookKeyInternal(baseName)) continue;
+    entry.close();  // readBookInfo reopens this directory; only one reader may hold a path.
+
+    char directory[PATH_CAPACITY];
+    if (!buildDirectoryForKey(baseName, directory, sizeof(directory))) continue;
+    WordInboxBookInfo info;
+    if (!readBookInfo(directory, baseName, info) || info.contextCount == 0) continue;
+    if (!visitor(context, info)) break;
+  }
+  return true;
+}
+
+bool WordInboxStore::getContext(const std::string_view bookKey, const uint32_t id, WordInboxContextInfo& out) {
+  if (!isValidBookKeyInternal(bookKey) || id == 0 || id > MAX_CAPTURE_ID) return false;
+
+  char directory[PATH_CAPACITY];
+  if (!buildDirectoryForKey(bookKey, directory, sizeof(directory))) return false;
+  ContextScanResult scan;
+  if (!scanContexts(directory, id, scan) || !scan.targetFound || !readContextInfo(directory, id, out)) return false;
+
+  out.position = scan.position;
+  out.contextCount = scan.count;
+  out.previousId = scan.previousId;
+  out.nextId = scan.nextId;
+  char screenshotPath[PATH_CAPACITY];
+  out.hasScreenshot = out.hasScreenshot &&
+                      buildCapturePath(directory, id, "bmp", false, screenshotPath, sizeof(screenshotPath)) &&
+                      Storage.exists(screenshotPath);
+  return out.hasScreenshot;
+}
+
+bool WordInboxStore::openContextText(const std::string_view bookKey, const WordInboxContextInfo& context,
+                                     HalFile& outFile) {
+  outFile.close();
+  if (!isValidBookKeyInternal(bookKey) || !context.hasText || context.textLength == 0) return false;
+
+  char directory[PATH_CAPACITY];
+  char path[PATH_CAPACITY];
+  if (!buildDirectoryForKey(bookKey, directory, sizeof(directory)) ||
+      !buildCapturePath(directory, context.id, "ctx", false, path, sizeof(path)) ||
+      !Storage.openFileForRead("WIN", path, outFile) || !outFile.seek(context.textOffset)) {
+    outFile.close();
+    return false;
+  }
+  return true;
+}
+
+bool WordInboxStore::getScreenshotPath(const std::string_view bookKey, const uint32_t id, char* const output,
+                                       const size_t outputSize) {
+  char directory[PATH_CAPACITY];
+  return output && outputSize > 0 && id > 0 && id <= MAX_CAPTURE_ID &&
+         buildDirectoryForKey(bookKey, directory, sizeof(directory)) &&
+         buildCapturePath(directory, id, "bmp", false, output, outputSize) && Storage.exists(output);
+}
+
+bool WordInboxStore::deleteContext(const std::string_view bookKey, const uint32_t id) {
+  char directory[PATH_CAPACITY];
+  if (!buildDirectoryForKey(bookKey, directory, sizeof(directory)) || id == 0 || id > MAX_CAPTURE_ID) return false;
+
+  char contextPath[PATH_CAPACITY];
+  if (!buildCapturePath(directory, id, "ctx", false, contextPath, sizeof(contextPath)) ||
+      !Storage.exists(contextPath) || !Storage.remove(contextPath)) {
+    return false;
+  }
+
+  char screenshotPath[PATH_CAPACITY];
+  if (!buildCapturePath(directory, id, "bmp", false, screenshotPath, sizeof(screenshotPath))) return false;
+  if (Storage.exists(screenshotPath) && !Storage.remove(screenshotPath)) {
+    LOG_ERR("WIN", "Failed to remove orphaned screenshot: %s", screenshotPath);
+    return false;
+  }
+  return true;
+}
+
+bool WordInboxStore::deleteBook(const std::string_view bookKey) {
+  char directory[PATH_CAPACITY];
+  if (!buildDirectoryForKey(bookKey, directory, sizeof(directory)) || !Storage.exists(directory)) return false;
+  return Storage.removeDir(directory);
 }
