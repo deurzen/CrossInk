@@ -2,6 +2,7 @@
 
 #include <Print.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -43,6 +44,8 @@ class Epub {
   uint32_t wordsPerReferencePage = 0;
   uint32_t totalReferencePages = 0;
   bool xLocationsLoaded = false;
+  bool bookLanguageArtifactLoaded = false;
+  std::array<uint8_t, 16> dictionaryBundleUuid{};
   enum class CssParseStatus : uint8_t {
     Failed,
     Partial,
@@ -113,6 +116,9 @@ class Epub {
 
   size_t getBookSize() const;
   bool hasXLocations() const { return xLocationsLoaded; }
+  bool hasBookLanguageArtifact() const { return bookLanguageArtifactLoaded; }
+  std::string getBookLanguageArtifactPath() const;
+  const std::array<uint8_t, 16>& getDictionaryBundleUuid() const { return dictionaryBundleUuid; }
   bool hasStablePageNumbers() const {
     return xLocationsLoaded && totalWords > 0 && wordsPerReferencePage > 0 && totalReferencePages > 0;
   }
@@ -126,6 +132,7 @@ class Epub {
 
  private:
   bool loadXLocations();
+  bool loadBookLanguageArtifact();
   std::string getCachedCoverImagePath(const std::string& coverImageHref) const;
   bool ensureCachedCoverImage(const std::string& coverImageHref, std::string& outPath) const;
   bool generateThumbBmpInternal(int width, int height, bool adaptiveContain, const GfxRenderer* renderer,

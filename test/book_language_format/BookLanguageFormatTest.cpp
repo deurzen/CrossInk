@@ -187,6 +187,44 @@ TEST(BookLanguageFormat, RejectsUnalignedAndOverlappingTables) {
   EXPECT_EQ(error, FormatError::TABLE_OUT_OF_BOUNDS);
 }
 
+TEST(BookLanguageFormat, StreamValidatorAcceptsEveryChunkSize) {
+  const std::vector<uint8_t> data = makeValidArtifact();
+  for (size_t chunkSize = 1; chunkSize <= data.size() + 1; ++chunkSize) {
+    dictionary::book_language::StreamValidator validator;
+    for (size_t offset = 0; offset < data.size(); offset += chunkSize) {
+      const size_t length = std::min(chunkSize, data.size() - offset);
+      ASSERT_TRUE(validator.write(data.data() + offset, length)) << "chunk=" << chunkSize;
+    }
+    Header header;
+    FormatError error;
+    ASSERT_TRUE(validator.finish(header, error))
+        << "chunk=" << chunkSize << " error=" << dictionary::book_language::formatErrorName(error);
+    EXPECT_EQ(header.fileSize, data.size());
+  }
+}
+
+TEST(BookLanguageFormat, StreamValidatorRejectsTruncationCorruptionAndExcess) {
+  std::vector<uint8_t> data = makeValidArtifact();
+  dictionary::book_language::StreamValidator truncated;
+  ASSERT_TRUE(truncated.write(data.data(), data.size() - 1));
+  Header header;
+  FormatError error;
+  EXPECT_FALSE(truncated.finish(header, error));
+  EXPECT_EQ(error, FormatError::FILE_SIZE_MISMATCH);
+
+  data.back() ^= 1U;
+  dictionary::book_language::StreamValidator corrupt;
+  ASSERT_TRUE(corrupt.write(data.data(), data.size()));
+  EXPECT_FALSE(corrupt.finish(header, error));
+  EXPECT_EQ(error, FormatError::BAD_PAYLOAD_CRC);
+
+  const uint8_t byte = 0;
+  dictionary::book_language::StreamValidator excessive;
+  EXPECT_FALSE(excessive.write(&byte, static_cast<size_t>(dictionary::book_language::kMaxFileSize) + 1));
+  EXPECT_FALSE(excessive.finish(header, error));
+  EXPECT_EQ(error, FormatError::FILE_SIZE_OUT_OF_RANGE);
+}
+
 TEST(BookLanguageFormat, RejectsPayloadCorruption) {
   std::vector<uint8_t> data = makeValidArtifact();
   Header header;

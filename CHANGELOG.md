@@ -3,7 +3,7 @@
 ### Added
 
 - Word Inbox captures save visible EPUB and TXT/Markdown text through a configurable reader shortcut, with optional screenshots disabled by default; saved contexts can be reviewed, copied, and deleted in the WebUI.
-- EPUB optimization can compile dictionary candidate shards from a cached `.cpdict` bundle in an off-main-thread browser worker.
+- EPUB optimization can compile dictionary candidate shards from a cached `.cpdict` bundle in an off-main-thread browser worker; firmware validates and extracts the resulting artifact with bounded memory.
 
 ### Changed
 

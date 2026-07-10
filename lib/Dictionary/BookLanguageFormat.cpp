@@ -198,6 +198,44 @@ bool validatePayload(const uint8_t* fileData, const size_t dataSize, const Heade
   return true;
 }
 
+bool StreamValidator::write(const uint8_t* data, const size_t length) {
+  if (sizeExceeded_ || (data == nullptr && length != 0)) return false;
+  if (length == 0) return true;
+  if (length > kMaxFileSize - bytesReceived_) {
+    sizeExceeded_ = true;
+    return false;
+  }
+
+  size_t offset = 0;
+  if (headerBytesReceived_ < kHeaderSize) {
+    const size_t headerRemaining = kHeaderSize - headerBytesReceived_;
+    const size_t headerPart = std::min(length, headerRemaining);
+    std::memcpy(headerBytes_ + headerBytesReceived_, data, headerPart);
+    headerBytesReceived_ += headerPart;
+    offset = headerPart;
+  }
+  if (offset < length) {
+    payloadCrc32_ = dictionary::updateCrc32(payloadCrc32_, data + offset, length - offset);
+  }
+  bytesReceived_ += length;
+  return true;
+}
+
+bool StreamValidator::finish(Header& out, FormatError& error) const {
+  if (sizeExceeded_) {
+    out = {};
+    error = FormatError::FILE_SIZE_OUT_OF_RANGE;
+    return false;
+  }
+  if (!parseHeader(headerBytes_, headerBytesReceived_, bytesReceived_, out, error)) return false;
+  if (payloadCrc32_ != out.payloadCrc32) {
+    out = {};
+    error = FormatError::BAD_PAYLOAD_CRC;
+    return false;
+  }
+  return true;
+}
+
 const char* formatErrorName(const FormatError error) {
   switch (error) {
     case FormatError::NONE:

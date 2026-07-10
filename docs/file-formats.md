@@ -109,6 +109,19 @@ flags, malformed language tags, zero dictionary identities, excessive counts,
 misaligned or overlapping tables, mismatched file sizes, and CRC failures
 before later readers seek into a table.
 
+On EPUB load, firmware streams the embedded member through a fixed-header CRC
+validator into `<book-cache>/language.bin.tmp`, syncs it, checks tokenizer and
+analyzer versions, spine count, and source language, then renames it to
+`language.bin` as the commit point. Cached artifacts are CRC-checked with a
+96-byte read buffer before reuse. No payload-sized allocation is made.
+
+A deterministically invalid embedded artifact creates `<book-cache>/language.invalid`:
+magic `CXLI` followed by its `fileSize:u32`. This prevents repeated extraction
+attempts by multiple short-lived `Epub` objects. A missing member removes stale
+language cache files, a changed member size retries validation, and clearing the
+book cache removes the marker. Transient open/read/write failures do not create
+the marker and can therefore recover on the next open.
+
 ## `/.crosspoint/dictionaries/<bundle-uuid>/`
 
 ### Native dictionary package version 1

@@ -39,6 +39,8 @@ The main data directory is `.crosspoint` on the SD card. It stores render caches
 │   ├── thumb_*.bmp         # Home/recent-books thumbnail images
 │   ├── book.bin            # Book metadata, spine, table of contents, etc.
 │   ├── css_rules.cache     # Parsed CSS rules
+│   ├── language.bin        # Validated dictionary shard artifact extracted from the EPUB
+│   ├── language.invalid    # Retry guard for a deterministically invalid embedded artifact
 │   └── sections/           # Pre-rendered chapter/page layout data
 │       ├── 0.bin
 │       ├── 1.bin

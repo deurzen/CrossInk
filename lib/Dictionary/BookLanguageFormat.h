@@ -79,6 +79,22 @@ bool parseHeader(const uint8_t* data, size_t dataSize, uint64_t actualFileSize, 
 // allocating the whole artifact.
 bool validatePayload(const uint8_t* fileData, size_t dataSize, const Header& header, FormatError& error);
 
+// Incremental validator used while extracting or scanning an artifact. It owns
+// only the fixed 108-byte header and CRC state; payload bytes are never retained.
+class StreamValidator {
+ public:
+  bool write(const uint8_t* data, size_t length);
+  bool finish(Header& out, FormatError& error) const;
+  uint64_t bytesReceived() const { return bytesReceived_; }
+
+ private:
+  uint8_t headerBytes_[kHeaderSize]{};
+  size_t headerBytesReceived_ = 0;
+  uint64_t bytesReceived_ = 0;
+  uint32_t payloadCrc32_ = 0;
+  bool sizeExceeded_ = false;
+};
+
 const char* formatErrorName(FormatError error);
 
 }  // namespace dictionary::book_language
