@@ -6,6 +6,7 @@
 - EPUB reading progress now recovers interrupted temporary and backup-file promotions before loading or saving.
 - Saved clippings now use validated temporary and backup files, including crash-safe deletion that cannot restore cleared highlights.
 - Bookmarks now validate and recover interrupted saves across legacy and current formats, and cleared bookmark files cannot return from stale backups.
+- Per-book reader settings now recover interrupted updates and resets without replacing the last valid settings snapshot.
 
 ## [v1.4.0] - 2026-07-10
 

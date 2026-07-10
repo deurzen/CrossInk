@@ -1,6 +1,7 @@
 #include "EpubReaderActivity.h"
 
 #include <Arduino.h>
+#include <AtomicFile.h>
 #include <Epub/Page.h>
 #include <Epub/blocks/TextBlock.h>
 #include <FontCacheManager.h>
@@ -906,6 +907,13 @@ struct BookReaderSettingsData {
   EpubReaderActivity::ReaderSettingsSnapshot readerSettings;
 };
 
+struct ReaderSettingsWriteContext {
+  uint8_t flags = 0;
+  uint16_t autoPageTurnSeconds = DEFAULT_AUTO_PAGE_TURN_INTERVAL_S;
+  uint8_t renderMode = static_cast<uint8_t>(EpubRenderMode::CrossInkDefault);
+  EpubReaderActivity::ReaderSettingsSnapshot readerSettings;
+};
+
 bool readReaderSettingsSnapshot(FsFile& file, EpubReaderActivity::ReaderSettingsSnapshot& out) {
   if (!(readU8(file, out.fontFamily) && readU8(file, out.fontSize) && readU8(file, out.lineHeightPercent) &&
         readU8(file, out.orientation) && readU8(file, out.screenMargin) && readU8(file, out.publisherPageNumbers) &&
@@ -935,12 +943,65 @@ bool writeReaderSettingsSnapshot(FsFile& file, const EpubReaderActivity::ReaderS
          writeExact(file, in.sdFontFamilyName, sizeof(in.sdFontFamilyName));
 }
 
+bool validateReaderSettingsFile(const char* path, const void*) {
+  HalFile file;
+  if (!Storage.openFileForRead("ERS", path, file)) return false;
+
+  uint8_t version = 0;
+  bool valid = readU8(file, version);
+  if (valid && version == LEGACY_READER_SETTINGS_FILE_VERSION) {
+    uint16_t seconds = 0;
+    valid = readU16(file, seconds);
+  } else if (valid && version == READER_SETTINGS_FILE_VERSION) {
+    uint8_t flags = 0;
+    uint16_t seconds = 0;
+    uint8_t renderMode = 0;
+    EpubReaderActivity::ReaderSettingsSnapshot snapshot;
+    valid = readU8(file, flags) && readU16(file, seconds) && readU8(file, renderMode) &&
+            readReaderSettingsSnapshot(file, snapshot);
+  } else {
+    valid = false;
+  }
+  valid = valid && file.available() == 0;
+  file.close();
+  return valid;
+}
+
+bool writeReaderSettingsFile(HalFile& file, const void* context) {
+  const auto* settings = static_cast<const ReaderSettingsWriteContext*>(context);
+  return writeU8(file, READER_SETTINGS_FILE_VERSION) && writeU8(file, settings->flags) &&
+         writeU16(file, settings->autoPageTurnSeconds) && writeU8(file, settings->renderMode) &&
+         writeReaderSettingsSnapshot(file, settings->readerSettings);
+}
+
+bool recoverReaderSettingsFile(const std::string& settingsPath) {
+  // Cache paths are dynamic and may exceed a safely bounded stack buffer; these strings are only allocated on
+  // load/save.
+  const std::string tempPath = settingsPath + ".tmp";
+  const std::string backupPath = settingsPath + ".bak";
+  const AtomicFile::Paths paths{settingsPath.c_str(), tempPath.c_str(), backupPath.c_str()};
+  return AtomicFile::recover("ERS", paths, validateReaderSettingsFile);
+}
+
+bool removeReaderSettingsFile(const std::string& settingsPath) {
+  const std::string tempPath = settingsPath + ".tmp";
+  const std::string backupPath = settingsPath + ".bak";
+  const AtomicFile::Paths paths{settingsPath.c_str(), tempPath.c_str(), backupPath.c_str()};
+  return AtomicFile::remove("ERS", paths);
+}
+
 BookReaderSettingsData loadBookReaderSettingsFile(const std::string& cachePath) {
   BookReaderSettingsData data;
   captureReaderSettings(data.readerSettings);
 
+  const std::string settingsPath = cachePath + READER_SETTINGS_FILE_NAME;
+  if (!recoverReaderSettingsFile(settingsPath)) {
+    LOG_ERR("ERS", "Could not recover reader settings: %s", settingsPath.c_str());
+    return data;
+  }
+
   FsFile file;
-  if (!Storage.openFileForRead("ERS", cachePath + READER_SETTINGS_FILE_NAME, file)) {
+  if (!Storage.openFileForRead("ERS", settingsPath, file)) {
     return data;
   }
 
@@ -1003,27 +1064,24 @@ bool saveBookReaderSettingsFile(const std::string& cachePath, const bool hasAuto
                                 const uint16_t autoPageTurnSeconds, const bool hasCustomReaderSettings,
                                 const bool hasRenderModeOverride, const uint8_t renderMode,
                                 const EpubReaderActivity::ReaderSettingsSnapshot& readerSettings) {
-  FsFile file;
-  if (!Storage.openFileForWrite("ERS", cachePath + READER_SETTINGS_FILE_NAME, file)) {
-    LOG_ERR("ERS", "Could not open reader settings file for write");
+  ReaderSettingsWriteContext context;
+  if (hasCustomReaderSettings) context.flags |= READER_SETTINGS_FLAG_CUSTOM;
+  if (hasAutoPageTurnInterval) context.flags |= READER_SETTINGS_FLAG_AUTO_PAGE_TURN;
+  if (hasRenderModeOverride) context.flags |= READER_SETTINGS_FLAG_RENDER_MODE;
+  context.autoPageTurnSeconds = clampAutoPageTurnIntervalSeconds(autoPageTurnSeconds);
+  context.renderMode = normalizeRenderModeRaw(renderMode);
+  context.readerSettings = readerSettings;
+  context.readerSettings.epubRenderMode = context.renderMode;
+
+  const std::string settingsPath = cachePath + READER_SETTINGS_FILE_NAME;
+  const std::string tempPath = settingsPath + ".tmp";
+  const std::string backupPath = settingsPath + ".bak";
+  const AtomicFile::Paths paths{settingsPath.c_str(), tempPath.c_str(), backupPath.c_str()};
+  if (!AtomicFile::write("ERS", paths, writeReaderSettingsFile, validateReaderSettingsFile, &context)) {
+    LOG_ERR("ERS", "Could not save reader settings: %s", settingsPath.c_str());
     return false;
   }
-
-  uint8_t flags = 0;
-  if (hasCustomReaderSettings) flags |= READER_SETTINGS_FLAG_CUSTOM;
-  if (hasAutoPageTurnInterval) flags |= READER_SETTINGS_FLAG_AUTO_PAGE_TURN;
-  if (hasRenderModeOverride) flags |= READER_SETTINGS_FLAG_RENDER_MODE;
-  const uint16_t clampedSeconds = clampAutoPageTurnIntervalSeconds(autoPageTurnSeconds);
-  EpubReaderActivity::ReaderSettingsSnapshot normalizedReaderSettings = readerSettings;
-  normalizedReaderSettings.epubRenderMode = normalizeRenderModeRaw(renderMode);
-  const bool ok = writeU8(file, READER_SETTINGS_FILE_VERSION) && writeU8(file, flags) &&
-                  writeU16(file, clampedSeconds) && writeU8(file, normalizeRenderModeRaw(renderMode)) &&
-                  writeReaderSettingsSnapshot(file, normalizedReaderSettings);
-  file.close();
-  if (!ok) {
-    LOG_ERR("ERS", "Short write saving reader settings");
-  }
-  return ok;
+  return true;
 }
 
 bool saveBookRenderModeForCache(const std::string& cachePath, const uint8_t renderMode) {
@@ -1129,10 +1187,7 @@ bool EpubReaderActivity::saveBookRenderMode(const std::string& filePath, const u
 bool EpubReaderActivity::resetBookReaderSettings(const std::string& filePath) {
   Epub epub(filePath, "/.crosspoint");
   const std::string settingsPath = epub.getCachePath() + READER_SETTINGS_FILE_NAME;
-  if (!Storage.exists(settingsPath.c_str())) {
-    return true;
-  }
-  if (!Storage.remove(settingsPath.c_str())) {
+  if (!removeReaderSettingsFile(settingsPath)) {
     LOG_ERR("ERS", "Failed to reset reader settings: %s", settingsPath.c_str());
     return false;
   }
