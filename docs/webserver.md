@@ -110,14 +110,14 @@ repairs such as safer SVG handling. Advanced Mode lets you pick the target
 device, JPEG quality, image split or rotation handling, split overlap, and
 stable reference-page sizing.
 
-Advanced Mode can also compile a dictionary-aware EPUB. Select a `.cpdict`
-bundle once; the browser validates it and keeps only its compiler metadata in
-IndexedDB. When **Dictionary shortlist** is enabled, a Web Worker analyzes the
-EPUB's spine off the UI thread, inserts 64-token source-shard markers, and embeds
-an uncompressed `META-INF/crossink/language.bin`. Compiler data stays in the
+**Add dictionary support** is a separate upload option from image optimization.
+Select a `.cpdict` bundle once; the browser validates it and keeps only its
+compiler metadata in IndexedDB. A Web Worker analyzes the EPUB's spine off the
+UI thread, inserts 64-token source-shard markers, and embeds an uncompressed
+`META-INF/crossink/language.bin`. When image optimization is disabled, all
+images and auxiliary package files remain unchanged. Compiler data stays in the
 desktop browser and is not sent over the reader's network connection. The EPUB
-requires the matching runtime dictionary package on the reader once dictionary
-installation support is available.
+requires the matching runtime dictionary package on the reader.
 
 Optimization changes the EPUB contents and therefore breaks hash-based KOReader
 sync. Conversion is transactional: if image repair or dictionary compilation

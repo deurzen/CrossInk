@@ -387,18 +387,23 @@ function updateBatchModeUI(isBatch) {
   if (overlapRow) overlapRow.style.display = isBatch ? "none" : "";
 }
 
+function updateUploadAction() {
+  const uploadBtn = document.getElementById("uploadBtn");
+  const optimize = document.getElementById("convertBeforeUpload").checked;
+  const dictionary = document.getElementById("dictionaryCompileEnabled").checked;
+  if (optimize && dictionary) uploadBtn.textContent = "Optimize + Dictionary & Upload";
+  else if (optimize) uploadBtn.textContent = "Optimize & Upload";
+  else if (dictionary) uploadBtn.textContent = "Add Dictionary & Upload";
+  else uploadBtn.textContent = "Upload";
+  uploadBtn.classList.toggle("optimize", optimize || dictionary);
+}
+
 function toggleConvertOptions() {
   const checked = document.getElementById("convertBeforeUpload").checked;
-  const uploadBtn = document.getElementById("uploadBtn");
   document.getElementById("convertWarning").style.display = checked ? "block" : "none";
   document.getElementById("convertInfo").style.display = checked ? "block" : "none";
-  // Update button text and style
-  if (checked) {
-    uploadBtn.textContent = "Optimize & Upload";
-    uploadBtn.classList.add("optimize");
-  } else {
-    uploadBtn.textContent = "Upload";
-    uploadBtn.classList.remove("optimize");
+  updateUploadAction();
+  if (!checked) {
     // Clear image picker when unchecking
     clearImagePicker();
   }
@@ -1390,6 +1395,7 @@ function validateFile() {
     // If advanced settings is expanded and single EPUB, show image picker
     const advancedContent = document.getElementById("advancedSettingsContent");
     const convertEnabled = document.getElementById("convertBeforeUpload").checked;
+    const dictionaryEnabled = document.getElementById("dictionaryCompileEnabled").checked;
     if (
       advancedContent.classList.contains("visible") &&
       files.length === 1 &&
@@ -1405,7 +1411,7 @@ function validateFile() {
     }
 
     // If multiple files with conversion, inform user about batch mode
-    if (files.length > 1 && convertEnabled) {
+    if (files.length > 1 && (convertEnabled || dictionaryEnabled)) {
       const epubCount = Array.from(files).filter((f) => f.name.toLowerCase().endsWith(".epub")).length;
       if (epubCount > 0) {
         console.log(`Batch mode: ${epubCount} EPUB(s) will use auto settings`);
@@ -1413,6 +1419,7 @@ function validateFile() {
     }
 
     updateBatchModeUI(files.length > 1);
+    updateUploadAction();
     uploadBtn.disabled = isUploadInProgress;
   } else {
     updateBatchModeUI(false);
@@ -1509,6 +1516,7 @@ async function hydrateDictionaryCompiler() {
       : null;
     checkbox.checked = Boolean(bundle) && localStorage.getItem(DICTIONARY_ENABLED_KEY) === "1";
     updateDictionaryBundleStatus(cachedDictionarySummary);
+    updateUploadAction();
   } catch (error) {
     checkbox.checked = false;
     updateDictionaryBundleStatus(null, `Dictionary cache unavailable: ${error.message}`);
@@ -1522,6 +1530,7 @@ function chooseDictionaryBundle() {
 function toggleDictionaryCompilation() {
   const checkbox = document.getElementById("dictionaryCompileEnabled");
   localStorage.setItem(DICTIONARY_ENABLED_KEY, checkbox.checked ? "1" : "0");
+  updateUploadAction();
   if (checkbox.checked && !cachedDictionarySummary) chooseDictionaryBundle();
 }
 
@@ -1614,6 +1623,7 @@ async function handleDictionaryBundleSelected() {
     document.getElementById("dictionaryCompileEnabled").checked = true;
     localStorage.setItem(DICTIONARY_ENABLED_KEY, "1");
     updateDictionaryBundleStatus(cachedDictionarySummary);
+    updateUploadAction();
     showNotification("Dictionary compiler bundle cached in this browser", "success");
   } catch (error) {
     document.getElementById("dictionaryCompileEnabled").checked = false;
@@ -1630,6 +1640,7 @@ async function clearDictionaryBundle() {
     document.getElementById("dictionaryCompileEnabled").checked = false;
     localStorage.setItem(DICTIONARY_ENABLED_KEY, "0");
     updateDictionaryBundleStatus(null);
+    updateUploadAction();
   } catch (error) {
     updateDictionaryBundleStatus(cachedDictionarySummary, `Could not clear bundle: ${error.message}`);
   }
@@ -2513,8 +2524,7 @@ function getElementsByLocalName(root, localName) {
 }
 
 function parseOpfSpineHrefs(opfContent, opfPath) {
-  const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/")) : "";
-  const opfBasePath = opfDir ? `${opfDir}/content.opf` : "content.opf";
+  const opfBasePath = opfPath;
 
   try {
     const doc = new DOMParser().parseFromString(opfContent, "application/xml");
@@ -3560,6 +3570,50 @@ async function processImage(data, imageState = 0, imagePath = "") {
   });
 }
 
+async function addDictionarySupportToEpub(file, progressCallback) {
+  const zip = await JSZip.loadAsync(file);
+  const opfPath = await findOPFPath(zip);
+  if (!opfPath) throw new Error("EPUB package document not found");
+  const opfContent = await safeReadText(zip.files[opfPath]);
+  const bundle = await getCachedDictionaryBundle();
+  if (!bundle) throw new Error("Select a .cpdict compiler bundle before adding dictionary support");
+
+  const spineHrefs = parseOpfSpineHrefs(opfContent, opfPath);
+  if (!spineHrefs.length) throw new Error("Dictionary compilation could not resolve the EPUB spine");
+  const seenSpines = new Set();
+  const workerSpines = [];
+  for (let index = 0; index < spineHrefs.length; index++) {
+    if (operationCancelled) throw new Error("Cancelled by user");
+    const path = normalizeZipPath(decodeHref(spineHrefs[index]));
+    const entry = zip.files[path];
+    if (!entry || entry.dir) throw new Error(`Dictionary compilation could not load spine resource: ${path}`);
+    if (seenSpines.has(path)) throw new Error(`Dictionary compilation does not support repeated spine resource: ${path}`);
+    seenSpines.add(path);
+    workerSpines.push({ path, content: await safeReadText(entry) });
+    if (progressCallback) progressCallback(10 + ((index + 1) / spineHrefs.length) * 20);
+  }
+
+  const result = await runDictionaryCompilation(workerSpines, bundle, (progress) => {
+    if (progressCallback) progressCallback(30 + progress * 60);
+  });
+  if (operationCancelled) throw new Error("Cancelled by user");
+  for (const spine of result.spines) zip.file(spine.path, spine.content, DEFLATE_OPTS);
+  zip.file(DICTIONARY_LANGUAGE_ARTIFACT_PATH, result.artifact, { compression: "STORE", createFolders: false });
+
+  // Preserve the required uncompressed first member even though JSZip is
+  // regenerating the archive after replacing only spine XHTML and language.bin.
+  if (zip.files.mimetype) {
+    const mimetype = await zip.files.mimetype.async("arraybuffer");
+    zip.file("mimetype", mimetype, { compression: "STORE", createFolders: false });
+  }
+  const output = await zip.generateAsync(
+    { type: "blob", mimeType: "application/epub+zip" },
+    (metadata) => { if (progressCallback) progressCallback(90 + metadata.percent * 0.1); },
+  );
+  logFix("Dictionary", `${workerSpines.length} spine resources compiled with ${bundle.name}; images unchanged`);
+  return output;
+}
+
 function imageMimeType(filename) {
   const lower = (filename || "").toLowerCase();
   if (lower.endsWith(".svg")) return "image/svg+xml";
@@ -4168,6 +4222,7 @@ function uploadFile() {
   const fileInput = document.getElementById("fileInput");
   const files = Array.from(fileInput.files);
   const convertEnabled = document.getElementById("convertBeforeUpload").checked;
+  const dictionaryEnabled = document.getElementById("dictionaryCompileEnabled").checked;
 
   if (files.length === 0) {
     alert("Please select at least one file!");
@@ -4194,7 +4249,9 @@ function uploadFile() {
   let useWebSocket = true; // Try WebSocket first
 
   // Check if we should use batch logging mode
-  const epubFilesToConvert = files.filter((f) => f.name.toLowerCase().endsWith(".epub") && convertEnabled);
+  const epubFilesToConvert = files.filter(
+    (f) => f.name.toLowerCase().endsWith(".epub") && (convertEnabled || dictionaryEnabled),
+  );
   const useBatchLog = epubFilesToConvert.length > 1 && exportLogCheckbox && exportLogCheckbox.checked;
 
   // Start batch log mode if needed
@@ -4260,14 +4317,17 @@ function uploadFile() {
 
     // Check if file is an EPUB and conversion is enabled
     const isEpub = file.name.toLowerCase().endsWith(".epub");
-    const needsConversion = isEpub && convertEnabled;
+    const needsConversion = isEpub && (convertEnabled || dictionaryEnabled);
     let conversionSucceeded = false;
     let conversionFailed = false; // Track if conversion actually failed
     let convOriginalSize = 0; // Picked-file size; 0 unless conversion succeeded
     let convNewSize = 0; // Generated blob size; 0 unless conversion succeeded
 
     const methodText = useWebSocket ? " [WS]" : " [HTTP]";
-    const stageText = needsConversion ? "Converting & uploading" : "Uploading";
+    const transformLabel = convertEnabled
+      ? (dictionaryEnabled ? "Optimizing + dictionary" : "Optimizing")
+      : "Adding dictionary support";
+    const stageText = needsConversion ? `${transformLabel} & uploading` : "Uploading";
     progressText.style.color = "";
     progressText.textContent = `${stageText} ${file.name} (${currentIndex + 1}/${files.length})${methodText}`;
 
@@ -4276,7 +4336,7 @@ function uploadFile() {
       // If conversion succeeded, display goes from 50-100%, otherwise 0-100%
       const displayPercent = conversionSucceeded ? 50 + Math.round(uploadPercent / 2) : uploadPercent;
       progressFill.style.width = displayPercent + "%";
-      const prefix = conversionSucceeded ? "Converting & uploading" : "Uploading";
+      const prefix = conversionSucceeded ? `${transformLabel} & uploading` : "Uploading";
       progressText.textContent = `${prefix} ${file.name} (${currentIndex + 1}/${files.length})${methodText} — ${uploadPercent}%`;
     };
 
@@ -4339,7 +4399,7 @@ function uploadFile() {
       // Convert EPUB if needed
       if (needsConversion) {
         progressFill.style.backgroundColor = "#9b59b6"; // Purple for conversion
-        progressText.textContent = `Converting ${file.name} (${currentIndex + 1}/${files.length})...`;
+        progressText.textContent = `${transformLabel} for ${file.name} (${currentIndex + 1}/${files.length})...`;
 
         // Clear log for single file mode, or just add separator for batch mode
         if (!useBatchLog) {
@@ -4352,9 +4412,9 @@ function uploadFile() {
         const origFileSize = file.size;
 
         try {
-          const convertedBlob = await convertEpubFile(file, (percent) => {
-            // Pass current quality setting to converter
-            progressFill.style.width = percent * 0.5 + "%"; // Conversion takes first 50%
+          const transform = convertEnabled ? convertEpubFile : addDictionarySupportToEpub;
+          const convertedBlob = await transform(file, (percent) => {
+            progressFill.style.width = percent * 0.5 + "%"; // Transform takes first 50%
           });
 
           // Create new File from converted blob

@@ -10,6 +10,7 @@
 
 ### Changed
 
+- Dictionary-aware EPUB compilation is now a separate upload option from image optimization and can preserve the book's images and auxiliary package files unchanged.
 - Failed or cancelled EPUB optimization no longer silently uploads the original book; users must explicitly retry or upload without optimization.
 
 ### Fixed
