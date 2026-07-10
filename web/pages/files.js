@@ -3586,6 +3586,8 @@ async function convertEpubFile(file, progressCallback) {
   );
 
   const zip = await JSZip.loadAsync(file);
+  const canonicalOpfPath = await findOPFPath(zip);
+  if (!canonicalOpfPath) throw new Error("EPUB package document not found");
   const renamed = {};
   zip.forEach((p) => {
     const l = p.toLowerCase();
@@ -3690,7 +3692,7 @@ async function convertEpubFile(file, progressCallback) {
       }
     } else if (low.match(/\.(xhtml|html|htm)$/)) {
       xhtmlFiles[path] = await safeReadText(fileObj);
-    } else if (low.endsWith(".opf")) {
+    } else if (low.endsWith(".opf") && path === canonicalOpfPath) {
       opfPath = path;
       opfContent = await safeReadText(fileObj);
     }
@@ -3954,7 +3956,7 @@ async function convertEpubFile(file, progressCallback) {
     const low = path.toLowerCase();
     if (low === X_LOCATION_MANIFEST_PATH.toLowerCase()) continue;
     if (dictionaryCompiled && low === DICTIONARY_LANGUAGE_ARTIFACT_PATH.toLowerCase()) continue;
-    if (low.match(/\.(png|gif|webp|bmp|jpg|jpeg|svg)$/) || low.match(/\.(xhtml|html|htm)$/) || low.endsWith(".opf"))
+    if (low.match(/\.(png|gif|webp|bmp|jpg|jpeg|svg)$/) || low.match(/\.(xhtml|html|htm)$/) || path === opfPath)
       continue;
 
     let data = await fileObj.async("arraybuffer");

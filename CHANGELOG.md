@@ -15,6 +15,7 @@
 ### Fixed
 
 - Dictionary runtime installation now uses resumable 256 KB uploads, preserving staged progress and retrying automatically after short Wi-Fi interruptions.
+- EPUB optimization now preserves the package document selected by `META-INF/container.xml` and any auxiliary OPF files, fixing books with multiple package documents becoming unopenable.
 - Dictionary compilation now analyzes only rendered XHTML body text, preventing title and other head metadata from shifting source shards.
 - Word Inbox save notifications now dismiss automatically without re-rendering the page and remain safe across repeated captures or page turns.
 - Text-only Word Inbox contexts now open without a redundant image request, avoiding a broken-screenshot warning and reducing WebUI load time.
