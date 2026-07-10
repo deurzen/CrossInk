@@ -353,6 +353,8 @@ A central rule is: **sync logical data, not internal files, whenever a file embe
 
 Use a stable 128-bit `DeviceId` derived once from the factory MAC plus a domain separator and persisted random salt. Do not expose the raw MAC as the protocol identity. The display name remains user-configurable and is not an identity key.
 
+The hardware identity provider reads `ESP_MAC_EFUSE_FACTORY`, fills the non-secret salt with `esp_fill_random()`, and derives the ID with mbedTLS SHA-256. Pair secrets must be generated only while Wi-Fi/RF entropy is active (or through a separately seeded DRBG); the boot-time salt path is not a key-generation API.
+
 ### 9.2 Pair identity
 
 A pair record contains:

@@ -23,6 +23,10 @@ struct Platform {
   bool (*sha256)(void* context, const void* data, size_t length, uint8_t output[SHA256_SIZE]) = nullptr;
 };
 
+// Hardware uses the factory eFuse MAC, ESP RNG, and mbedTLS SHA-256. The RNG
+// callback is intended for this non-secret identity salt, not long-term keys.
+Platform systemPlatform();
+
 enum class LoadResult : uint8_t {
   Loaded,
   Created,

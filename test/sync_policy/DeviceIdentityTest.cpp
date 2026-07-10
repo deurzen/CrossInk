@@ -3,8 +3,10 @@
 #include <HalStorage.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
+#include <iterator>
 #include <string>
 
 namespace {
@@ -68,6 +70,23 @@ TEST(Crc32Test, MatchesStandardVectorAcrossChunks) {
   crc.update("1234", 4);
   crc.update("56789", 5);
   EXPECT_EQ(crc.value(), 0xCBF43926U);
+}
+
+TEST(DeviceIdentityPlatformTest, SimulatorProvidesMacRandomAndSha256) {
+  const DeviceIdentity::Platform platform = DeviceIdentity::systemPlatform();
+  uint8_t mac[DeviceIdentity::FACTORY_MAC_SIZE] = {};
+  uint8_t random[DeviceIdentity::SALT_SIZE] = {};
+  uint8_t digest[DeviceIdentity::SHA256_SIZE] = {};
+  ASSERT_TRUE(platform.readFactoryMac(platform.context, mac));
+  ASSERT_TRUE(platform.fillRandom(platform.context, random, sizeof(random)));
+  ASSERT_TRUE(platform.sha256(platform.context, "abc", 3, digest));
+
+  EXPECT_FALSE(std::all_of(std::begin(mac), std::end(mac), [](const uint8_t byte) { return byte == 0; }));
+  EXPECT_FALSE(std::all_of(std::begin(random), std::end(random), [](const uint8_t byte) { return byte == 0; }));
+  static constexpr uint8_t ABC_SHA256[] = {0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40,
+                                           0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17,
+                                           0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad};
+  EXPECT_EQ(std::memcmp(digest, ABC_SHA256, sizeof(digest)), 0);
 }
 
 TEST_F(DeviceIdentityTest, CreatesThenLoadsStableIdentityWithoutNewRandomness) {
