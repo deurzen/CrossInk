@@ -2,6 +2,8 @@ const DICTIONARY_DB_NAME = "crossink-dictionary-compiler";
 const DICTIONARY_DB_VERSION = 1;
 const DICTIONARY_STORE_NAME = "bundles";
 const RUNTIME_FILES = ["meta.bin", "lexemes.bin", "headwords.bin", "entries.bin", "licenses.txt"];
+const RUNTIME_UPLOAD_CHUNK_BYTES = 256 * 1024;
+const RUNTIME_UPLOAD_MAX_RETRIES = 10;
 const RUNTIME_LIMITS = {
   "meta.bin": 80,
   "lexemes.bin": 500000 * 24,
@@ -331,25 +333,107 @@ function setProgress(done, total) {
   document.getElementById("progressBar").style.width = `${total ? Math.min(100, done * 100 / total) : 0}%`;
 }
 
-function uploadRuntimeFile(uuid, name, blob, completed, total) {
+function uploadRuntimeChunk(uuid, name, blob, offset, completed, total) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     activeInstall.xhr = xhr;
-    xhr.open("POST", `/api/dictionaries/install/file?uuid=${encodeURIComponent(uuid)}&name=${encodeURIComponent(name)}`);
-    xhr.upload.onprogress = event => { if (event.lengthComputable) setProgress(completed + event.loaded, total); };
+    xhr.open("POST", `/api/dictionaries/install/file?uuid=${encodeURIComponent(uuid)}&name=${encodeURIComponent(name)}&offset=${offset}`);
+    xhr.upload.onprogress = event => {
+      if (event.lengthComputable) setProgress(completed + offset + Math.min(event.loaded, blob.size), total);
+    };
     xhr.onload = () => {
       activeInstall.xhr = null;
       let data = {};
       try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) {}
-      if (xhr.status >= 200 && xhr.status < 300 && data.ok) resolve();
-      else reject(new Error(data.error || `Upload failed (${xhr.status})`));
+      if (xhr.status >= 200 && xhr.status < 300 && data.ok) {
+        resolve(Number(data.bytes));
+      } else {
+        const error = new Error(data.error || `Upload failed (${xhr.status})`);
+        error.retryable = xhr.status >= 500 || data.error === "Dictionary file upload failed";
+        reject(error);
+      }
     };
-    xhr.onerror = () => reject(new Error("Network error during upload"));
-    xhr.onabort = () => reject(new Error("Installation cancelled"));
+    xhr.onerror = () => {
+      activeInstall.xhr = null;
+      const error = new Error("Network connection interrupted");
+      error.retryable = true;
+      reject(error);
+    };
+    xhr.onabort = () => {
+      activeInstall.xhr = null;
+      reject(new Error(activeInstall?.cancelled ? "Installation cancelled" : "Upload interrupted"));
+    };
     const body = new FormData();
     body.append("file", blob, name);
     xhr.send(body);
   });
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForReader() {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (activeInstall?.cancelled) throw new Error("Installation cancelled");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    try {
+      const response = await fetch("/api/status", { cache: "no-store", signal: controller.signal });
+      if (response.ok) return;
+    } catch (_) {
+      // The ESP32 may still be associating with the access point.
+    } finally {
+      clearTimeout(timeout);
+    }
+    await delay(2000);
+  }
+  throw new Error("Reader did not reconnect within two minutes");
+}
+
+async function runtimeUploadProgress(uuid, name) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`/api/dictionaries/install/progress?uuid=${encodeURIComponent(uuid)}&name=${encodeURIComponent(name)}`, { cache: "no-store", signal: controller.signal });
+    const data = await responseJson(response);
+    return Number(data.bytes);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function uploadRuntimeFile(uuid, name, blob, completed, total) {
+  let offset = 0;
+  let retries = 0;
+  while (offset < blob.size) {
+    if (activeInstall?.cancelled) throw new Error("Installation cancelled");
+    const end = Math.min(offset + RUNTIME_UPLOAD_CHUNK_BYTES, blob.size);
+    const chunk = blob.slice(offset, end);
+    try {
+      const uploaded = await uploadRuntimeChunk(uuid, name, chunk, offset, completed, total);
+      if (!Number.isInteger(uploaded) || uploaded !== end) throw new Error("Reader returned an invalid upload offset");
+      offset = uploaded;
+      retries = 0;
+      setProgress(completed + offset, total);
+    } catch (error) {
+      if (!error.retryable || retries >= RUNTIME_UPLOAD_MAX_RETRIES || activeInstall?.cancelled) throw error;
+      retries++;
+      setInstallStatus(`${name}: connection interrupted; waiting to resume (${retries}/${RUNTIME_UPLOAD_MAX_RETRIES})…`);
+      await waitForReader();
+      let saved = null;
+      for (let progressAttempt = 0; progressAttempt < 5 && saved === null; progressAttempt++) {
+        try {
+          saved = await runtimeUploadProgress(uuid, name);
+        } catch (_) {
+          await delay(1000);
+        }
+      }
+      if (!Number.isInteger(saved) || saved < 0 || saved > blob.size) throw new Error("Reader returned invalid saved progress");
+      offset = saved;
+      setProgress(completed + offset, total);
+    }
+  }
 }
 
 async function installSelectedBundle() {

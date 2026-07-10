@@ -410,10 +410,15 @@ curl -X POST -F "file=@licenses.txt" "http://crosspoint.local/api/dictionaries/i
 curl -X POST "http://crosspoint.local/api/dictionaries/install/commit?uuid=$UUID"
 ```
 
-Uploads use one reusable 2 KB buffer. Commit streams each payload once through
-the same buffer, validates `meta.bin`, exact sizes, UUID, and CRCs, then
-publishes the package with a directory rename. Failed validation leaves an
-existing same-UUID package untouched.
+The browser sends runtime files in 256 KB requests. Each request includes an
+`offset`; firmware accepts it only when it exactly matches the staged file size.
+`GET /api/dictionaries/install/progress?uuid=<uuid>&name=<runtime-file>` returns
+that durable byte count, allowing the browser to resume the current file after
+a short Wi-Fi or TCP interruption without retransmitting earlier chunks.
+Uploads use one reusable 2 KB firmware buffer. Commit streams each completed
+payload once through the same buffer, validates `meta.bin`, exact sizes, UUID,
+and CRCs, then publishes the package with a directory rename. Failed validation
+leaves an existing same-UUID package untouched.
 
 `POST /api/dictionaries/install/cancel?uuid=<uuid>` removes an incomplete
 staging directory. `POST /api/dictionaries/remove?uuid=<uuid>` atomically

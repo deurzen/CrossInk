@@ -475,6 +475,7 @@ void CrossPointWebServer::begin() {
   server->on(
       "/api/dictionaries/install/file", HTTP_POST, [this] { handleDictionaryInstallUpload(); },
       [this] { handleDictionaryInstallUploadData(); });
+  server->on("/api/dictionaries/install/progress", HTTP_GET, [this] { handleDictionaryInstallProgress(); });
   server->on("/api/dictionaries/install/commit", HTTP_POST, [this] { handleDictionaryInstallCommit(); });
   server->on("/api/dictionaries/install/cancel", HTTP_POST, [this] { handleDictionaryInstallCancel(); });
   server->on("/api/dictionaries/remove", HTTP_POST, [this] { handleDictionaryRemove(); });
@@ -2339,6 +2340,7 @@ void CrossPointWebServer::abortDictionaryUpload() {
   dictionaryUpload.file.close();
   if (dictionaryUpload.filePath[0] != '\0') Storage.remove(dictionaryUpload.filePath);
   dictionaryUpload.valid = false;
+  dictionaryUpload.baseOffset = 0;
   dictionaryUpload.bytesWritten = 0;
   dictionaryUpload.bufferPos = 0;
   dictionaryUpload.filePath[0] = '\0';
@@ -2351,11 +2353,21 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
 
   switch (upload.status) {
     case UPLOAD_FILE_START: {
-      if (dictionaryUpload.file) abortDictionaryUpload();
+      // A dropped TCP connection may not deliver UPLOAD_FILE_ABORTED before the
+      // retry arrives. Preserve every fully received byte and close the stale
+      // handle before validating the caller's resume offset.
+      if (dictionaryUpload.file) {
+        if (dictionaryUpload.valid) {
+          flushDictionaryUpload();
+          dictionaryUpload.file.sync();
+        }
+        dictionaryUpload.file.close();
+      }
       std::memset(dictionaryUpload.bundleUuid, 0, sizeof(dictionaryUpload.bundleUuid));
       dictionaryUpload.runtimeFile = RuntimeFile::Meta;
       dictionaryUpload.filePath[0] = '\0';
       dictionaryUpload.valid = false;
+      dictionaryUpload.baseOffset = 0;
       dictionaryUpload.bytesWritten = 0;
       dictionaryUpload.bufferPos = 0;
       if (!dictionaryStorageReady || !dictionaryUuidArg(*server, dictionaryUpload.bundleUuid) ||
@@ -2363,13 +2375,36 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
         LOG_ERR("WEB", "Rejected invalid dictionary file upload request");
         return;
       }
+      const uint64_t fileLimit = dictionaryRuntimeFileLimit(dictionaryUpload.runtimeFile);
+      uint32_t requestedOffset = 0;
+      if ((server->hasArg("offset") &&
+           !unsignedArg(*server, "offset", static_cast<uint32_t>(fileLimit), requestedOffset)) ||
+          requestedOffset > fileLimit) {
+        LOG_ERR("WEB", "Rejected invalid dictionary resume offset");
+        return;
+      }
+      dictionaryUpload.baseOffset = requestedOffset;
+
       InstallError error;
       if (!dictionaryInstaller.stagingFilePath(dictionaryUpload.bundleUuid, dictionaryUpload.runtimeFile,
-                                               dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), error) ||
-          !Storage.openFileForWrite("DIN", dictionaryUpload.filePath, dictionaryUpload.file)) {
-        LOG_ERR("WEB", "Could not open staged dictionary file: %s", dictionary::installer::installErrorName(error));
+                                               dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), error)) {
+        LOG_ERR("WEB", "Could not build staged dictionary path: %s", dictionary::installer::installErrorName(error));
         dictionaryUpload.filePath[0] = '\0';
         return;
+      }
+      if (requestedOffset == 0) {
+        if (!Storage.openFileForWrite("DIN", dictionaryUpload.filePath, dictionaryUpload.file)) {
+          LOG_ERR("WEB", "Could not create staged dictionary file");
+          return;
+        }
+      } else {
+        dictionaryUpload.file = Storage.open(dictionaryUpload.filePath, O_RDWR);
+        if (!dictionaryUpload.file || dictionaryUpload.file.fileSize64() != requestedOffset ||
+            !dictionaryUpload.file.seek(requestedOffset)) {
+          dictionaryUpload.file.close();
+          LOG_ERR("WEB", "Dictionary resume offset no longer matches staged file");
+          return;
+        }
       }
       dictionaryUpload.valid = true;
       break;
@@ -2377,8 +2412,8 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
 
     case UPLOAD_FILE_WRITE: {
       if (!dictionaryUpload.valid) return;
-      const uint64_t pending =
-          static_cast<uint64_t>(dictionaryUpload.bytesWritten) + dictionaryUpload.bufferPos + upload.currentSize;
+      const uint64_t pending = static_cast<uint64_t>(dictionaryUpload.baseOffset) + dictionaryUpload.bytesWritten +
+                               dictionaryUpload.bufferPos + upload.currentSize;
       if (pending > dictionaryRuntimeFileLimit(dictionaryUpload.runtimeFile)) {
         LOG_ERR("WEB", "Dictionary runtime file exceeds cap");
         abortDictionaryUpload();
@@ -2402,13 +2437,20 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
       if (dictionaryUpload.valid && flushDictionaryUpload() && dictionaryUpload.file.sync()) {
         dictionaryUpload.file.close();
       } else {
-        abortDictionaryUpload();
+        // Keep prior synced bytes so a later progress query can resume them.
+        dictionaryUpload.file.close();
+        dictionaryUpload.valid = false;
       }
       break;
     }
 
     case UPLOAD_FILE_ABORTED:
-      abortDictionaryUpload();
+      if (dictionaryUpload.valid) {
+        flushDictionaryUpload();
+        dictionaryUpload.file.sync();
+      }
+      dictionaryUpload.file.close();
+      dictionaryUpload.valid = false;
       break;
   }
 }
@@ -2417,12 +2459,42 @@ void CrossPointWebServer::handleDictionaryInstallUpload() {
   if (dictionaryUpload.valid && !dictionaryUpload.file) {
     char response[80]{};
     std::snprintf(response, sizeof(response), "{\"ok\":true,\"bytes\":%lu}",
-                  static_cast<unsigned long>(dictionaryUpload.bytesWritten));
+                  static_cast<unsigned long>(dictionaryUpload.baseOffset + dictionaryUpload.bytesWritten));
     server->send(200, "application/json", response);
   } else {
-    abortDictionaryUpload();
+    // Do not delete already synced bytes here: a disconnected multipart
+    // request may still reach the final handler after UPLOAD_FILE_ABORTED.
+    dictionaryUpload.file.close();
+    dictionaryUpload.valid = false;
     server->send(400, "application/json", "{\"error\":\"Dictionary file upload failed\"}");
   }
+}
+
+void CrossPointWebServer::handleDictionaryInstallProgress() {
+  uint8_t uuid[16]{};
+  dictionary::installer::RuntimeFile runtimeFile;
+  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid) || !server->hasArg("name") ||
+      !dictionaryRuntimeFile(server->arg("name"), runtimeFile)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary progress request\"}");
+    return;
+  }
+  char path[dictionary::installer::kMaxInstallPath]{};
+  dictionary::installer::InstallError error;
+  if (!dictionaryInstaller.stagingFilePath(uuid, runtimeFile, path, sizeof(path), error)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary path\"}");
+    return;
+  }
+  uint64_t bytes = 0;
+  HalFile file;
+  if (Storage.openFileForRead("DIN", path, file)) bytes = file.fileSize64();
+  if (bytes > dictionaryRuntimeFileLimit(runtimeFile)) {
+    LOG_ERR("WEB", "Staged dictionary file exceeds runtime cap");
+    server->send(400, "application/json", "{\"error\":\"Invalid staged file\"}");
+    return;
+  }
+  char response[64]{};
+  std::snprintf(response, sizeof(response), "{\"ok\":true,\"bytes\":%llu}", static_cast<unsigned long long>(bytes));
+  server->send(200, "application/json", response);
 }
 
 void CrossPointWebServer::handleDictionaryInstallCommit() {
@@ -2529,10 +2601,12 @@ void CrossPointWebServer::handleDictionaryLearningList() {
     uint8_t partOfSpeech = 0;
     char headword[dictionary::kMaxHeadwordBytes + 1]{};
     size_t length = 0;
-    const bool headwordOk = session->readHeadword(item.lexemeId, headword, sizeof(headword), length, partOfSpeech, error);
-    std::snprintf(fields, sizeof(fields), "%s{\"lexemeId\":%lu,\"status\":%u,\"partOfSpeech\":%u,\"headword\":",
-                  index == 0 ? "" : ",", static_cast<unsigned long>(item.lexemeId),
-                  static_cast<unsigned>(item.status), static_cast<unsigned>(partOfSpeech));
+    const bool headwordOk =
+        session->readHeadword(item.lexemeId, headword, sizeof(headword), length, partOfSpeech, error);
+    std::snprintf(fields, sizeof(fields),
+                  "%s{\"lexemeId\":%lu,\"status\":%u,\"partOfSpeech\":%u,\"headword\":", index == 0 ? "" : ",",
+                  static_cast<unsigned long>(item.lexemeId), static_cast<unsigned>(item.status),
+                  static_cast<unsigned>(partOfSpeech));
     server->sendContent(fields);
     if (headwordOk) {
       sendJsonString(server.get(), std::string_view(headword, length));

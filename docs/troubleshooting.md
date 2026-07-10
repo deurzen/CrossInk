@@ -46,7 +46,9 @@ This document shows common issues and possible solutions while using the device 
 2. Check that the filename is valid for the SD card filesystem
 3. Try uploading a smaller file first to test
 4. Refresh the browser page and try again
-5. If WebSocket upload fails repeatedly, refresh the page and retry with the HTTP fallback path
+5. Dictionary installation automatically resumes its current 256 KB chunk after short interruptions; keep the page open and allow up to two minutes for Wi-Fi to reconnect
+6. For large dictionaries on weak networks, move closer to the router or use **Create Hotspot** for a direct connection
+7. If WebSocket upload fails repeatedly, refresh the page and retry with the HTTP fallback path
 
 ### Saved Password Not Working
 

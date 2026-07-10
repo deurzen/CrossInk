@@ -124,6 +124,7 @@ class CrossPointWebServer {
   void handleDictionaryInstallStart();
   void handleDictionaryInstallUpload();
   void handleDictionaryInstallUploadData();
+  void handleDictionaryInstallProgress();
   void handleDictionaryInstallCommit();
   void handleDictionaryInstallCancel();
   void handleDictionaryRemove();
@@ -165,6 +166,7 @@ class CrossPointWebServer {
     dictionary::installer::RuntimeFile runtimeFile = dictionary::installer::RuntimeFile::Meta;
     char filePath[dictionary::installer::kMaxInstallPath]{};
     bool valid = false;
+    size_t baseOffset = 0;
     size_t bytesWritten = 0;
     size_t bufferPos = 0;
     // Kept inside the network-only server allocation: too large for the task

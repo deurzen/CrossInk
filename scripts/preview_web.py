@@ -113,6 +113,8 @@ ASSETS = {
 }
 
 class Handler(BaseHTTPRequestHandler):
+    dictionary_uploads = {}
+
     def _send(self, code, body, ctype):
         if isinstance(body, str):
             body = body.encode("utf-8")
@@ -136,6 +138,11 @@ class Handler(BaseHTTPRequestHandler):
             fpath, ctype = ASSETS[path]
             with open(fpath, "rb") as f:
                 self._send(200, f.read(), ctype)
+            return
+        if path == "/api/dictionaries/install/progress":
+            key = (query.get("uuid", [""])[0], query.get("name", [""])[0])
+            self._send(200, json.dumps({"ok": True, "bytes": self.dictionary_uploads.get(key, 0)}),
+                       "application/json")
             return
         if path == "/api/word-inbox/context":
             context_id = int(query.get("id", ["12"])[0])
@@ -168,6 +175,38 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, "not found", "text/plain")
 
     def do_POST(self):
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        if parsed.path == "/api/dictionaries/install/start":
+            bundle_uuid = query.get("uuid", [""])[0]
+            self.dictionary_uploads = {
+                key: value for key, value in self.dictionary_uploads.items() if key[0] != bundle_uuid
+            }
+        elif parsed.path == "/api/dictionaries/install/file":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            boundary_token = "boundary="
+            content_type = self.headers.get("Content-Type", "")
+            boundary = content_type.split(boundary_token, 1)[1].strip('"') if boundary_token in content_type else ""
+            header_end = body.find(b"\r\n\r\n")
+            trailer = body.rfind(("\r\n--" + boundary).encode()) if boundary else -1
+            if header_end < 0 or trailer < header_end:
+                self._send(400, json.dumps({"error": "Dictionary file upload failed"}), "application/json")
+                return
+            payload_size = trailer - (header_end + 4)
+            key = (query.get("uuid", [""])[0], query.get("name", [""])[0])
+            offset = int(query.get("offset", ["0"])[0])
+            if self.dictionary_uploads.get(key, 0) != offset:
+                self._send(400, json.dumps({"error": "Dictionary file upload failed"}), "application/json")
+                return
+            self.dictionary_uploads[key] = offset + payload_size
+            self._send(200, json.dumps({"ok": True, "bytes": self.dictionary_uploads[key]}), "application/json")
+            return
+        elif parsed.path == "/api/dictionaries/install/cancel":
+            bundle_uuid = query.get("uuid", [""])[0]
+            self.dictionary_uploads = {
+                key: value for key, value in self.dictionary_uploads.items() if key[0] != bundle_uuid
+            }
         # Accept saves/uploads/deletes during preview so the JS does not error.
         self._send(200, json.dumps({"ok": True}), "application/json")
 
