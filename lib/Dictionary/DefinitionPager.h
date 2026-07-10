@@ -25,6 +25,7 @@ struct Line {
   uint8_t fieldType = 0;
   bool fieldStart : 1 = false;
   bool gapBefore : 1 = false;
+  bool analysisStart : 1 = false;
 };
 
 struct Page {

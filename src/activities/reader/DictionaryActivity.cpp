@@ -20,6 +20,8 @@ constexpr int kListTop = 58;
 constexpr int kRowHeight = 34;
 constexpr int kDefinitionLineGap = 3;
 constexpr int kDefinitionMeaningGap = 4;
+constexpr int kAnalysisDividerWidth = 72;
+constexpr int kAnalysisDividerHeight = 16;
 constexpr int kBottomReserved = 48;
 
 const char* statusLabel(const uint8_t index) {
@@ -206,23 +208,27 @@ bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const
   contentMargins(top, right, bottom, left);
   (void)right;
   (void)left;
-  // Budget the small meaning separator on every line. This is conservative
-  // but guarantees that field gaps can never push a line below the viewport.
+  const uint8_t analysisCount = shortlist_->items[selected_].analysisCount;
+  // Reserve the worst-case divider and meaning gaps up front so streamed lines
+  // can never overflow the viewport, even when all analyses fit on one page.
+  const int dividerReserve = std::max(0, static_cast<int>(analysisCount) - 1) * kAnalysisDividerHeight;
+  const int availableHeight =
+      std::max(1, renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved - dividerReserve);
   const size_t visibleLines =
-      static_cast<size_t>(std::max(1, (renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved) /
-                                          std::max(1, lineStep + kDefinitionMeaningGap)));
+      static_cast<size_t>(std::max(1, availableHeight / std::max(1, lineStep + kDefinitionMeaningGap)));
   const size_t maxLines = std::min(visibleLines, dictionary::definition::kMaxPageLines);
 
   DefinitionCursor cursor = start;
   bool firstEntry = true;
   *definitionPage_ = {};
-  const uint8_t analysisCount = shortlist_->items[selected_].analysisCount;
   while (cursor.analysisIndex < analysisCount && definitionPage_->lineCount < maxLines) {
     if (!openAnalysisEntry(cursor.analysisIndex)) {
       definitionFailed_ = true;
       requestUpdate();
       return false;
     }
+    const uint8_t firstNewLine = definitionPage_->lineCount;
+    const bool startsNewAnalysis = !firstEntry;
     const bool pageLoaded = firstEntry ? pager_->load(session_->package(), entry_, cursor.entry, measurer,
                                                       definitionContentWidth(), maxLines, *definitionPage_, error)
                                        : pager_->append(session_->package(), entry_, cursor.entry, measurer,
@@ -232,6 +238,9 @@ bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const
       definitionFailed_ = true;
       requestUpdate();
       return false;
+    }
+    if (startsNewAnalysis && definitionPage_->lineCount > firstNewLine) {
+      definitionPage_->lines[firstNewLine].analysisStart = true;
     }
     firstEntry = false;
     if (definitionPage_->hasNext) {
@@ -323,17 +332,17 @@ void DictionaryActivity::loop() {
       openDefinition();
       return;
     }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
       selected_ = selected_ == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : selected_ - 1;
       requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
       selected_ = static_cast<uint16_t>((selected_ + 1) % shortlist_->count);
       requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
       const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
       selected_ = selected_ > rows ? static_cast<uint16_t>(selected_ - rows) : 0;
       requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
       const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
       selected_ = static_cast<uint16_t>(std::min<size_t>(shortlist_->count - 1, selected_ + rows));
       requestUpdate();
@@ -404,7 +413,7 @@ void DictionaryActivity::renderShortlist() {
     renderer.drawText(UI_10_FONT_ID, left + kSideMargin, y + 5, lineScratch_, !selected);
   }
 
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_OPEN), tr(STR_PAGE_UP), tr(STR_PAGE_DOWN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_OPEN), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 
@@ -424,7 +433,15 @@ void DictionaryActivity::renderDefinition() {
     int y = top + kListTop;
     const int lineStep = renderer.getLineHeight(UI_10_FONT_ID) + kDefinitionLineGap;
     for (uint8_t index = 0; index < definitionPage_->lineCount; ++index) {
-      if (definitionPage_->lines[index].gapBefore) y += kDefinitionMeaningGap;
+      const auto& line = definitionPage_->lines[index];
+      if (line.analysisStart) {
+        y += kAnalysisDividerHeight / 2;
+        const int centerX = left + (renderer.getScreenWidth() - left - right) / 2;
+        renderer.fillRect(centerX - kAnalysisDividerWidth / 2, y, kAnalysisDividerWidth, 1, true);
+        y += kAnalysisDividerHeight / 2;
+      } else if (line.gapBefore) {
+        y += kDefinitionMeaningGap;
+      }
       const auto text = definitionPage_->lineText(index);
       const size_t length = std::min(text.size(), sizeof(lineScratch_) - 1);
       std::memcpy(lineScratch_, text.data(), length);
@@ -448,7 +465,7 @@ void DictionaryActivity::renderDefinition() {
     renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
                       tr(STR_WORD_STATUS_SAVED));
   }
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_PAGE_UP), tr(STR_PAGE_DOWN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 
