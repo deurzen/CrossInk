@@ -4,6 +4,7 @@
 
 - Per-book reading stats now use recoverable temporary and backup files, so interrupted SD writes cannot replace the last valid stats snapshot.
 - EPUB reading progress now recovers interrupted temporary and backup-file promotions before loading or saving.
+- Saved clippings now use validated temporary and backup files, including crash-safe deletion that cannot restore cleared highlights.
 
 ## [v1.4.0] - 2026-07-10
 

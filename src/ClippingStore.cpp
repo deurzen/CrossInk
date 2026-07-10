@@ -1,6 +1,7 @@
 #include "ClippingStore.h"
 
 #include <Arduino.h>
+#include <AtomicFile.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <Serialization.h>
@@ -9,11 +10,13 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <limits>
 
 namespace {
 constexpr uint8_t VERSION = 1;
 constexpr size_t INITIAL_CLIPPING_RESERVE = 4;
 constexpr char CLIPPINGS_DIR[] = "/.crosspoint/clippings";
+constexpr size_t CLIPPING_STORE_NAME_MAX = 40;
 
 struct ClippingFileHeader {
   std::string title;
@@ -32,6 +35,43 @@ void copyBounded(char* dst, const size_t dstSize, const char* src) {
   if (dstSize == 0) return;
   if (!src) src = "";
   snprintf(dst, dstSize, "%s", src);
+}
+
+bool skipBytes(HalFile& file, const uint32_t length) {
+  if (length > static_cast<uint32_t>(std::numeric_limits<int>::max()) || file.available() < static_cast<int>(length)) {
+    return false;
+  }
+  return length == 0 || file.seekCur(length);
+}
+
+bool skipSerializedString(HalFile& file) {
+  uint32_t length = 0;
+  return serialization::tryReadPod(file, length) && skipBytes(file, length);
+}
+
+bool canonicalClippingFileName(const char* entryName, char* canonicalName, const size_t canonicalNameSize,
+                               bool& isSidecar) {
+  if (!entryName || canonicalNameSize == 0) return false;
+  size_t length = strlen(entryName);
+  isSidecar = false;
+  static constexpr const char* sidecarSuffixes[] = {".tmp", ".bak"};
+  for (const char* suffix : sidecarSuffixes) {
+    const size_t suffixLength = strlen(suffix);
+    if (length >= suffixLength && strcmp(entryName + length - suffixLength, suffix) == 0) {
+      length -= suffixLength;
+      isSidecar = true;
+      break;
+    }
+  }
+  static constexpr char binSuffix[] = ".bin";
+  constexpr size_t binSuffixLength = sizeof(binSuffix) - 1;
+  if (length < binSuffixLength || strncmp(entryName + length - binSuffixLength, binSuffix, binSuffixLength) != 0 ||
+      length >= canonicalNameSize) {
+    return false;
+  }
+  memcpy(canonicalName, entryName, length);
+  canonicalName[length] = '\0';
+  return true;
 }
 
 bool readClippingFileHeader(const std::string& fullPath, const char* name, ClippingFileHeader& header) {
@@ -63,6 +103,71 @@ bool readClippingFileHeader(const std::string& fullPath, const char* name, Clipp
 
 ClippingStore ClippingStore::instance;
 
+bool ClippingStore::writeAtomicFile(HalFile& file, const void* context) {
+  const auto* store = static_cast<const ClippingStore*>(context);
+  const uint16_t count = static_cast<uint16_t>(std::min<size_t>(store->clippings.size(), CLIPPING_MAX_PER_BOOK));
+  if (!serialization::tryWritePod(file, VERSION) || !serialization::tryWritePod(file, count) ||
+      !serialization::tryWriteString(file, store->bookTitle) ||
+      !serialization::tryWriteString(file, store->bookAuthor) ||
+      !serialization::tryWriteString(file, store->bookFilePath)) {
+    LOG_ERR("CLIP", "Failed to write clipping header: %s", store->storeFilePath.c_str());
+    return false;
+  }
+
+  for (uint16_t i = 0; i < count; ++i) {
+    const Clipping& clipping = store->clippings[i];
+    if (!serialization::tryWritePod(file, clipping.spineIndex) ||
+        !serialization::tryWritePod(file, clipping.startPage) || !serialization::tryWritePod(file, clipping.endPage) ||
+        !serialization::tryWritePod(file, clipping.pageCount) ||
+        !serialization::tryWritePod(file, clipping.startWordIndex) ||
+        !serialization::tryWritePod(file, clipping.endWordIndex) ||
+        !serialization::tryWritePod(file, clipping.wordCount) ||
+        !serialization::tryWritePod(file, clipping.paragraphIndex) ||
+        !serialization::tryWritePod(file, clipping.timestamp) ||
+        file.write(reinterpret_cast<const uint8_t*>(clipping.chapterTitle), sizeof(clipping.chapterTitle)) !=
+            sizeof(clipping.chapterTitle) ||
+        !serialization::tryWriteString(file, clipping.text)) {
+      LOG_ERR("CLIP", "Failed to write clipping record %u: %s", i, store->storeFilePath.c_str());
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ClippingStore::validateAtomicFile(const char* path, const void*) {
+  HalFile file;
+  if (!Storage.openFileForRead("CLIP", path, file)) return false;
+
+  uint8_t version = 0;
+  uint16_t count = 0;
+  bool valid = serialization::tryReadPod(file, version) && version == VERSION &&
+               serialization::tryReadPod(file, count) && count <= CLIPPING_MAX_PER_BOOK && skipSerializedString(file) &&
+               skipSerializedString(file) && skipSerializedString(file);
+
+  constexpr uint32_t fixedRecordSize = sizeof(uint16_t) * 8 + sizeof(uint32_t) + CLIPPING_CHAPTER_TITLE_MAX;
+  for (uint16_t i = 0; valid && i < count; ++i) {
+    valid = skipBytes(file, fixedRecordSize) && skipSerializedString(file);
+  }
+  valid = valid && file.available() == 0;
+  file.close();
+  return valid;
+}
+
+bool ClippingStore::recoverAtomicFile(const std::string& path) {
+  // Store paths are dynamic, so sidecar paths cannot use safely bounded stack buffers.
+  const std::string tempPath = path + ".tmp";
+  const std::string backupPath = path + ".bak";
+  const AtomicFile::Paths paths{path.c_str(), tempPath.c_str(), backupPath.c_str()};
+  return AtomicFile::recover("CLIP", paths, validateAtomicFile);
+}
+
+bool ClippingStore::removeAtomicFile(const std::string& path) {
+  const std::string tempPath = path + ".tmp";
+  const std::string backupPath = path + ".bak";
+  const AtomicFile::Paths paths{path.c_str(), tempPath.c_str(), backupPath.c_str()};
+  return AtomicFile::remove("CLIP", paths);
+}
+
 bool ClippingStore::loadForBook(const std::string& filePath, const std::string& title, const std::string& author,
                                 const std::string& bookType) {
   if (bookType != "epub") {
@@ -80,6 +185,9 @@ bool ClippingStore::loadForBook(const std::string& filePath, const std::string& 
   }
 
   storeFilePath = storeFilePathForBook(filePath, bookType);
+  if (!recoverAtomicFile(storeFilePath)) {
+    LOG_ERR("CLIP", "Failed to recover clipping store: %s", storeFilePath.c_str());
+  }
   if (!Storage.exists(storeFilePath.c_str())) {
     return true;
   }
@@ -160,11 +268,12 @@ bool ClippingStore::saveToFile() {
 }
 
 void ClippingStore::clearAll() {
+  if (!storeFilePath.empty() && !removeAtomicFile(storeFilePath)) {
+    LOG_ERR("CLIP", "Failed to delete clipping store: %s", storeFilePath.c_str());
+    return;
+  }
   clippings.clear();
   dirty = false;
-  if (!storeFilePath.empty() && Storage.exists(storeFilePath.c_str())) {
-    Storage.remove(storeFilePath.c_str());
-  }
 }
 
 bool ClippingStore::readFromFile() { return readFromFile(storeFilePath, clippings); }
@@ -233,49 +342,25 @@ bool ClippingStore::writeToFile() const {
   Storage.mkdir("/.crosspoint");
   Storage.mkdir(CLIPPINGS_DIR);
 
-  FsFile f = Storage.open(storeFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
-  if (!f) {
-    LOG_ERR("CLIP", "Failed to open clipping file for write: %s", storeFilePath.c_str());
-    return false;
-  }
-
-  const uint16_t count = static_cast<uint16_t>(std::min<size_t>(clippings.size(), CLIPPING_MAX_PER_BOOK));
-  if (!serialization::tryWritePod(f, VERSION) || !serialization::tryWritePod(f, count) ||
-      !serialization::tryWriteString(f, bookTitle) || !serialization::tryWriteString(f, bookAuthor) ||
-      !serialization::tryWriteString(f, bookFilePath)) {
-    LOG_ERR("CLIP", "Failed to write clipping header: %s", storeFilePath.c_str());
-    f.close();
-    return false;
-  }
-
-  for (uint16_t i = 0; i < count; ++i) {
-    const Clipping& clipping = clippings[i];
-    if (!serialization::tryWritePod(f, clipping.spineIndex) || !serialization::tryWritePod(f, clipping.startPage) ||
-        !serialization::tryWritePod(f, clipping.endPage) || !serialization::tryWritePod(f, clipping.pageCount) ||
-        !serialization::tryWritePod(f, clipping.startWordIndex) ||
-        !serialization::tryWritePod(f, clipping.endWordIndex) || !serialization::tryWritePod(f, clipping.wordCount) ||
-        !serialization::tryWritePod(f, clipping.paragraphIndex) || !serialization::tryWritePod(f, clipping.timestamp) ||
-        f.write(reinterpret_cast<const uint8_t*>(clipping.chapterTitle), sizeof(clipping.chapterTitle)) !=
-            sizeof(clipping.chapterTitle) ||
-        !serialization::tryWriteString(f, clipping.text)) {
-      LOG_ERR("CLIP", "Failed to write clipping record %u: %s", i, storeFilePath.c_str());
-      f.close();
-      return false;
-    }
-  }
-
-  if (!f.sync()) {
-    LOG_ERR("CLIP", "Failed to sync clipping file: %s", storeFilePath.c_str());
-    f.close();
-    return false;
-  }
-  f.close();
-  return true;
+  // Store paths are dynamic, so sidecar paths cannot use safely bounded stack buffers.
+  const std::string tempPath = storeFilePath + ".tmp";
+  const std::string backupPath = storeFilePath + ".bak";
+  const AtomicFile::Paths paths{storeFilePath.c_str(), tempPath.c_str(), backupPath.c_str()};
+  return AtomicFile::write("CLIP", paths, writeAtomicFile, validateAtomicFile, this);
 }
 
 bool ClippingStore::hasAnyClippings() {
   if (!Storage.exists(CLIPPINGS_DIR)) return false;
-  return !Storage.listFiles(CLIPPINGS_DIR).empty();
+  const auto files = Storage.listFiles(CLIPPINGS_DIR);
+  return std::any_of(files.begin(), files.end(), [](const auto& entry) {
+    char canonicalName[CLIPPING_STORE_NAME_MAX];
+    bool isSidecar = false;
+    if (!canonicalClippingFileName(entry.c_str(), canonicalName, sizeof(canonicalName), isSidecar)) return false;
+    char canonicalPath[sizeof(CLIPPINGS_DIR) + CLIPPING_STORE_NAME_MAX + 1];
+    snprintf(canonicalPath, sizeof(canonicalPath), "%s/%s", CLIPPINGS_DIR, canonicalName);
+    if (isSidecar && !recoverAtomicFile(canonicalPath)) return false;
+    return Storage.exists(canonicalPath);
+  });
 }
 
 bool ClippingStore::getAllClippedBooks(std::vector<ClippedBookEntry>& out) {
@@ -283,9 +368,15 @@ bool ClippingStore::getAllClippedBooks(std::vector<ClippedBookEntry>& out) {
 
   const auto files = Storage.listFiles(CLIPPINGS_DIR);
   for (const auto& name : files) {
+    char canonicalName[CLIPPING_STORE_NAME_MAX];
+    bool isSidecar = false;
+    if (!canonicalClippingFileName(name.c_str(), canonicalName, sizeof(canonicalName), isSidecar)) continue;
+    const std::string fullPath = std::string(CLIPPINGS_DIR) + "/" + canonicalName;
+    if (isSidecar && !recoverAtomicFile(fullPath)) continue;
+    if (!Storage.exists(fullPath.c_str())) continue;
+
     ClippingFileHeader header;
-    const std::string fullPath = std::string(CLIPPINGS_DIR) + "/" + name.c_str();
-    if (!readClippingFileHeader(fullPath, name.c_str(), header)) continue;
+    if (!readClippingFileHeader(fullPath, canonicalName, header)) continue;
     if (header.path.empty() || header.count == 0 || !Storage.exists(header.path.c_str())) continue;
 
     auto existing = std::find_if(out.begin(), out.end(), [&](const ClippedBookEntry& entry) {
@@ -303,8 +394,8 @@ bool ClippingStore::getAllClippedBooks(std::vector<ClippedBookEntry>& out) {
 
 void ClippingStore::deleteForFilePath(const std::string& filePath, const std::string& bookType) {
   const std::string path = storeFilePathForBook(filePath, bookType);
-  if (Storage.exists(path.c_str())) {
-    Storage.remove(path.c_str());
+  if (!removeAtomicFile(path)) {
+    LOG_ERR("CLIP", "Failed to delete clipping store for: %s", filePath.c_str());
   }
 }
 
@@ -312,6 +403,10 @@ bool ClippingStore::migrateForFilePath(const std::string& oldFilePath, const std
                                        const std::string& title, const std::string& author,
                                        const std::string& bookType) {
   const std::string oldStorePath = storeFilePathForBook(oldFilePath, bookType);
+  if (!recoverAtomicFile(oldStorePath)) {
+    LOG_ERR("CLIP", "Failed to recover clipping store before migration: %s", oldStorePath.c_str());
+    return false;
+  }
   if (!Storage.exists(oldStorePath.c_str())) {
     return true;
   }
@@ -332,6 +427,9 @@ bool ClippingStore::migrateForFilePath(const std::string& oldFilePath, const std
     return false;
   }
 
-  Storage.remove(oldStorePath.c_str());
+  if (!removeAtomicFile(oldStorePath)) {
+    LOG_ERR("CLIP", "Failed to remove old clipping store after migration: %s", oldStorePath.c_str());
+    return false;
+  }
   return true;
 }

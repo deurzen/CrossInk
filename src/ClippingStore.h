@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+class HalFile;
+
 inline constexpr size_t CLIPPING_CHAPTER_TITLE_MAX = 48;
 inline constexpr size_t CLIPPING_TEXT_MAX = 512;
 inline constexpr uint16_t CLIPPING_MAX_PER_BOOK = 64;
@@ -74,6 +76,11 @@ class ClippingStore {
   bool readFromFile();
   bool readFromFile(const std::string& path, std::vector<Clipping>& out) const;
   bool writeToFile() const;
+
+  static bool writeAtomicFile(HalFile& file, const void* context);
+  static bool validateAtomicFile(const char* path, const void* context);
+  static bool recoverAtomicFile(const std::string& path);
+  static bool removeAtomicFile(const std::string& path);
 };
 
 #define CLIPPINGS ClippingStore::getInstance()
