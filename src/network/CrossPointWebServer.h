@@ -106,6 +106,7 @@ class CrossPointWebServer {
   void handleDelete() const;
 
   // Word Inbox handlers
+  void handleWordInboxPage() const;
   void handleWordInboxBooks() const;
   void handleWordInboxContext() const;
   void handleWordInboxText() const;

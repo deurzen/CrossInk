@@ -46,6 +46,7 @@ struct WordInboxBookInfo {
   std::string author;
   std::string bookPath;
   uint32_t contextCount = 0;
+  uint32_t earliestContextId = 0;
   uint32_t latestContextId = 0;
 };
 
