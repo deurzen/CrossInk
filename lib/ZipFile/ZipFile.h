@@ -9,6 +9,7 @@ class ZipFile {
  public:
   struct FileStatSlim {
     uint16_t method;             // Compression method
+    uint32_t crc32;              // Uncompressed content CRC from central directory
     uint32_t compressedSize;     // Compressed size
     uint32_t uncompressedSize;   // Uncompressed size
     uint32_t localHeaderOffset;  // Offset of local file header
@@ -61,6 +62,7 @@ class ZipFile {
   bool close();
   bool loadAllFileStatSlims();
   bool getInflatedFileSize(const char* filename, size_t* size);
+  bool getFileIdentity(const char* filename, size_t* size, uint32_t* crc32);
   // Batch lookup: scan ZIP central dir once and fill sizes for matching targets.
   // targets must be sorted by (hash, len). sizes[target.index] receives uncompressedSize.
   // Returns number of targets matched.

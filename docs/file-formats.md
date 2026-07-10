@@ -9,22 +9,34 @@ fixed-size char buffer.
 
 ### Version 2 (current)
 
-Version 2 uses the 108-byte header identity, language, CRC, and file-size
-fields and replaces the random-access candidate/surface tables
-with self-contained shard blobs. Header field meanings that differ from version
-1 are:
+Version 2 uses a 108-byte header followed by self-contained shard blobs. All integers are unsigned little-endian; offsets are absolute and four-byte aligned.
 
-| Offset | Size | Version-2 field |
+| Offset | Size | Field |
 | ---: | ---: | --- |
+| 0 | 4 | Magic `CXLG` |
 | 4 | 2 | Format version (`2`) |
-| 56 | 4 | Total candidate count across all shard blobs |
-| 64 | 4 | Reserved; must be zero |
+| 6 | 2 | Header size (`108`) |
+| 8 | 4 | Flags; must be zero |
+| 12 | 2 | Tokenizer version |
+| 14 | 2 | Analyzer version |
+| 16 | 16 | Dictionary bundle UUID |
+| 32 | 8 | Zero-padded source language |
+| 40 | 8 | Zero-padded target language |
+| 48 | 2 | Spine count |
+| 50 | 2 | Reserved; zero |
+| 52 | 4 | Shard count |
+| 56 | 4 | Total candidate count |
+| 60 | 4 | Local lemma count |
+| 64 | 4 | Reserved; zero |
 | 68 | 4 | Spine-directory offset |
 | 72 | 4 | Shard-directory offset |
 | 76 | 4 | Shard-blob section offset |
 | 80 | 4 | Local-lemma table offset |
 | 84 | 4 | Metadata section offset |
-| 88 | 8 | Reserved; must be zero |
+| 88 | 8 | Reserved; zero |
+| 96 | 4 | Exact file size |
+| 100 | 4 | Payload CRC32 over bytes `[108, fileSize)` |
+| 104 | 4 | Header CRC32 over bytes `[0, 104)` |
 
 The spine directory uses an eight-byte record. Each version-2
 shard-directory record is 20 bytes:
@@ -69,6 +81,8 @@ and header CRC apply. Version-2 compilers fail on oversized records/blobs rather
 than truncating structural data.
 
 Firmware accepts only version 2 and streams shards sequentially into the same bounded `Shortlist` and global learning-state IDs. Old experimental EPUBs must be recompiled.
+
+After full extraction validation, firmware writes a 44-byte `language.valid` receipt: `CXLR`, version/header size (`u16`, `u16`), embedded size (`u32`), ZIP central-directory CRC (`u32`), payload CRC (`u32`), header CRC (`u32`), bundle UUID (16 bytes), and receipt CRC32 over the first 40 bytes. On later opens, matching ZIP identity plus the cached artifact's size and validated 108-byte header avoids rereading the full payload. Missing, stale, or corrupt receipts fall back to full streaming validation and are replaced atomically through `language.valid.tmp`.
 
 A deterministically invalid embedded artifact creates `<book-cache>/language.invalid`:
 magic `CXLI` followed by its `fileSize:u32`. This prevents repeated extraction

@@ -33,6 +33,9 @@ constexpr char kBookLanguageCacheName[] = "/language.bin";
 constexpr char kBookLanguageTempName[] = "/language.bin.tmp";
 constexpr char kBookLanguageInvalidName[] = "/language.invalid";
 constexpr char kBookLanguageInvalidTempName[] = "/language.invalid.tmp";
+constexpr char kBookLanguageReceiptName[] = "/language.valid";
+constexpr char kBookLanguageReceiptTempName[] = "/language.valid.tmp";
+constexpr size_t kBookLanguageReceiptSize = 44;
 constexpr uint16_t kSupportedLanguageTokenizerVersion = 1;
 constexpr uint16_t kSupportedLanguageAnalyzerVersion = 1;
 constexpr char kXLocationsFormat[] = "x-locations";
@@ -124,6 +127,74 @@ bool isBookLanguageCompatible(const dictionary::book_language::Header& header, c
   return header.tokenizerVersion == kSupportedLanguageTokenizerVersion &&
          header.analyzerVersion == kSupportedLanguageAnalyzerVersion && header.spineCount == spineCount &&
          languageTagMatches(header.sourceLanguage, bookLanguage);
+}
+
+uint32_t readLanguageU32(const uint8_t* data) {
+  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8U) |
+         (static_cast<uint32_t>(data[2]) << 16U) | (static_cast<uint32_t>(data[3]) << 24U);
+}
+
+void writeLanguageU32(uint8_t* data, const uint32_t value) {
+  data[0] = static_cast<uint8_t>(value);
+  data[1] = static_cast<uint8_t>(value >> 8U);
+  data[2] = static_cast<uint8_t>(value >> 16U);
+  data[3] = static_cast<uint8_t>(value >> 24U);
+}
+
+bool validateBookLanguageReceipt(const std::string& artifactPath, const std::string& receiptPath,
+                                 const size_t embeddedSize, const uint32_t zipCrc,
+                                 dictionary::book_language::Header& header) {
+  uint8_t receipt[kBookLanguageReceiptSize]{};
+  FsFile receiptFile;
+  if (!Storage.openFileForRead("EBP", receiptPath, receiptFile) || receiptFile.fileSize64() != sizeof(receipt) ||
+      receiptFile.read(receipt, sizeof(receipt)) != static_cast<int>(sizeof(receipt))) {
+    receiptFile.close();
+    return false;
+  }
+  receiptFile.close();
+  if (std::memcmp(receipt, "CXLR", 4) != 0 || receipt[4] != 1 || receipt[5] != 0 || receipt[6] != sizeof(receipt) ||
+      receipt[7] != 0 || readLanguageU32(receipt + 8) != embeddedSize || readLanguageU32(receipt + 12) != zipCrc ||
+      dictionary::updateCrc32(0, receipt, 40) != readLanguageU32(receipt + 40)) {
+    return false;
+  }
+
+  uint8_t headerBytes[dictionary::book_language::kHeaderSize]{};
+  FsFile artifact;
+  if (!Storage.openFileForRead("EBP", artifactPath, artifact) || artifact.fileSize64() != embeddedSize ||
+      artifact.read(headerBytes, sizeof(headerBytes)) != static_cast<int>(sizeof(headerBytes))) {
+    artifact.close();
+    return false;
+  }
+  artifact.close();
+  dictionary::book_language::FormatError error = dictionary::book_language::FormatError::NONE;
+  return dictionary::book_language::parseHeader(headerBytes, sizeof(headerBytes), embeddedSize, header, error) &&
+         readLanguageU32(receipt + 16) == header.payloadCrc32 && readLanguageU32(receipt + 20) == header.headerCrc32 &&
+         std::memcmp(receipt + 24, header.dictionaryBundleUuid, 16) == 0;
+}
+
+void writeBookLanguageReceipt(const std::string& path, const std::string& temporaryPath, const size_t embeddedSize,
+                              const uint32_t zipCrc, const dictionary::book_language::Header& header) {
+  uint8_t receipt[kBookLanguageReceiptSize]{};
+  std::memcpy(receipt, "CXLR", 4);
+  receipt[4] = 1;
+  receipt[6] = sizeof(receipt);
+  writeLanguageU32(receipt + 8, embeddedSize);
+  writeLanguageU32(receipt + 12, zipCrc);
+  writeLanguageU32(receipt + 16, header.payloadCrc32);
+  writeLanguageU32(receipt + 20, header.headerCrc32);
+  std::memcpy(receipt + 24, header.dictionaryBundleUuid, 16);
+  writeLanguageU32(receipt + 40, dictionary::updateCrc32(0, receipt, 40));
+  Storage.remove(temporaryPath.c_str());
+  FsFile file;
+  if (!Storage.openFileForWrite("EBP", temporaryPath, file)) return;
+  const bool written = file.write(receipt, sizeof(receipt)) == sizeof(receipt) && file.sync();
+  file.close();
+  if (!written) {
+    Storage.remove(temporaryPath.c_str());
+    return;
+  }
+  Storage.remove(path.c_str());
+  if (!Storage.rename(temporaryPath.c_str(), path.c_str())) Storage.remove(temporaryPath.c_str());
 }
 
 bool validateCachedBookLanguage(const std::string& path, const size_t embeddedSize,
@@ -1282,12 +1353,17 @@ bool Epub::loadBookLanguageArtifact() {
   const std::string temporaryPath = cachePath + kBookLanguageTempName;
   const std::string invalidPath = cachePath + kBookLanguageInvalidName;
   const std::string invalidTemporaryPath = cachePath + kBookLanguageInvalidTempName;
+  const std::string receiptPath = cachePath + kBookLanguageReceiptName;
+  const std::string receiptTemporaryPath = cachePath + kBookLanguageReceiptTempName;
   size_t embeddedSize = 0;
-  if (!getItemSize(kBookLanguageZipPath, &embeddedSize)) {
+  uint32_t embeddedCrc = 0;
+  if (!ZipFile(filepath).getFileIdentity(kBookLanguageZipPath, &embeddedSize, &embeddedCrc)) {
     Storage.remove(temporaryPath.c_str());
     Storage.remove(invalidTemporaryPath.c_str());
     if (Storage.exists(artifactPath.c_str())) Storage.remove(artifactPath.c_str());
     if (Storage.exists(invalidPath.c_str())) Storage.remove(invalidPath.c_str());
+    Storage.remove(receiptPath.c_str());
+    Storage.remove(receiptTemporaryPath.c_str());
     return false;
   }
   if (hasBookLanguageFailureMarker(invalidPath, embeddedSize)) {
@@ -1298,19 +1374,28 @@ bool Epub::loadBookLanguageArtifact() {
     LOG_ERR("EBP", "Ignoring language artifact with unsupported size: %zu bytes", embeddedSize);
     Storage.remove(temporaryPath.c_str());
     if (Storage.exists(artifactPath.c_str())) Storage.remove(artifactPath.c_str());
+    Storage.remove(receiptPath.c_str());
+    Storage.remove(receiptTemporaryPath.c_str());
     writeBookLanguageFailureMarker(invalidPath, invalidTemporaryPath, embeddedSize);
     return false;
   }
 
   dictionary::book_language::Header header;
-  if (Storage.exists(artifactPath.c_str()) && validateCachedBookLanguage(artifactPath, embeddedSize, header) &&
-      isBookLanguageCompatible(header, getSpineItemsCount(), getLanguage())) {
+  const bool artifactExists = Storage.exists(artifactPath.c_str());
+  const bool receiptValid =
+      artifactExists && validateBookLanguageReceipt(artifactPath, receiptPath, embeddedSize, embeddedCrc, header);
+  const bool fullyValidated =
+      !receiptValid && artifactExists && validateCachedBookLanguage(artifactPath, embeddedSize, header);
+  if ((receiptValid || fullyValidated) && isBookLanguageCompatible(header, getSpineItemsCount(), getLanguage())) {
+    if (fullyValidated) writeBookLanguageReceipt(receiptPath, receiptTemporaryPath, embeddedSize, embeddedCrc, header);
     std::copy(header.dictionaryBundleUuid, header.dictionaryBundleUuid + sizeof(header.dictionaryBundleUuid),
               dictionaryBundleUuid.begin());
     bookLanguageArtifactLoaded = true;
     return true;
   }
 
+  Storage.remove(receiptPath.c_str());
+  Storage.remove(receiptTemporaryPath.c_str());
   if (Storage.exists(artifactPath.c_str()) && !Storage.remove(artifactPath.c_str())) {
     LOG_ERR("EBP", "Failed to remove invalid cached language artifact: %s", artifactPath.c_str());
     return false;
@@ -1366,6 +1451,7 @@ bool Epub::loadBookLanguageArtifact() {
 
   Storage.remove(invalidPath.c_str());
   Storage.remove(invalidTemporaryPath.c_str());
+  writeBookLanguageReceipt(receiptPath, receiptTemporaryPath, embeddedSize, embeddedCrc, header);
   std::copy(header.dictionaryBundleUuid, header.dictionaryBundleUuid + sizeof(header.dictionaryBundleUuid),
             dictionaryBundleUuid.begin());
   bookLanguageArtifactLoaded = true;

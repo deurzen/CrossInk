@@ -80,7 +80,8 @@ bool ZipFile::loadAllFileStatSlims() {
 
     file.seekCur(6);
     file.read(&fileStat.method, 2);
-    file.seekCur(8);
+    file.seekCur(4);
+    file.read(&fileStat.crc32, 4);
     file.read(&fileStat.compressedSize, 4);
     file.read(&fileStat.uncompressedSize, 4);
     uint16_t nameLen, m, k;
@@ -156,7 +157,8 @@ bool ZipFile::loadFileStatSlim(const char* filename, FileStatSlim* fileStat) {
 
     file.seekCur(6);
     file.read(&fileStat->method, 2);
-    file.seekCur(8);
+    file.seekCur(4);
+    file.read(&fileStat->crc32, 4);
     file.read(&fileStat->compressedSize, 4);
     file.read(&fileStat->uncompressedSize, 4);
     uint16_t nameLen, m, k;
@@ -290,12 +292,15 @@ bool ZipFile::close() {
 }
 
 bool ZipFile::getInflatedFileSize(const char* filename, size_t* size) {
-  FileStatSlim fileStat = {};
-  if (!loadFileStatSlim(filename, &fileStat)) {
-    return false;
-  }
+  return getFileIdentity(filename, size, nullptr);
+}
 
+bool ZipFile::getFileIdentity(const char* filename, size_t* size, uint32_t* crc32) {
+  if (!size) return false;
+  FileStatSlim fileStat = {};
+  if (!loadFileStatSlim(filename, &fileStat)) return false;
   *size = static_cast<size_t>(fileStat.uncompressedSize);
+  if (crc32) *crc32 = fileStat.crc32;
   return true;
 }
 
