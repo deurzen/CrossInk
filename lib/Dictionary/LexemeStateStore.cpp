@@ -83,6 +83,8 @@ bool isSuppressed(const Status status) { return status != Status::Unseen; }
 bool Store::open(const StorageBackend& storage, const char* rootPath, const uint8_t (&bundleUuid)[16],
                  const uint32_t lexemeCount, StateError& error) {
   open_ = false;
+  packedCacheFirst_ = 0;
+  packedCacheCount_ = 0;
   error = StateError::NONE;
   if (!backendValid(storage) || !rootPath || rootPath[0] == '\0' || lexemeCount == 0 || lexemeCount > kMaxLexemeCount) {
     error = StateError::INVALID_INPUT;
@@ -212,6 +214,7 @@ bool Store::writeStatusNibble(const uint32_t lexemeId, const Status status, Stat
     error = StateError::IO_FAILED;
     return false;
   }
+  packedCacheCount_ = 0;
   return true;
 }
 
@@ -261,10 +264,19 @@ bool Store::readPackedByte(const uint32_t byteIndex, uint8_t& value, StateError&
     error = StateError::LEXEME_ID_OUT_OF_RANGE;
     return false;
   }
-  if (!storage_.readAt(storage_.context, statusPath_, kStatusPayloadOffset + byteIndex, &value, sizeof(value))) {
-    error = StateError::IO_FAILED;
-    return false;
+  if (packedCacheCount_ == 0 || byteIndex < packedCacheFirst_ ||
+      byteIndex >= static_cast<uint64_t>(packedCacheFirst_) + packedCacheCount_) {
+    packedCacheFirst_ = byteIndex;
+    const uint32_t remaining = packedByteCount() - byteIndex;
+    packedCacheCount_ = static_cast<uint16_t>(remaining < sizeof(packedCache_) ? remaining : sizeof(packedCache_));
+    if (!storage_.readAt(storage_.context, statusPath_, kStatusPayloadOffset + byteIndex, packedCache_,
+                         packedCacheCount_)) {
+      packedCacheCount_ = 0;
+      error = StateError::IO_FAILED;
+      return false;
+    }
   }
+  value = packedCache_[byteIndex - packedCacheFirst_];
   error = StateError::NONE;
   return true;
 }

@@ -84,6 +84,12 @@ class BookLanguageReader {
   uint32_t stringPoolOffset_ = 0;
   uint32_t analysisCount_ = 0;
   uint32_t componentCount_ = 0;
+  // Projection rebuilds visit local lemma IDs in ascending order. Cache 64
+  // contiguous records so that path-backed sources open the SD file once per
+  // block instead of once per lemma.
+  mutable uint8_t localLemmaCache_[64 * kLocalLemmaRecordSize]{};
+  mutable uint16_t localLemmaCacheFirst_ = 0;
+  mutable uint8_t localLemmaCacheCount_ = 0;
   bool open_ = false;
 };
 

@@ -120,6 +120,19 @@ RandomAccessSource sourceFor(const std::vector<uint8_t>& data) {
   return {const_cast<std::vector<uint8_t>*>(&data), data.size(), readMemory};
 }
 
+struct CountingSource {
+  std::vector<uint8_t> data;
+  int reads = 0;
+};
+
+bool readCountingMemory(void* context, const uint32_t offset, void* output, const size_t length) {
+  auto& source = *static_cast<CountingSource*>(context);
+  if (static_cast<uint64_t>(offset) + length > source.data.size()) return false;
+  ++source.reads;
+  std::memcpy(output, source.data.data() + offset, length);
+  return true;
+}
+
 }  // namespace
 
 TEST(BookLanguageReader, ReadsShardCandidateAndAmbiguousSurface) {
@@ -155,6 +168,21 @@ TEST(BookLanguageReader, ReadsShardCandidateAndAmbiguousSurface) {
   uint32_t globalLexemeId = 0;
   ASSERT_TRUE(reader.readGlobalLexemeId(1, globalLexemeId, error));
   EXPECT_EQ(globalLexemeId, 20U);
+}
+
+TEST(BookLanguageReader, CachesSequentialLocalLemmaRecords) {
+  CountingSource source{makeArtifact()};
+  BookLanguageReader reader;
+  ReaderError error;
+  ASSERT_TRUE(reader.open({&source, source.data.size(), readCountingMemory}, error));
+  source.reads = 0;
+
+  uint32_t globalLexemeId = 0;
+  ASSERT_TRUE(reader.readGlobalLexemeId(0, globalLexemeId, error));
+  EXPECT_EQ(globalLexemeId, 10U);
+  ASSERT_TRUE(reader.readGlobalLexemeId(1, globalLexemeId, error));
+  EXPECT_EQ(globalLexemeId, 20U);
+  EXPECT_EQ(source.reads, 1);
 }
 
 TEST(BookLanguageReader, RejectsMalformedSurfaceHeader) {

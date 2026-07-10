@@ -3127,6 +3127,8 @@ void EpubReaderActivity::startClipSelection() {
 }
 
 void EpubReaderActivity::startDictionaryLookup() {
+  const unsigned long lookupStartedAt = millis();
+  LOG_INF("DICT", "Lookup start: free=%u maxAlloc=%u", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   enum class LookupOutcome : uint8_t { Ready, NoWords, MissingDictionary, Failed };
   LookupOutcome outcome = LookupOutcome::Failed;
   std::unique_ptr<dictionary::lookup::Session> session;
@@ -3154,6 +3156,10 @@ void EpubReaderActivity::startDictionaryLookup() {
           const uint32_t lastShard = page->languageShardLast;
           const auto collected = dictionary::current_page_shortlist::collectVisibleTokens(*page, *generator);
           page.reset();
+          LOG_INF("DICT", "Visible tokens ready in %lu ms: words=%u tokens=%u shards=%lu-%lu",
+                  millis() - lookupStartedAt, static_cast<unsigned>(collected.renderedWordsVisited),
+                  static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned long>(firstShard),
+                  static_cast<unsigned long>(lastShard));
 
           // Session retains only bounded paths/readers and global-state handles;
           // heap ownership avoids roughly 2.5 KB of reader-task stack use.
@@ -3170,34 +3176,41 @@ void EpubReaderActivity::startDictionaryLookup() {
                             ? LookupOutcome::MissingDictionary
                             : LookupOutcome::Failed;
             } else {
+              LOG_INF("DICT", "Readers open in %lu ms: local=%lu global=%lu", millis() - lookupStartedAt,
+                      static_cast<unsigned long>(session->book().header().localLemmaCount),
+                      static_cast<unsigned long>(session->package().metadata().lexemeCount));
               const size_t suppressionBytes = session->requiredSuppressionBytes();
               // Allocate exactly one bit per local lemma (maximum 4,096 bytes),
               // rather than retaining the much larger global status table.
               suppressionBitset = makeUniqueNoThrow<uint8_t[]>(suppressionBytes);
               if (!suppressionBitset) {
                 LOG_ERR("DICT", "OOM: suppression projection (%u bytes)", static_cast<unsigned>(suppressionBytes));
-              } else if (!session->loadLearningState(suppressionBitset.get(), suppressionBytes, sessionError)) {
-                LOG_ERR("DICT", "Learning state failed: %s", dictionary::lookup::sessionErrorName(sessionError));
               } else {
-                // The 3.6 KB fixed shortlist outlives this function in the
-                // activity, so stack/static storage is unsuitable.
-                shortlist = makeUniqueNoThrow<dictionary::page_shortlist::Shortlist>();
-                if (!shortlist) {
-                  LOG_ERR("DICT", "OOM: page shortlist (%u bytes)",
-                          static_cast<unsigned>(sizeof(dictionary::page_shortlist::Shortlist)));
+                LOG_INF("DICT", "Loading learning state: projection=%u bytes", static_cast<unsigned>(suppressionBytes));
+                if (!session->loadLearningState(suppressionBitset.get(), suppressionBytes, sessionError)) {
+                  LOG_ERR("DICT", "Learning state failed: %s", dictionary::lookup::sessionErrorName(sessionError));
                 } else {
-                  dictionary::page_shortlist::GenerateError generateError =
-                      dictionary::page_shortlist::GenerateError::NONE;
-                  if (!generator->generate(session->book(), firstShard, lastShard, *shortlist, generateError)) {
-                    LOG_ERR("DICT", "Shortlist generation failed: %s",
-                            dictionary::page_shortlist::generateErrorName(generateError));
+                  LOG_INF("DICT", "Learning state ready in %lu ms", millis() - lookupStartedAt);
+                  // The 3.6 KB fixed shortlist outlives this function in the
+                  // activity, so stack/static storage is unsuitable.
+                  shortlist = makeUniqueNoThrow<dictionary::page_shortlist::Shortlist>();
+                  if (!shortlist) {
+                    LOG_ERR("DICT", "OOM: page shortlist (%u bytes)",
+                            static_cast<unsigned>(sizeof(dictionary::page_shortlist::Shortlist)));
                   } else {
-                    session->projection().filter(*shortlist);
-                    LOG_DBG("DICT", "Shortlist ready: words=%u tokens=%u candidates=%u%s",
-                            static_cast<unsigned>(collected.renderedWordsVisited),
-                            static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned>(shortlist->count),
-                            shortlist->truncated ? " truncated" : "");
-                    outcome = shortlist->count == 0 ? LookupOutcome::NoWords : LookupOutcome::Ready;
+                    dictionary::page_shortlist::GenerateError generateError =
+                        dictionary::page_shortlist::GenerateError::NONE;
+                    if (!generator->generate(session->book(), firstShard, lastShard, *shortlist, generateError)) {
+                      LOG_ERR("DICT", "Shortlist generation failed: %s",
+                              dictionary::page_shortlist::generateErrorName(generateError));
+                    } else {
+                      session->projection().filter(*shortlist);
+                      LOG_DBG("DICT", "Shortlist ready: words=%u tokens=%u candidates=%u%s",
+                              static_cast<unsigned>(collected.renderedWordsVisited),
+                              static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned>(shortlist->count),
+                              shortlist->truncated ? " truncated" : "");
+                      outcome = shortlist->count == 0 ? LookupOutcome::NoWords : LookupOutcome::Ready;
+                    }
                   }
                 }
               }

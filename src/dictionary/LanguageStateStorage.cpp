@@ -1,6 +1,7 @@
 #include "LanguageStateStorage.h"
 
 #include <HalStorage.h>
+#include <esp_task_wdt.h>
 
 #include <algorithm>
 #include <cstring>
@@ -35,12 +36,15 @@ bool createFileSynced(void*, const char* path, const void* prefix, const size_t 
   if (prefixLength > totalSize) return false;
   HalFile file;
   if (!Storage.openFileForWrite("LST", path, file) || file.write(prefix, prefixLength) != prefixLength) return false;
-  static constexpr uint8_t zeros[64]{};
+  // Flash-resident zero block keeps initialization sequential without adding
+  // stack/heap pressure or issuing thousands of tiny SD writes.
+  static constexpr uint8_t zeros[2048]{};
   uint32_t remaining = totalSize - prefixLength;
   while (remaining > 0) {
     const size_t chunk = std::min<size_t>(sizeof(zeros), remaining);
     if (file.write(zeros, chunk) != chunk) return false;
     remaining -= chunk;
+    esp_task_wdt_reset();
   }
   return file.sync();
 }

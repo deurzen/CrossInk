@@ -129,6 +129,21 @@ TEST(LexemeState, InitializesPackedStatusesAndPersistsUpdates) {
   EXPECT_TRUE(dictionary::lexeme_state::isSuppressed(status));
 }
 
+TEST(LexemeState, CachesSequentialPackedStatusReads) {
+  MemoryStorage storage;
+  Store store;
+  StateError error;
+  ASSERT_TRUE(store.open(backend(storage), "/state", UUID, 1000, error));
+  storage.readAtCalls = 0;
+
+  uint8_t value = 0;
+  for (uint32_t byteIndex = 0; byteIndex < 300; ++byteIndex) {
+    ASSERT_TRUE(store.readPackedByte(byteIndex, value, error));
+    EXPECT_EQ(value, 0);
+  }
+  EXPECT_EQ(storage.readAtCalls, 2);
+}
+
 TEST(LexemeState, ScansBoundedNonUnseenWindowsWithOneRead) {
   MemoryStorage storage;
   Store store;

@@ -54,6 +54,8 @@ bool BookLanguageReader::open(const RandomAccessSource& source, ReaderError& err
   stringPoolOffset_ = 0;
   analysisCount_ = 0;
   componentCount_ = 0;
+  localLemmaCacheFirst_ = 0;
+  localLemmaCacheCount_ = 0;
   error = ReaderError::NONE;
 
   if (!sourceCanRead(source)) {
@@ -201,13 +203,21 @@ bool BookLanguageReader::readGlobalLexemeId(const uint16_t localLemmaId, uint32_
     error = ReaderError::LOCAL_LEMMA_ID_OUT_OF_RANGE;
     return false;
   }
-  uint8_t data[kLocalLemmaRecordSize]{};
-  const uint32_t offset = header_.localLemmaTableOffset + localLemmaId * kLocalLemmaRecordSize;
-  if (!source_.readAt(source_.context, offset, data, sizeof(data))) {
-    error = ReaderError::READ_FAILED;
-    return false;
+  if (localLemmaCacheCount_ == 0 || localLemmaId < localLemmaCacheFirst_ ||
+      localLemmaId >= static_cast<uint32_t>(localLemmaCacheFirst_) + localLemmaCacheCount_) {
+    localLemmaCacheFirst_ = localLemmaId;
+    const uint32_t remaining = header_.localLemmaCount - localLemmaId;
+    localLemmaCacheCount_ = static_cast<uint8_t>(remaining < 64U ? remaining : 64U);
+    const uint32_t offset = header_.localLemmaTableOffset + localLemmaId * kLocalLemmaRecordSize;
+    const size_t bytes = static_cast<size_t>(localLemmaCacheCount_) * kLocalLemmaRecordSize;
+    if (!source_.readAt(source_.context, offset, localLemmaCache_, bytes)) {
+      localLemmaCacheCount_ = 0;
+      error = ReaderError::READ_FAILED;
+      return false;
+    }
   }
-  globalLexemeId = readU32(data);
+  const size_t cacheOffset = static_cast<size_t>(localLemmaId - localLemmaCacheFirst_) * kLocalLemmaRecordSize;
+  globalLexemeId = readU32(localLemmaCache_ + cacheOffset);
   return true;
 }
 

@@ -79,6 +79,11 @@ class Store {
   char walPath_[kMaxStatePath]{};
   uint32_t lexemeCount_ = 0;
   uint32_t generation_ = 0;
+  // Suppression rebuilds read monotonically increasing packed indexes. This
+  // bounded cache turns up to 256 one-byte file opens into one sequential read.
+  uint8_t packedCache_[256]{};
+  uint32_t packedCacheFirst_ = 0;
+  uint16_t packedCacheCount_ = 0;
   bool open_ = false;
 
   bool recover(StateError& error);
