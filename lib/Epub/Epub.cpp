@@ -425,6 +425,16 @@ bool Epub::hasCache(const std::string& filepath, const std::string& cacheDir) {
   return BookMetadataCache::exists(cachePathForFilePath(filepath, cacheDir));
 }
 
+bool Epub::prewarmBookLanguageArtifact(const std::string& filepath, const std::string& cacheDir) {
+  // Keep the Epub object's path/vector storage off the network task stack.
+  auto epub = makeUniqueNoThrow<Epub>(filepath, cacheDir);
+  if (!epub) {
+    LOG_ERR("EBP", "OOM: EPUB language prewarm object");
+    return false;
+  }
+  return epub->loadBookLanguageArtifactImpl(false);
+}
+
 void Epub::migrateLegacyCachePath(const std::string& cacheDir) const {
   if (Storage.exists(cachePath.c_str())) {
     return;
@@ -1344,10 +1354,12 @@ bool Epub::getItemSize(const std::string& itemHref, size_t* size) const {
 
 std::string Epub::getBookLanguageArtifactPath() const { return cachePath + kBookLanguageCacheName; }
 
-bool Epub::loadBookLanguageArtifact() {
+bool Epub::loadBookLanguageArtifact() { return loadBookLanguageArtifactImpl(true); }
+
+bool Epub::loadBookLanguageArtifactImpl(const bool requireMetadataCompatibility) {
   bookLanguageArtifactLoaded = false;
   dictionaryBundleUuid.fill(0);
-  if (!bookMetadataCache || !bookMetadataCache->isLoaded()) return false;
+  if (requireMetadataCompatibility && (!bookMetadataCache || !bookMetadataCache->isLoaded())) return false;
 
   const std::string artifactPath = getBookLanguageArtifactPath();
   const std::string temporaryPath = cachePath + kBookLanguageTempName;
@@ -1386,7 +1398,8 @@ bool Epub::loadBookLanguageArtifact() {
       artifactExists && validateBookLanguageReceipt(artifactPath, receiptPath, embeddedSize, embeddedCrc, header);
   const bool fullyValidated =
       !receiptValid && artifactExists && validateCachedBookLanguage(artifactPath, embeddedSize, header);
-  if ((receiptValid || fullyValidated) && isBookLanguageCompatible(header, getSpineItemsCount(), getLanguage())) {
+  if ((receiptValid || fullyValidated) &&
+      (!requireMetadataCompatibility || isBookLanguageCompatible(header, getSpineItemsCount(), getLanguage()))) {
     if (fullyValidated) writeBookLanguageReceipt(receiptPath, receiptTemporaryPath, embeddedSize, embeddedCrc, header);
     std::copy(header.dictionaryBundleUuid, header.dictionaryBundleUuid + sizeof(header.dictionaryBundleUuid),
               dictionaryBundleUuid.begin());
@@ -1437,8 +1450,9 @@ bool Epub::loadBookLanguageArtifact() {
     writeBookLanguageFailureMarker(invalidPath, invalidTemporaryPath, embeddedSize);
     return false;
   }
-  if (header.fileSize != embeddedSize || !isBookLanguageCompatible(header, getSpineItemsCount(), getLanguage())) {
-    LOG_ERR("EBP", "Language artifact is incompatible with EPUB metadata");
+  if (header.fileSize != embeddedSize ||
+      (requireMetadataCompatibility && !isBookLanguageCompatible(header, getSpineItemsCount(), getLanguage()))) {
+    LOG_ERR("EBP", "Language artifact size or metadata compatibility check failed");
     Storage.remove(temporaryPath.c_str());
     writeBookLanguageFailureMarker(invalidPath, invalidTemporaryPath, embeddedSize);
     return false;

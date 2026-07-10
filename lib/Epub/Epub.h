@@ -59,6 +59,7 @@ class Epub {
   bool parseTocNavFile() const;
   CssParseStatus parseCssFiles(bool forceRebuild = false) const;
   void discoverCssFilesFromZip();
+  bool loadBookLanguageArtifactImpl(bool requireMetadataCompatibility);
 
  public:
   explicit Epub(std::string filepath, const std::string& cacheDir);
@@ -67,6 +68,9 @@ class Epub {
   // True when a metadata cache already exists for this book, i.e. load() will
   // hit the fast path instead of rebuilding. Cheap: no parsing, just a stat.
   static bool hasCache(const std::string& filepath, const std::string& cacheDir);
+  // Extracts and fully validates an embedded artifact without parsing the EPUB
+  // package. Metadata compatibility is checked later by load().
+  static bool prewarmBookLanguageArtifact(const std::string& filepath, const std::string& cacheDir);
   std::string& getBasePath() { return contentBasePath; }
   bool load(bool buildIfMissing = true, bool skipLoadingCss = false);
   bool clearCache() const;

@@ -60,14 +60,9 @@ bool prewarmUploadedDictionaryEpub(const String& filePath, String& error) {
   size_t artifactSize = 0;
   if (!ZipFile(filePath.c_str()).getInflatedFileSize("META-INF/crossink/language.bin", &artifactSize)) return true;
   esp_task_wdt_reset();
-  // Epub retains metadata/cache objects and is too large for the network task
-  // stack. This one-shot allocation is released before the upload response.
-  auto epub = makeUniqueNoThrow<Epub>(filePath.c_str(), "/.crosspoint");
-  if (!epub) {
-    error = "Not enough memory to prepare EPUB dictionary";
-    return false;
-  }
-  if (!epub->load(true, true) || !epub->hasBookLanguageArtifact()) {
+  // Parse only language.bin here. Building the complete EPUB metadata cache
+  // while WebUI/Worker allocations are live can exhaust the fragmented heap.
+  if (!Epub::prewarmBookLanguageArtifact(filePath.c_str(), "/.crosspoint")) {
     error = "Uploaded EPUB dictionary artifact is invalid";
     return false;
   }
