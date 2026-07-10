@@ -139,8 +139,10 @@ bool DictionaryActivity::openDefinition() {
   const uint16_t localLemmaId = selectedLocalLemmaId();
   uint32_t globalLexemeId = 0;
   dictionary::PackageError packageError = dictionary::PackageError::NONE;
+  dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
   size_t headwordLength = 0;
-  if (localLemmaId == UINT16_MAX || !session_->globalLexemeId(localLemmaId, globalLexemeId) ||
+  if (localLemmaId == UINT16_MAX || !session_->openDefinitionPackage(sessionError) ||
+      !session_->globalLexemeId(localLemmaId, globalLexemeId) ||
       !session_->package().readLexeme(globalLexemeId, lexeme_, packageError) ||
       !session_->package().readHeadword(lexeme_, headword_, sizeof(headword_), headwordLength, packageError) ||
       !session_->package().getEntrySlice(lexeme_, entry_, packageError)) {

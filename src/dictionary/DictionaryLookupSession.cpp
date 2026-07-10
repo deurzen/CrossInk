@@ -1,5 +1,6 @@
 #include "DictionaryLookupSession.h"
 
+#include <Crc32.h>
 #include <HalStorage.h>
 
 #include <algorithm>
@@ -10,6 +11,15 @@
 
 namespace dictionary::lookup {
 namespace {
+
+uint16_t readU16(const uint8_t* data) {
+  return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8U);
+}
+
+uint32_t readU32(const uint8_t* data) {
+  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8U) |
+         (static_cast<uint32_t>(data[2]) << 16U) | (static_cast<uint32_t>(data[3]) << 24U);
+}
 
 bool appendPath(char* output, const size_t capacity, const char* directory, const char* leaf) {
   const int written = std::snprintf(output, capacity, "%s/%s", directory, leaf);
@@ -32,19 +42,44 @@ bool Session::readAt(void* context, const uint32_t offset, void* output, const s
          source.reader->readAt(source.path, source.sourceToken, source.size, offset, output, length, source.metrics);
 }
 
-bool Session::initializeSource(SourceContext& context, const char* path, const uint8_t sourceToken) {
+bool Session::setSourcePath(SourceContext& context, const char* path, const uint8_t sourceToken) {
   if (!path || path[0] == '\0' || std::strlen(path) >= sizeof(context.path)) return false;
   std::strcpy(context.path, path);
   context.reader = &sourceReader_;
   context.metrics = &sourceIoMetrics_;
   context.sourceToken = sourceToken;
-  return sourceReader_.fileSize(path, sourceToken, &sourceIoMetrics_, context.size);
+  context.size = 0;
+  return true;
+}
+
+bool Session::initializeSource(SourceContext& context, const char* path, const uint8_t sourceToken) {
+  return setSourcePath(context, path, sourceToken) &&
+         sourceReader_.fileSize(path, sourceToken, &sourceIoMetrics_, context.size);
+}
+
+bool Session::validateRuntimeMetadata(SessionError& error) {
+  uint8_t data[kDictionaryMetaSize]{};
+  if (metaSource_.size != sizeof(data) || !readAt(&metaSource_, 0, data, sizeof(data)) ||
+      std::memcmp(data, "CXDM", 4) != 0 || readU16(data + 4) != kDictionaryPackageVersion ||
+      readU16(data + 6) != kDictionaryMetaSize || updateCrc32(0, data, 76) != readU32(data + 76) ||
+      std::memcmp(data + 12, bundleUuid_, sizeof(bundleUuid_)) != 0) {
+    error = SessionError::DICTIONARY_INVALID;
+    return false;
+  }
+  runtimeLexemeCount_ = readU32(data + 44);
+  if (runtimeLexemeCount_ == 0 || runtimeLexemeCount_ > kMaxLexemeCount || readU16(data + 48) != kLexemeRecordSize) {
+    error = SessionError::DICTIONARY_INVALID;
+    return false;
+  }
+  return true;
 }
 
 bool Session::openReaders(const char* languageArtifactPath, const char* bookCachePath,
                           const std::array<uint8_t, 16>& expectedBundleUuid, SessionError& error) {
   readersOpen_ = false;
   stateOpen_ = false;
+  runtimeLexemeCount_ = 0;
+  package_ = {};
   sourceReader_.close();
   sourceIoMetrics_.reset();
   stateIoMetrics_.reset();
@@ -87,37 +122,24 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
     return false;
   }
 
+  if (!appendPath(path, sizeof(path), directory, "meta.bin") || !initializeSource(metaSource_, path, 2)) {
+    error = SessionError::DICTIONARY_MISSING;
+    return false;
+  }
+  if (!validateRuntimeMetadata(error)) return false;
+
   const struct {
     const char* leaf;
     SourceContext* source;
-  } files[] = {{"meta.bin", &metaSource_},
-               {"lexemes.bin", &lexemesSource_},
-               {"headwords.bin", &headwordsSource_},
-               {"entries.bin", &entriesSource_}};
-  uint8_t sourceToken = 2;
-  for (const auto& file : files) {
-    if (!appendPath(path, sizeof(path), directory, file.leaf)) {
+    uint8_t token;
+  } deferred[] = {{"lexemes.bin", &lexemesSource_, 3},
+                  {"headwords.bin", &headwordsSource_, 4},
+                  {"entries.bin", &entriesSource_, 5}};
+  for (const auto& file : deferred) {
+    if (!appendPath(path, sizeof(path), directory, file.leaf) || !setSourcePath(*file.source, path, file.token)) {
       error = SessionError::PATH_TOO_LONG;
       return false;
     }
-    if (!initializeSource(*file.source, path, sourceToken++)) {
-      error = SessionError::DICTIONARY_MISSING;
-      return false;
-    }
-  }
-
-  PackageError packageError = PackageError::NONE;
-  const RandomAccessSource meta{&metaSource_, metaSource_.size, readAt};
-  const RandomAccessSource lexemes{&lexemesSource_, lexemesSource_.size, readAt};
-  const RandomAccessSource headwords{&headwordsSource_, headwordsSource_.size, readAt};
-  const RandomAccessSource entries{&entriesSource_, entriesSource_.size, readAt};
-  if (!package_.open(meta, lexemes, headwords, entries, packageError)) {
-    error = SessionError::DICTIONARY_INVALID;
-    return false;
-  }
-  if (std::memcmp(package_.metadata().dictionaryBundleUuid, bundleUuid_, sizeof(bundleUuid_)) != 0) {
-    error = SessionError::BUNDLE_MISMATCH;
-    return false;
   }
 
   readersOpen_ = true;
@@ -138,7 +160,7 @@ bool Session::openLearningState(SessionError& error) {
 
   lexeme_state::StateError stateError = lexeme_state::StateError::NONE;
   if (!state_.open(language_state_storage::backend(&stateIoMetrics_), language_state_storage::ROOT_PATH, bundleUuid_,
-                   package_.metadata().lexemeCount, stateError)) {
+                   runtimeLexemeCount_, stateError)) {
     error = SessionError::STATE_FAILED;
     return false;
   }
@@ -201,6 +223,32 @@ bool Session::filterShortlist(page_shortlist::Shortlist& shortlist, SessionError
     if (!allSuppressed[input]) shortlist.items[output++] = shortlist.items[input];
   }
   shortlist.count = output;
+  return true;
+}
+
+bool Session::openDefinitionPackage(SessionError& error) {
+  error = SessionError::NONE;
+  if (!readersOpen_) {
+    error = SessionError::INVALID_INPUT;
+    return false;
+  }
+  if (package_.isOpen()) return true;
+  if (!sourceReader_.fileSize(lexemesSource_.path, 3, &sourceIoMetrics_, lexemesSource_.size) ||
+      !sourceReader_.fileSize(headwordsSource_.path, 4, &sourceIoMetrics_, headwordsSource_.size) ||
+      !sourceReader_.fileSize(entriesSource_.path, 5, &sourceIoMetrics_, entriesSource_.size)) {
+    error = SessionError::DICTIONARY_MISSING;
+    return false;
+  }
+
+  PackageError packageError = PackageError::NONE;
+  const RandomAccessSource meta{&metaSource_, metaSource_.size, readAt};
+  const RandomAccessSource lexemes{&lexemesSource_, lexemesSource_.size, readAt};
+  const RandomAccessSource headwords{&headwordsSource_, headwordsSource_.size, readAt};
+  const RandomAccessSource entries{&entriesSource_, entriesSource_.size, readAt};
+  if (!package_.open(meta, lexemes, headwords, entries, packageError)) {
+    error = SessionError::DICTIONARY_INVALID;
+    return false;
+  }
   return true;
 }
 

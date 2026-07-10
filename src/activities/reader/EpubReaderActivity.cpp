@@ -3192,7 +3192,7 @@ void EpubReaderActivity::startDictionaryLookup() {
             } else {
               LOG_INF("DICT", "Readers open: %lu ms total=%lu ms local=%lu global=%lu", millis() - readersStartedAt,
                       millis() - lookupStartedAt, static_cast<unsigned long>(session->book().header().localLemmaCount),
-                      static_cast<unsigned long>(session->package().metadata().lexemeCount));
+                      static_cast<unsigned long>(session->runtimeLexemeCount()));
               logDictionaryIoMetrics("Reader open", session->sourceIoMetrics());
               // The 3.6 KB fixed shortlist outlives this function in the
               // activity, so stack/static storage is unsuitable.

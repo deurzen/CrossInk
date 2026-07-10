@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Dictionary word lists now defer opening lexeme, headword, and entry files until a definition is selected.
 - Dictionary lookup now checks learning status only for the bounded visible shortlist instead of rebuilding a whole-book suppression projection.
 - Dictionary shortlist matching now merges sorted visible tokens with candidate hashes and hydrates matches in surface-table order, reducing random SD reads.
 - Dictionary lookup now reads shard, candidate, and matched-surface records through bounded block caches instead of issuing one SD read per tiny record.

@@ -43,6 +43,7 @@ class Session {
                    const std::array<uint8_t, 16>& expectedBundleUuid, SessionError& error);
   bool openLearningState(SessionError& error);
   bool filterShortlist(page_shortlist::Shortlist& shortlist, SessionError& error);
+  bool openDefinitionPackage(SessionError& error);
 
   bool globalLexemeId(uint16_t localLemmaId, uint32_t& globalLexemeId) const;
   bool setStatus(uint16_t localLemmaId, lexeme_state::Status status, SessionError& error);
@@ -50,6 +51,7 @@ class Session {
 
   const book_language::BookLanguageReader& book() const { return book_; }
   const DictionaryPackage& package() const { return package_; }
+  uint32_t runtimeLexemeCount() const { return runtimeLexemeCount_; }
   uint32_t stateGeneration() const { return state_.generation(); }
   const io_metrics::Counters& sourceIoMetrics() const { return sourceIoMetrics_; }
   const io_metrics::Counters& stateIoMetrics() const { return stateIoMetrics_; }
@@ -70,6 +72,7 @@ class Session {
   SourceContext entriesSource_{};
   char cachePath_[kMaxLookupPath]{};
   uint8_t bundleUuid_[16]{};
+  uint32_t runtimeLexemeCount_ = 0;
   book_language::BookLanguageReader book_{};
   DictionaryPackage package_{};
   lexeme_state::Store state_{};
@@ -84,6 +87,8 @@ class Session {
   static bool openForRead(void* context, const char* path, HalFile& file);
   static bool readAt(void* context, uint32_t offset, void* output, size_t length);
   bool initializeSource(SourceContext& context, const char* path, uint8_t sourceToken);
+  bool setSourcePath(SourceContext& context, const char* path, uint8_t sourceToken);
+  bool validateRuntimeMetadata(SessionError& error);
 };
 
 const char* sessionErrorName(SessionError error);
