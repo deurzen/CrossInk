@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Browser-generated X-location manifests are stored without ZIP compression, avoiding long first-open decompression and a 32 KB inflater window on memory-constrained home screens.
 - Dictionary-enabled EPUB uploads now extract, validate, and receipt only the stored language artifact before reporting success, avoiding full EPUB parsing while WebUI memory is still in use.
 - Dictionary EPUB compilation now caps pathological surfaces at eight deterministic analyses instead of aborting the complete book conversion.
 - Validated EPUB dictionary artifacts now use an identity-bound receipt, avoiding a full multi-megabyte CRC scan on every book or home-carousel open.

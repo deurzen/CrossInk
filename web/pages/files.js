@@ -3958,7 +3958,12 @@ async function convertEpubFile(file, progressCallback) {
     if (referenceCharactersInput) referenceCharactersInput.value = referenceCharactersPerPage;
     const locationManifest = buildXLocationManifest(t, opfPath, processedXhtmlFiles, referenceCharactersPerPage);
     if (locationManifest) {
-      out.file(X_LOCATION_MANIFEST_PATH, JSON.stringify(locationManifest), DEFLATE_OPTS);
+      // Firmware reads this during home/book cache setup, where the DEFLATE
+      // window competes with cover/carousel allocations on the ESP32-C3.
+      out.file(X_LOCATION_MANIFEST_PATH, JSON.stringify(locationManifest), {
+        compression: "STORE",
+        createFolders: false,
+      });
       logFix(
         "X locations",
         `${locationManifest.totalLocations} locations, ${locationManifest.totalReferencePages} reference pages`,
