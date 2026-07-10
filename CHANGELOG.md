@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Dictionary lookup now reads shard, candidate, and matched-surface records through bounded block caches instead of issuing one SD read per tiny record.
 - Dictionary lookup now reuses one switching SD reader instead of reopening a file for every small record read, reducing word-list and definition latency on hardware.
 - Dictionary lists no longer offer compound-only false positives that cannot open a whole-word definition.
 - Dictionary navigation now accepts both side and front directional buttons, and uses compact button labels that fit X3/X4 hint areas.

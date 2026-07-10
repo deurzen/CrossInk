@@ -12,7 +12,6 @@ constexpr uint16_t kSurfaceVersion = 1;
 constexpr uint16_t kSurfaceHeaderSize = 40;
 constexpr uint32_t kSurfaceRecordSize = 20;
 constexpr uint8_t kKnownCandidateFlags = 0x07;
-constexpr size_t kCompareChunkSize = 32;
 
 uint16_t readU16(const uint8_t* data) {
   return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8U);
@@ -54,6 +53,12 @@ bool BookLanguageReader::open(const RandomAccessSource& source, ReaderError& err
   stringPoolOffset_ = 0;
   analysisCount_ = 0;
   componentCount_ = 0;
+  shardCacheStart_ = UINT32_MAX;
+  candidateCacheStart_ = UINT32_MAX;
+  surfaceCacheStart_ = UINT32_MAX;
+  shardCacheLength_ = 0;
+  candidateCacheLength_ = 0;
+  surfaceCacheLength_ = 0;
   localLemmaCacheFirst_ = 0;
   localLemmaCacheCount_ = 0;
   error = ReaderError::NONE;
@@ -116,6 +121,23 @@ bool BookLanguageReader::open(const RandomAccessSource& source, ReaderError& err
   return true;
 }
 
+bool BookLanguageReader::readCached(const uint32_t offset, const size_t length, const uint32_t sectionEnd,
+                                    uint8_t* cache, const size_t cacheCapacity, uint32_t& cacheStart,
+                                    uint16_t& cacheLength, void* output) const {
+  if (length > cacheCapacity || static_cast<uint64_t>(offset) + length > sectionEnd) return false;
+  if (cacheLength == 0 || offset < cacheStart || static_cast<uint64_t>(offset) + length > cacheStart + cacheLength) {
+    cacheStart = offset;
+    const size_t available = sectionEnd - offset;
+    cacheLength = static_cast<uint16_t>(std::min(cacheCapacity, available));
+    if (!source_.readAt(source_.context, cacheStart, cache, cacheLength)) {
+      cacheLength = 0;
+      return false;
+    }
+  }
+  std::memcpy(output, cache + (offset - cacheStart), length);
+  return true;
+}
+
 bool BookLanguageReader::readShard(const uint32_t shardId, ShardDirectoryRecord& out, ReaderError& error) const {
   out = {};
   error = ReaderError::NONE;
@@ -130,7 +152,8 @@ bool BookLanguageReader::readShard(const uint32_t shardId, ShardDirectoryRecord&
 
   uint8_t data[kShardDirectoryRecordSize]{};
   const uint32_t offset = header_.shardDirectoryOffset + shardId * kShardDirectoryRecordSize;
-  if (!source_.readAt(source_.context, offset, data, sizeof(data))) {
+  if (!readCached(offset, sizeof(data), header_.shardRecordsOffset, shardCache_, sizeof(shardCache_), shardCacheStart_,
+                  shardCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }
@@ -168,7 +191,8 @@ bool BookLanguageReader::readCandidate(const ShardDirectoryRecord& shard, const 
 
   uint8_t data[kShardCandidateRecordSize]{};
   const uint32_t offset = header_.shardRecordsOffset + recordIndex * kShardCandidateRecordSize;
-  if (!source_.readAt(source_.context, offset, data, sizeof(data))) {
+  if (!readCached(offset, sizeof(data), header_.localLemmaTableOffset, candidateCache_, sizeof(candidateCache_),
+                  candidateCacheStart_, candidateCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }
@@ -234,7 +258,10 @@ bool BookLanguageReader::readSurface(const uint16_t localSurfaceId, SurfaceRecor
   }
   uint8_t data[kSurfaceRecordSize]{};
   const uint32_t relativeOffset = surfaceRecordOffset_ + localSurfaceId * kSurfaceRecordSize;
-  if (!source_.readAt(source_.context, header_.surfaceDetailOffset + relativeOffset, data, sizeof(data))) {
+  const uint32_t offset = header_.surfaceDetailOffset + relativeOffset;
+  const uint32_t sectionEnd = header_.surfaceDetailOffset + surfaceSectionSize_;
+  if (!readCached(offset, sizeof(data), sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
+                  surfaceCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }
@@ -273,12 +300,14 @@ bool BookLanguageReader::surfaceEquals(const SurfaceRecord& surface, const std::
   }
   if (expected.size() != surface.stringLength) return true;
 
-  uint8_t chunk[kCompareChunkSize]{};
+  uint8_t chunk[32]{};
   size_t compared = 0;
+  const uint32_t sectionEnd = header_.surfaceDetailOffset + surfaceSectionSize_;
   while (compared < expected.size()) {
     const size_t length = std::min(sizeof(chunk), expected.size() - compared);
     const uint32_t offset = header_.surfaceDetailOffset + stringPoolOffset_ + surface.stringOffset + compared;
-    if (!source_.readAt(source_.context, offset, chunk, length)) {
+    if (!readCached(offset, length, sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
+                    surfaceCacheLength_, chunk)) {
       error = ReaderError::READ_FAILED;
       return false;
     }
@@ -303,7 +332,10 @@ bool BookLanguageReader::readSurfaceAnalysis(const SurfaceRecord& surface, const
   }
   uint8_t data[sizeof(uint16_t)]{};
   const uint32_t relativeOffset = analysisOffset_ + (surface.firstAnalysis + index) * sizeof(uint16_t);
-  if (!source_.readAt(source_.context, header_.surfaceDetailOffset + relativeOffset, data, sizeof(data))) {
+  const uint32_t offset = header_.surfaceDetailOffset + relativeOffset;
+  const uint32_t sectionEnd = header_.surfaceDetailOffset + surfaceSectionSize_;
+  if (!readCached(offset, sizeof(data), sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
+                  surfaceCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }
@@ -330,7 +362,10 @@ bool BookLanguageReader::readSurfaceComponent(const SurfaceRecord& surface, cons
   }
   uint8_t data[sizeof(uint16_t)]{};
   const uint32_t relativeOffset = componentOffset_ + (surface.firstComponent + index) * sizeof(uint16_t);
-  if (!source_.readAt(source_.context, header_.surfaceDetailOffset + relativeOffset, data, sizeof(data))) {
+  const uint32_t offset = header_.surfaceDetailOffset + relativeOffset;
+  const uint32_t sectionEnd = header_.surfaceDetailOffset + surfaceSectionSize_;
+  if (!readCached(offset, sizeof(data), sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
+                  surfaceCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }

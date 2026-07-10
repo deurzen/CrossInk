@@ -84,6 +84,17 @@ class BookLanguageReader {
   uint32_t stringPoolOffset_ = 0;
   uint32_t analysisCount_ = 0;
   uint32_t componentCount_ = 0;
+  // Lookup scans these tables sequentially. Fixed block caches keep SD reads
+  // bounded while avoiding one read call per 16-byte record.
+  mutable uint8_t shardCache_[256]{};
+  mutable uint8_t candidateCache_[512]{};
+  mutable uint8_t surfaceCache_[512]{};
+  mutable uint32_t shardCacheStart_ = UINT32_MAX;
+  mutable uint32_t candidateCacheStart_ = UINT32_MAX;
+  mutable uint32_t surfaceCacheStart_ = UINT32_MAX;
+  mutable uint16_t shardCacheLength_ = 0;
+  mutable uint16_t candidateCacheLength_ = 0;
+  mutable uint16_t surfaceCacheLength_ = 0;
   // Projection rebuilds visit local lemma IDs in ascending order. Cache 64
   // contiguous records so that path-backed sources open the SD file once per
   // block instead of once per lemma.
@@ -91,7 +102,12 @@ class BookLanguageReader {
   mutable uint16_t localLemmaCacheFirst_ = 0;
   mutable uint8_t localLemmaCacheCount_ = 0;
   bool open_ = false;
+
+  bool readCached(uint32_t offset, size_t length, uint32_t sectionEnd, uint8_t* cache, size_t cacheCapacity,
+                  uint32_t& cacheStart, uint16_t& cacheLength, void* output) const;
 };
+
+static_assert(sizeof(BookLanguageReader) <= 2048, "Book language reader exceeds its lookup-session memory budget");
 
 uint64_t fnv1a64(std::string_view text);
 const char* readerErrorName(ReaderError error);

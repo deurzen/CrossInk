@@ -185,6 +185,44 @@ TEST(BookLanguageReader, CachesSequentialLocalLemmaRecords) {
   EXPECT_EQ(source.reads, 1);
 }
 
+TEST(BookLanguageReader, CachesShardCandidateAndSurfaceBlocks) {
+  CountingSource source{makeArtifact()};
+  BookLanguageReader reader;
+  ReaderError error;
+  ASSERT_TRUE(reader.open({&source, source.data.size(), readCountingMemory}, error));
+
+  dictionary::book_language::ShardDirectoryRecord shard;
+  source.reads = 0;
+  ASSERT_TRUE(reader.readShard(0, shard, error));
+  ASSERT_TRUE(reader.readShard(0, shard, error));
+  EXPECT_EQ(source.reads, 1);
+
+  dictionary::book_language::ShardCandidate candidate;
+  source.reads = 0;
+  ASSERT_TRUE(reader.readCandidate(shard, 0, candidate, error));
+  ASSERT_TRUE(reader.readCandidate(shard, 0, candidate, error));
+  EXPECT_EQ(source.reads, 1);
+
+  dictionary::book_language::SurfaceRecord surface;
+  source.reads = 0;
+  ASSERT_TRUE(reader.readSurface(0, surface, error));
+  ASSERT_TRUE(reader.readSurface(0, surface, error));
+  EXPECT_EQ(source.reads, 1);
+
+  bool equal = false;
+  source.reads = 0;
+  ASSERT_TRUE(reader.surfaceEquals(surface, "liebe", equal, error));
+  ASSERT_TRUE(reader.surfaceEquals(surface, "liebe", equal, error));
+  EXPECT_TRUE(equal);
+  EXPECT_EQ(source.reads, 0);
+
+  uint16_t localLemmaId = UINT16_MAX;
+  source.reads = 0;
+  ASSERT_TRUE(reader.readSurfaceAnalysis(surface, 0, localLemmaId, error));
+  ASSERT_TRUE(reader.readSurfaceAnalysis(surface, 1, localLemmaId, error));
+  EXPECT_EQ(source.reads, 0);
+}
+
 TEST(BookLanguageReader, RejectsMalformedSurfaceHeader) {
   auto data = makeArtifact();
   writeU32(data, 208, 68);  // Declared section size does not reach metadata.
