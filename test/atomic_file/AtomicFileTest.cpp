@@ -230,4 +230,30 @@ TEST_F(AtomicFileTest, RequiresValidationCallback) {
   EXPECT_FALSE(AtomicFile::recover("TEST", kPaths, nullptr, &context));
 }
 
+TEST_F(AtomicFileTest, CanonicalNameAcceptsFinalAndAtomicSidecars) {
+  char output[32];
+  bool isSidecar = true;
+
+  ASSERT_TRUE(AtomicFile::canonicalName("epub_123.bin", ".bin", output, sizeof(output), isSidecar));
+  EXPECT_STREQ(output, "epub_123.bin");
+  EXPECT_FALSE(isSidecar);
+
+  ASSERT_TRUE(AtomicFile::canonicalName("epub_123.bin.tmp", ".bin", output, sizeof(output), isSidecar));
+  EXPECT_STREQ(output, "epub_123.bin");
+  EXPECT_TRUE(isSidecar);
+
+  ASSERT_TRUE(AtomicFile::canonicalName("epub_123.bin.bak", ".bin", output, sizeof(output), isSidecar));
+  EXPECT_STREQ(output, "epub_123.bin");
+  EXPECT_TRUE(isSidecar);
+}
+
+TEST_F(AtomicFileTest, CanonicalNameRejectsWrongSuffixAndSmallOutput) {
+  char output[8];
+  bool isSidecar = false;
+
+  EXPECT_FALSE(AtomicFile::canonicalName("epub_123.txt.bak", ".bin", output, sizeof(output), isSidecar));
+  EXPECT_FALSE(AtomicFile::canonicalName("epub_123.bin.bak", ".bin", output, sizeof(output), isSidecar));
+  EXPECT_FALSE(AtomicFile::canonicalName(nullptr, ".bin", output, sizeof(output), isSidecar));
+}
+
 }  // namespace

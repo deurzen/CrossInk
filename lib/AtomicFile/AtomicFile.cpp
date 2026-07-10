@@ -178,4 +178,32 @@ bool remove(const char* moduleName, const Paths& paths) {
          removeIfPresent(moduleName, paths.finalPath);
 }
 
+bool canonicalName(const char* entryName, const char* requiredSuffix, char* output, const size_t outputSize,
+                   bool& isSidecar) {
+  if (entryName == nullptr || output == nullptr || outputSize == 0) return false;
+
+  size_t length = std::strlen(entryName);
+  isSidecar = false;
+  static constexpr const char* sidecarSuffixes[] = {".tmp", ".bak"};
+  for (const char* suffix : sidecarSuffixes) {
+    const size_t suffixLength = std::strlen(suffix);
+    if (length >= suffixLength && std::strcmp(entryName + length - suffixLength, suffix) == 0) {
+      length -= suffixLength;
+      isSidecar = true;
+      break;
+    }
+  }
+
+  const size_t requiredSuffixLength = requiredSuffix != nullptr ? std::strlen(requiredSuffix) : 0;
+  if (length >= outputSize || length < requiredSuffixLength ||
+      (requiredSuffixLength != 0 &&
+       std::strncmp(entryName + length - requiredSuffixLength, requiredSuffix, requiredSuffixLength) != 0)) {
+    return false;
+  }
+
+  std::memcpy(output, entryName, length);
+  output[length] = '\0';
+  return true;
+}
+
 }  // namespace AtomicFile

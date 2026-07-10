@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 class HalFile;
 
 namespace AtomicFile {
@@ -30,5 +32,9 @@ bool write(const char* moduleName, const Paths& paths, WriteCallback writer, Val
 // Removes temp and backup before the final so an interrupted deletion cannot
 // resurrect old state. Missing files are treated as success.
 bool remove(const char* moduleName, const Paths& paths);
+
+// Copies a canonical filename to output, stripping one recognized atomic
+// sidecar suffix (.tmp or .bak). requiredSuffix may be null or empty.
+bool canonicalName(const char* entryName, const char* requiredSuffix, char* output, size_t outputSize, bool& isSidecar);
 
 }  // namespace AtomicFile

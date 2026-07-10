@@ -8,7 +8,6 @@
 #include <uzlib.h>
 
 #include <algorithm>
-#include <cstring>
 #include <functional>
 #include <limits>
 
@@ -47,31 +46,6 @@ bool skipBytes(HalFile& file, const uint32_t length) {
 bool skipSerializedString(HalFile& file) {
   uint32_t length = 0;
   return serialization::tryReadPod(file, length) && skipBytes(file, length);
-}
-
-bool canonicalClippingFileName(const char* entryName, char* canonicalName, const size_t canonicalNameSize,
-                               bool& isSidecar) {
-  if (!entryName || canonicalNameSize == 0) return false;
-  size_t length = strlen(entryName);
-  isSidecar = false;
-  static constexpr const char* sidecarSuffixes[] = {".tmp", ".bak"};
-  for (const char* suffix : sidecarSuffixes) {
-    const size_t suffixLength = strlen(suffix);
-    if (length >= suffixLength && strcmp(entryName + length - suffixLength, suffix) == 0) {
-      length -= suffixLength;
-      isSidecar = true;
-      break;
-    }
-  }
-  static constexpr char binSuffix[] = ".bin";
-  constexpr size_t binSuffixLength = sizeof(binSuffix) - 1;
-  if (length < binSuffixLength || strncmp(entryName + length - binSuffixLength, binSuffix, binSuffixLength) != 0 ||
-      length >= canonicalNameSize) {
-    return false;
-  }
-  memcpy(canonicalName, entryName, length);
-  canonicalName[length] = '\0';
-  return true;
 }
 
 bool readClippingFileHeader(const std::string& fullPath, const char* name, ClippingFileHeader& header) {
@@ -355,7 +329,8 @@ bool ClippingStore::hasAnyClippings() {
   return std::any_of(files.begin(), files.end(), [](const auto& entry) {
     char canonicalName[CLIPPING_STORE_NAME_MAX];
     bool isSidecar = false;
-    if (!canonicalClippingFileName(entry.c_str(), canonicalName, sizeof(canonicalName), isSidecar)) return false;
+    if (!AtomicFile::canonicalName(entry.c_str(), ".bin", canonicalName, sizeof(canonicalName), isSidecar))
+      return false;
     char canonicalPath[sizeof(CLIPPINGS_DIR) + CLIPPING_STORE_NAME_MAX + 1];
     snprintf(canonicalPath, sizeof(canonicalPath), "%s/%s", CLIPPINGS_DIR, canonicalName);
     if (isSidecar && !recoverAtomicFile(canonicalPath)) return false;
@@ -370,7 +345,7 @@ bool ClippingStore::getAllClippedBooks(std::vector<ClippedBookEntry>& out) {
   for (const auto& name : files) {
     char canonicalName[CLIPPING_STORE_NAME_MAX];
     bool isSidecar = false;
-    if (!canonicalClippingFileName(name.c_str(), canonicalName, sizeof(canonicalName), isSidecar)) continue;
+    if (!AtomicFile::canonicalName(name.c_str(), ".bin", canonicalName, sizeof(canonicalName), isSidecar)) continue;
     const std::string fullPath = std::string(CLIPPINGS_DIR) + "/" + canonicalName;
     if (isSidecar && !recoverAtomicFile(fullPath)) continue;
     if (!Storage.exists(fullPath.c_str())) continue;
