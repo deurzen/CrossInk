@@ -1,6 +1,7 @@
 add_executable(BookLanguageFormatTest
   BookLanguageFormatTest.cpp
   ${REPO_ROOT}/lib/Dictionary/BookLanguageFormat.cpp
+  ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
 )
 
 target_include_directories(BookLanguageFormatTest PRIVATE

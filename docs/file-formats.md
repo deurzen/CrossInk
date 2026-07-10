@@ -79,6 +79,91 @@ flags, malformed language tags, zero dictionary identities, excessive counts,
 misaligned or overlapping tables, mismatched file sizes, and CRC failures
 before later readers seek into a table.
 
+## `/.crosspoint/dictionaries/<bundle-uuid>/`
+
+### Native dictionary package version 1
+
+An installed runtime dictionary is a directory committed under its 128-bit
+bundle UUID. Installation uses a temporary directory and publishes the final
+directory name only after all file sizes and CRCs match `meta.bin`. The runtime
+package contains no morphology tables; those remain in the desktop compiler
+half of the `.cpdict` distribution.
+
+```text
+meta.bin
+lexemes.bin
+headwords.bin
+entries.bin
+licenses.txt
+```
+
+`meta.bin` is exactly 80 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 4 | Magic `CXDM` |
+| 4 | 2 | Package version (`1`) |
+| 6 | 2 | Metadata size (`80`) |
+| 8 | 4 | Flags; version 1 requires zero |
+| 12 | 16 | Nonzero dictionary bundle UUID |
+| 28 | 8 | Zero-padded source-language tag, maximum 7 ASCII bytes |
+| 36 | 8 | Zero-padded target-language tag, maximum 7 ASCII bytes |
+| 44 | 4 | Dense lexeme count |
+| 48 | 2 | Lexeme record size (`24`) |
+| 50 | 2 | Reserved; must be zero |
+| 52 | 4 | Exact `lexemes.bin` size |
+| 56 | 4 | Exact `headwords.bin` size |
+| 60 | 4 | Exact `entries.bin` size |
+| 64 | 4 | `lexemes.bin` CRC32 |
+| 68 | 4 | `headwords.bin` CRC32 |
+| 72 | 4 | `entries.bin` CRC32 |
+| 76 | 4 | Metadata CRC32 over bytes `[0, 76)` |
+
+Lexeme IDs are zero-based indexes into `lexemes.bin`. Each 24-byte record is:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 4 | Headword offset into `headwords.bin` |
+| 4 | 4 | Entry offset into `entries.bin` |
+| 8 | 4 | Entry byte length |
+| 12 | 8 | Stable lexeme-key hash used as a future migration hint |
+| 20 | 2 | Headword byte length, excluding any terminator |
+| 22 | 1 | Coarse part of speech |
+| 23 | 1 | Lexeme flags |
+
+`headwords.bin` is a packed UTF-8 string pool with no terminators. Headwords are
+NFC-composed and limited to 96 bytes. The lexeme-key hash is FNV-1a-64 over the
+exact NFC headword bytes, followed by byte `0x1f` and the one-byte part-of-speech
+value. A hash is not a dictionary identity and must never be accepted without
+comparing the associated headword and part of speech during migration.
+
+Part-of-speech values are `0` unknown, `1` noun, `2` verb, `3` adjective, `4`
+adverb, `5` pronoun, `6` article/determiner, `7` preposition, `8` conjunction,
+`9` numeral, `10` particle, `11` interjection, `12` proper noun, `13` phrase,
+`14` abbreviation, and `15` other. Lexeme flag bit 0 marks a compound with
+component details; bit 1 marks a generated rather than source-authored entry.
+Other bits are invalid in version 1.
+
+Each entry slice in `entries.bin` begins with `entryVersion:u8` (`1`),
+`flags:u8`, and `fieldCount:u16`. It is followed by `fieldCount` fields encoded
+as `type:u8`, `flags:u8`, `byteLength:u16`, and UTF-8 payload bytes. Version-1
+field types are definition (`1`), part-of-speech label (`2`), example (`3`),
+usage note (`4`), etymology (`5`), cross-reference (`6`), and compound component
+(`7`). Unknown field types can be skipped by length. Definitions are rendered
+by streaming one field at a time; firmware does not materialize the full entry.
+An individual entry is limited to 1 MiB even though its fields are individually
+limited to 65535 bytes.
+
+Firmware caps packages at 500,000 lexemes, 64 MiB of headwords, and 1 GiB of
+entries. `lib/Dictionary/DictionaryPackage.*` performs dense-ID lookup with
+caller-owned headword and entry buffers. It retains callback descriptors, not
+open files or dictionary contents, so a HAL adapter can open and close only the
+single SD file needed for an operation.
+
+`licenses.txt` is UTF-8 attribution displayed by the dictionary management UI.
+It is required by the installer but is deliberately outside the hot-path binary
+metadata.
+
 ## `book.bin`
 
 ### Version 8

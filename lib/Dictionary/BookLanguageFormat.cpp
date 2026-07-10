@@ -1,5 +1,6 @@
 #include "BookLanguageFormat.h"
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -68,10 +69,8 @@ bool offsetsAreAligned(const Header& header) {
   const uint32_t offsets[] = {header.spineDirectoryOffset,  header.shardDirectoryOffset,     header.shardRecordsOffset,
                               header.localLemmaTableOffset, header.globalToLocalTableOffset, header.surfaceDetailOffset,
                               header.metadataOffset};
-  for (const uint32_t offset : offsets) {
-    if ((offset & 0x3U) != 0) return false;
-  }
-  return true;
+  return std::all_of(offsets, offsets + (sizeof(offsets) / sizeof(offsets[0])),
+                     [](const uint32_t offset) { return (offset & 0x3U) == 0; });
 }
 
 bool offsetsAreOrdered(const Header& header) {
@@ -85,20 +84,6 @@ bool offsetsAreOrdered(const Header& header) {
 }
 
 }  // namespace
-
-uint32_t updateCrc32(uint32_t crc, const uint8_t* data, const size_t length) {
-  if (data == nullptr && length != 0) return crc;
-
-  crc ^= UINT32_MAX;
-  for (size_t i = 0; i < length; ++i) {
-    crc ^= data[i];
-    for (uint8_t bit = 0; bit < 8; ++bit) {
-      const uint32_t mask = 0U - (crc & 1U);
-      crc = (crc >> 1U) ^ (0xEDB88320U & mask);
-    }
-  }
-  return crc ^ UINT32_MAX;
-}
 
 bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actualFileSize, Header& out,
                  FormatError& error) {
@@ -146,7 +131,7 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
     error = FormatError::BAD_HEADER_SIZE;
     return false;
   }
-  if (updateCrc32(0, data, kHeaderCrcOffset) != out.headerCrc32) {
+  if (dictionary::updateCrc32(0, data, kHeaderCrcOffset) != out.headerCrc32) {
     error = FormatError::BAD_HEADER_CRC;
     return false;
   }
@@ -206,7 +191,7 @@ bool validatePayload(const uint8_t* fileData, const size_t dataSize, const Heade
     error = FormatError::FILE_SIZE_MISMATCH;
     return false;
   }
-  if (updateCrc32(0, fileData + header.headerSize, dataSize - header.headerSize) != header.payloadCrc32) {
+  if (dictionary::updateCrc32(0, fileData + header.headerSize, dataSize - header.headerSize) != header.payloadCrc32) {
     error = FormatError::BAD_PAYLOAD_CRC;
     return false;
   }

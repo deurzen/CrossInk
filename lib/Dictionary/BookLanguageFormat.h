@@ -3,7 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "Crc32.h"
+
 namespace dictionary::book_language {
+
+using dictionary::updateCrc32;
 
 constexpr uint16_t kFormatVersion = 1;
 constexpr size_t kHeaderSize = 108;
@@ -65,10 +69,6 @@ enum class FormatError : uint8_t {
   TABLE_OUT_OF_BOUNDS,
   BAD_PAYLOAD_CRC,
 };
-
-// Standard CRC32 compatible with zlib.crc32(). Pass the previous return value
-// to continue across chunks; use zero for the first chunk.
-uint32_t updateCrc32(uint32_t crc, const uint8_t* data, size_t length);
 
 // Parses and validates only the fixed header. This function allocates no memory.
 // actualFileSize is the size reported by storage and may exceed uint32_t.
