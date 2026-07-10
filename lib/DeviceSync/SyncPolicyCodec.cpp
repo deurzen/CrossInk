@@ -2,31 +2,13 @@
 
 #include <cstring>
 
+#include "Crc32.h"
+
 namespace DeviceSync::SyncPolicyCodec {
 namespace {
 constexpr uint8_t MAGIC[] = {'D', 'S', 'P', 'C'};
 constexpr uint16_t FLAG_MIRROR_DELETIONS = 1U << 0;
 constexpr uint16_t KNOWN_FLAGS = FLAG_MIRROR_DELETIONS;
-
-class Crc32 {
- public:
-  void update(const void* data, const size_t length) {
-    static constexpr uint32_t TABLE[16] = {
-        0x00000000, 0x1db71064, 0x3b6e20c8, 0x26d930ac, 0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c,
-        0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c, 0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c,
-    };
-    const auto* bytes = static_cast<const uint8_t*>(data);
-    for (size_t i = 0; i < length; ++i) {
-      value_ = (value_ >> 4) ^ TABLE[(value_ ^ bytes[i]) & 0x0F];
-      value_ = (value_ >> 4) ^ TABLE[(value_ ^ (bytes[i] >> 4)) & 0x0F];
-    }
-  }
-
-  uint32_t value() const { return ~value_; }
-
- private:
-  uint32_t value_ = UINT32_MAX;
-};
 
 class Writer {
  public:
@@ -151,9 +133,7 @@ namespace {
 
 DecodeResult decodeImpl(const Input& input, SyncPolicy* policy) {
   if (policy != nullptr) policy->reset();
-  if (input.readExact == nullptr || input.size < MIN_ENCODED_SIZE || input.size > MAX_ENCODED_SIZE) {
-    return DecodeResult::Invalid;
-  }
+  if (input.readExact == nullptr || input.size < sizeof(MAGIC) + sizeof(uint16_t)) return DecodeResult::Invalid;
   const auto invalid = [policy]() {
     if (policy != nullptr) policy->reset();
     return DecodeResult::Invalid;
@@ -166,7 +146,7 @@ DecodeResult decodeImpl(const Input& input, SyncPolicy* policy) {
     return invalid();
   }
   if (version > FORMAT_VERSION) return DecodeResult::Unsupported;
-  if (version != FORMAT_VERSION) return invalid();
+  if (version != FORMAT_VERSION || input.size < MIN_ENCODED_SIZE || input.size > MAX_ENCODED_SIZE) return invalid();
 
   uint32_t declaredLength = 0;
   uint8_t categoryCount = 0;

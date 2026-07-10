@@ -99,6 +99,7 @@ TEST(SyncPolicyCodecTest, ValidationOnlyUsesTheSameStrictFormatChecks) {
   std::vector<uint8_t> future = complete;
   future[4] = static_cast<uint8_t>(SyncPolicyCodec::FORMAT_VERSION + 1);
   future[5] = 0;
+  future.insert(future.end(), SyncPolicyCodec::MAX_ENCODED_SIZE, 0xA5);
   EXPECT_EQ(validatePolicy(future), SyncPolicyCodec::DecodeResult::Unsupported);
 }
 

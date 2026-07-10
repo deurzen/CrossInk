@@ -513,6 +513,24 @@ if (parsedSize != fileSize) {
 }
 ```
 
+## `/.crosspoint/device-sync/identity.bin`
+
+### Version 1
+
+The identity record stores a random 32-byte salt, not the factory MAC or the resulting `DeviceId`. Multi-byte integers are little-endian.
+
+```text
+[0-3]   magic "DSID"
+[4-5]   schema version (u16, currently 1)
+[6-9]   declared total file length (u32, 46)
+[10-41] random salt (32 bytes)
+[42-45] CRC-32 over all preceding bytes (u32)
+```
+
+At runtime, `DeviceId` is the first 16 bytes of SHA-256 over the bytes of `CrossInk Device Sync DeviceId v1` (without a terminator), the six-byte factory MAC, and the salt, in that order. This binds an SD-backed identity to one physical device without persisting or exposing its raw MAC.
+
+Updates use same-directory `.tmp` and `.bak` sidecars. A valid interrupted first write is promoted; an incomplete first-write temp can be discarded because no identity was committed. Corrupt committed records and any backup remnants fail closed rather than silently creating a new identity. Newer versions are preserved even when their declared layout is larger.
+
 ## `/.crosspoint/device-sync/config.bin`
 
 ### Version 1

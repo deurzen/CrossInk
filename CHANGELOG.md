@@ -2,7 +2,7 @@
 
 ### Added
 
-- Device Sync groundwork now includes bounded policy controls and crash-safe, versioned policy persistence.
+- Device Sync groundwork now includes stable device identity material, bounded policy controls, and crash-safe versioned persistence.
 
 ### Fixed
 
