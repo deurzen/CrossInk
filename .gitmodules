@@ -2,3 +2,7 @@
 	path = freeink-sdk
 	url = https://github.com/Free-Ink/freeink-sdk.git
 	branch = main
+[submodule "wordfreq"]
+	path = wordfreq
+	url = git@github.com:rspeer/wordfreq.git
+	branch = v3.2
