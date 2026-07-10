@@ -3,6 +3,7 @@
 ### Fixed
 
 - Per-book reading stats now use recoverable temporary and backup files, so interrupted SD writes cannot replace the last valid stats snapshot.
+- EPUB reading progress now recovers interrupted temporary and backup-file promotions before loading or saving.
 
 ## [v1.4.0] - 2026-07-10
 

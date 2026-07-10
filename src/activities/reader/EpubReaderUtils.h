@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AtomicFile.h>
 #include <Epub.h>
 #include <HalStorage.h>
 #include <Logging.h>
@@ -15,6 +16,38 @@ struct Progress {
   int pageCount = 0;
   bool hasPageCount = false;
 };
+
+namespace detail {
+
+struct ProgressWriteContext {
+  uint16_t spineIndex;
+  uint16_t pageNumber;
+  uint16_t pageCount;
+};
+
+inline bool validateProgressFile(const char* path, const void*) {
+  HalFile file;
+  if (!Storage.openFileForRead("ERS", path, file)) return false;
+  const uint64_t size = file.fileSize64();
+  file.close();
+  return size == 4 || size == 6;
+}
+
+inline bool writeProgressFile(HalFile& file, const void* context) {
+  const auto* progress = static_cast<const ProgressWriteContext*>(context);
+  const uint8_t data[6] = {
+      static_cast<uint8_t>(progress->spineIndex), static_cast<uint8_t>(progress->spineIndex >> 8),
+      static_cast<uint8_t>(progress->pageNumber), static_cast<uint8_t>(progress->pageNumber >> 8),
+      static_cast<uint8_t>(progress->pageCount),  static_cast<uint8_t>(progress->pageCount >> 8),
+  };
+  const size_t written = file.write(data, sizeof(data));
+  if (written == sizeof(data)) return true;
+  LOG_ERR("ERS", "Short write saving progress: %u/%u bytes", static_cast<unsigned>(written),
+          static_cast<unsigned>(sizeof(data)));
+  return false;
+}
+
+}  // namespace detail
 
 inline bool readProgressFile(const char* moduleName, const std::string& path, Progress& progress) {
   if (!Storage.exists(path.c_str())) {
@@ -51,11 +84,18 @@ inline bool readProgressFile(const char* moduleName, const std::string& path, Pr
 
 inline bool loadProgress(const Epub& epub, Progress& progress, const char* moduleName = "ERS") {
   const std::string progressPath = epub.getCachePath() + "/progress.bin";
+  // Cache paths are dynamic, so these cold-path strings cannot use a safely bounded stack buffer.
+  const std::string tmpPath = progressPath + ".tmp";
+  const std::string backupPath = progressPath + ".bak";
+  const AtomicFile::Paths paths{progressPath.c_str(), tmpPath.c_str(), backupPath.c_str()};
+  if (!AtomicFile::recover(moduleName, paths, detail::validateProgressFile)) {
+    LOG_ERR(moduleName, "Could not recover progress file before load");
+  }
+
   if (readProgressFile(moduleName, progressPath, progress)) {
     return true;
   }
 
-  const std::string backupPath = progressPath + ".bak";
   if (readProgressFile(moduleName, backupPath, progress)) {
     LOG_DBG("ERS", "Recovered progress from backup");
     return true;
@@ -71,62 +111,14 @@ inline bool saveProgress(Epub& epub, int spineIndex, int pageNumber, int pageCou
     return false;
   }
   const std::string progressPath = epub.getCachePath() + "/progress.bin";
+  // Cache paths are dynamic, so these cold-path strings cannot use a safely bounded stack buffer.
   const std::string tmpPath = progressPath + ".tmp";
   const std::string backupPath = progressPath + ".bak";
-
-  if (Storage.exists(tmpPath.c_str()) && !Storage.remove(tmpPath.c_str())) {
-    LOG_ERR("ERS", "Could not remove stale progress temp file");
-    return false;
-  }
-
-  FsFile f;
-  if (!Storage.openFileForWrite("ERS", tmpPath, f)) {
-    LOG_ERR("ERS", "Could not open progress temp file for write!");
-    return false;
-  }
-  uint8_t data[6];
-  data[0] = spineIndex & 0xFF;
-  data[1] = (spineIndex >> 8) & 0xFF;
-  data[2] = pageNumber & 0xFF;
-  data[3] = (pageNumber >> 8) & 0xFF;
-  data[4] = pageCount & 0xFF;
-  data[5] = (pageCount >> 8) & 0xFF;
-  const size_t written = f.write(data, sizeof(data));
-  if (written != sizeof(data)) {
-    LOG_ERR("ERS", "Short write saving progress: %u/%u bytes", (unsigned)written, (unsigned)sizeof(data));
-    f.close();
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-  f.flush();
-  if (!f.sync()) {
-    LOG_ERR("ERS", "Failed to sync progress temp file");
-    f.close();
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-  if (!f.close()) {
-    LOG_ERR("ERS", "Failed to close progress temp file");
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-
-  if (Storage.exists(backupPath.c_str()) && !Storage.remove(backupPath.c_str())) {
-    LOG_ERR("ERS", "Could not remove old progress backup");
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-  if (Storage.exists(progressPath.c_str()) && !Storage.rename(progressPath.c_str(), backupPath.c_str())) {
-    LOG_ERR("ERS", "Could not rotate progress backup");
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-  if (!Storage.rename(tmpPath.c_str(), progressPath.c_str())) {
-    LOG_ERR("ERS", "Could not replace progress file");
-    if (Storage.exists(backupPath.c_str()) && !Storage.exists(progressPath.c_str())) {
-      Storage.rename(backupPath.c_str(), progressPath.c_str());
-    }
-    Storage.remove(tmpPath.c_str());
+  const AtomicFile::Paths paths{progressPath.c_str(), tmpPath.c_str(), backupPath.c_str()};
+  const detail::ProgressWriteContext context{static_cast<uint16_t>(spineIndex), static_cast<uint16_t>(pageNumber),
+                                             static_cast<uint16_t>(pageCount)};
+  if (!AtomicFile::write("ERS", paths, detail::writeProgressFile, detail::validateProgressFile, &context)) {
+    LOG_ERR("ERS", "Could not atomically save progress file");
     return false;
   }
   LOG_DBG("ERS", "Progress saved: spine=%d page=%d", spineIndex, pageNumber);

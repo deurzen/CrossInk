@@ -6,7 +6,7 @@ Implemented foundation:
 
 - Phase 0 host and simulator build blockers are repaired in the custom branch.
 - `lib/AtomicFile` provides the first no-heap, callback-based old-or-new replacement primitive with host power-cut fault injection.
-- Per-book `stats_v5.bin` is the first migrated store; bookmarks, clippings, progress, reader settings, JSON stores, journals, and Device Sync transport remain pending.
+- Per-book `stats_v5.bin` and EPUB `progress.bin` use the new primitive; bookmarks, clippings, reader settings, JSON stores, journals, and Device Sync transport remain pending.
 
 Target devices: Xteink X3 and X4 (ESP32-C3, no PSRAM, SD-backed storage).
 
