@@ -3,10 +3,13 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "Crc32.h"
+#include "DefinitionPager.h"
 #include "DictionaryPackage.h"
 
 namespace {
@@ -103,6 +106,25 @@ bool openFixture(const Fixture& fixture, DictionaryPackage& package, PackageErro
   return package.open(sourceFor(fixture.meta), sourceFor(fixture.lexemes), sourceFor(fixture.headwords),
                       sourceFor(fixture.entries), error);
 }
+
+void replaceFirstEntry(Fixture& fixture, const std::vector<std::pair<uint8_t, std::string_view>>& fields) {
+  fixture.entries.assign({1, 0, static_cast<uint8_t>(fields.size()), 0});
+  for (const auto& [type, text] : fields) {
+    fixture.entries.push_back(type);
+    fixture.entries.push_back(0);
+    fixture.entries.push_back(static_cast<uint8_t>(text.size()));
+    fixture.entries.push_back(static_cast<uint8_t>(text.size() >> 8U));
+    fixture.entries.insert(fixture.entries.end(), text.begin(), text.end());
+  }
+  writeU32(fixture.lexemes, 8, fixture.entries.size());
+  fixture.lexemes.resize(dictionary::kLexemeRecordSize);
+  writeU32(fixture.meta, 44, 1);
+  writeU32(fixture.meta, 52, fixture.lexemes.size());
+  writeU32(fixture.meta, 60, fixture.entries.size());
+  refreshMetaCrc(fixture);
+}
+
+int measuredBytes(void*, const std::string_view text) { return static_cast<int>(text.size()); }
 
 }  // namespace
 
@@ -239,4 +261,88 @@ TEST(DictionaryPackage, ValidatesFilesWithBoundedReusableScratch) {
   EXPECT_FALSE(
       dictionary::validateSourceCrc(sourceFor(fixture.entries), expected, scratch.data(), scratch.size(), error));
   EXPECT_EQ(error, PackageError::BAD_FILE_CRC);
+}
+
+TEST(DefinitionPager, StreamsWrappedPagesAcrossEntryFields) {
+  Fixture fixture = makeFixture();
+  replaceFirstEntry(fixture, {{2, "verb"}, {1, "one two three four five six"}, {3, "an example"}});
+  DictionaryPackage package;
+  PackageError packageError;
+  ASSERT_TRUE(openFixture(fixture, package, packageError));
+
+  dictionary::LexemeRecord lexeme;
+  dictionary::EntrySlice entry;
+  ASSERT_TRUE(package.readLexeme(0, lexeme, packageError));
+  ASSERT_TRUE(package.getEntrySlice(lexeme, entry, packageError));
+
+  dictionary::definition::Pager pager;
+  dictionary::definition::Page page;
+  dictionary::definition::PagerError error;
+  const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
+  ASSERT_TRUE(pager.load(package, entry, {}, measurer, 7, page, error))
+      << dictionary::definition::pagerErrorName(error);
+
+  ASSERT_GE(page.lineCount, 6);
+  EXPECT_EQ(page.lineText(0), "verb");
+  EXPECT_EQ(page.lines[0].fieldType, 2);
+  EXPECT_TRUE(page.lines[0].fieldStart);
+  EXPECT_EQ(page.lineText(1), "one two");
+  EXPECT_EQ(page.lines[1].fieldType, 1);
+  EXPECT_TRUE(page.lines[1].fieldStart);
+  EXPECT_EQ(page.lineText(page.lineCount - 1), "example");
+  EXPECT_FALSE(page.hasNext);
+}
+
+TEST(DefinitionPager, ReturnsBoundedContinuationCursorWithoutMaterializingEntry) {
+  Fixture fixture = makeFixture();
+  std::string text;
+  for (int i = 0; i < 900; ++i) text += "word ";
+  replaceFirstEntry(fixture, {{1, text}});
+  DictionaryPackage package;
+  PackageError packageError;
+  ASSERT_TRUE(openFixture(fixture, package, packageError));
+
+  dictionary::LexemeRecord lexeme;
+  dictionary::EntrySlice entry;
+  ASSERT_TRUE(package.readLexeme(0, lexeme, packageError));
+  ASSERT_TRUE(package.getEntrySlice(lexeme, entry, packageError));
+
+  dictionary::definition::Pager pager;
+  dictionary::definition::Page first;
+  dictionary::definition::PagerError error;
+  const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
+  ASSERT_TRUE(pager.load(package, entry, {}, measurer, 20, first, error));
+  ASSERT_TRUE(first.hasNext);
+  EXPECT_LE(first.textBytesUsed, dictionary::definition::kPageTextBytes);
+  EXPECT_LE(first.lineCount, dictionary::definition::kMaxPageLines);
+
+  dictionary::definition::Page second;
+  ASSERT_TRUE(pager.load(package, entry, first.next, measurer, 20, second, error));
+  EXPECT_GT(second.lineCount, 0);
+  EXPECT_GT(second.next.fieldByteOffset, first.next.fieldByteOffset);
+}
+
+TEST(DefinitionPager, RejectsInvalidCursorAndUtf8) {
+  Fixture fixture = makeFixture();
+  replaceFirstEntry(fixture, {{1, std::string_view("bad\xC3", 4)}});
+  DictionaryPackage package;
+  PackageError packageError;
+  ASSERT_TRUE(openFixture(fixture, package, packageError));
+
+  dictionary::LexemeRecord lexeme;
+  dictionary::EntrySlice entry;
+  ASSERT_TRUE(package.readLexeme(0, lexeme, packageError));
+  ASSERT_TRUE(package.getEntrySlice(lexeme, entry, packageError));
+
+  dictionary::definition::Pager pager;
+  dictionary::definition::Page page;
+  dictionary::definition::PagerError error;
+  const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
+  dictionary::definition::Cursor invalid;
+  invalid.fieldIndex = 2;
+  EXPECT_FALSE(pager.load(package, entry, invalid, measurer, 20, page, error));
+  EXPECT_EQ(error, dictionary::definition::PagerError::CURSOR_INVALID);
+
+  EXPECT_FALSE(pager.load(package, entry, {}, measurer, 20, page, error));
+  EXPECT_EQ(error, dictionary::definition::PagerError::INVALID_UTF8);
 }
