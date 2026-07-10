@@ -1,6 +1,8 @@
 add_executable(BookLanguageFormatTest
   BookLanguageFormatTest.cpp
+  BookLanguageReaderTest.cpp
   ${REPO_ROOT}/lib/Dictionary/BookLanguageFormat.cpp
+  ${REPO_ROOT}/lib/Dictionary/BookLanguageReader.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
 )
 
