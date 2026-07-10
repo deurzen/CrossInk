@@ -303,6 +303,31 @@ void removeCaptureFile(const char* const directory, const uint32_t id, const cha
   }
 }
 
+bool isValidContextFile(const char* const directory, const uint32_t id) {
+  char path[PATH_CAPACITY];
+  if (!buildCapturePath(directory, id, "ctx", false, path, sizeof(path))) return false;
+  HalFile file;
+  if (!Storage.openFileForRead("WIN", path, file)) return false;
+
+  char magic[sizeof(CONTEXT_MAGIC) - 1];
+  uint8_t version = 0;
+  uint8_t flags = 0;
+  uint32_t storedId = 0;
+  int32_t spineIndex = -1;
+  uint32_t currentPage = 0;
+  uint32_t totalPages = 0;
+  uint8_t progress = 0;
+  uint32_t textLength = 0;
+  if (file.read(magic, sizeof(magic)) != static_cast<int>(sizeof(magic)) ||
+      std::memcmp(magic, CONTEXT_MAGIC, sizeof(magic)) != 0 || !readPod(file, version) || version != FORMAT_VERSION ||
+      !readPod(file, flags) || !readPod(file, storedId) || storedId != id || !readPod(file, spineIndex) ||
+      !readPod(file, currentPage) || !readPod(file, totalPages) || !readPod(file, progress) || progress > 100 ||
+      !skipString(file, MAX_CHAPTER_BYTES) || !readPod(file, textLength) || textLength > MAX_TEXT_BYTES) {
+    return false;
+  }
+  return file.position() + textLength <= file.size();
+}
+
 struct ContextScanResult {
   uint32_t count = 0;
   uint32_t latestId = 0;
@@ -322,6 +347,8 @@ bool scanContexts(const char* const directory, const uint32_t targetId, ContextS
     if (entry.getName(name, sizeof(name)) == 0) continue;
     uint32_t candidate = 0;
     if (!parseContextId(name, candidate)) continue;
+    entry.close();  // validation reopens the context file.
+    if (!isValidContextFile(directory, candidate)) continue;
 
     char screenshotPath[PATH_CAPACITY];
     if (!buildCapturePath(directory, candidate, "bmp", false, screenshotPath, sizeof(screenshotPath)) ||
