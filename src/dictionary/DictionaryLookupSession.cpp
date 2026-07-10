@@ -2,6 +2,7 @@
 
 #include <HalStorage.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -123,38 +124,83 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
   return true;
 }
 
-size_t Session::requiredSuppressionBytes() const {
-  if (!readersOpen_) return 0;
-  return (book_.header().localLemmaCount + 7U) / 8U;
-}
-
-bool Session::loadLearningState(uint8_t* suppressionBitset, const size_t capacity, SessionError& error) {
+bool Session::openLearningState(SessionError& error) {
   stateOpen_ = false;
   // Learning-state callbacks open their own files, so release the package
   // reader first to preserve the hardware's single-reader invariant.
   sourceReader_.close();
   stateIoMetrics_.reset();
   error = SessionError::NONE;
-  if (!readersOpen_ || !suppressionBitset || capacity < requiredSuppressionBytes()) {
+  if (!readersOpen_) {
     error = SessionError::INVALID_INPUT;
     return false;
   }
 
-  const auto storage = language_state_storage::backend(&stateIoMetrics_);
   lexeme_state::StateError stateError = lexeme_state::StateError::NONE;
-  if (!state_.open(storage, language_state_storage::ROOT_PATH, bundleUuid_, package_.metadata().lexemeCount,
-                   stateError)) {
+  if (!state_.open(language_state_storage::backend(&stateIoMetrics_), language_state_storage::ROOT_PATH, bundleUuid_,
+                   package_.metadata().lexemeCount, stateError)) {
     error = SessionError::STATE_FAILED;
     return false;
   }
+  stateOpen_ = true;
+  return true;
+}
 
-  suppression::ProjectionError projectionError = suppression::ProjectionError::NONE;
-  if (!projection_.loadOrRebuild(storage, cachePath_, bundleUuid_, suppression::localLemmaSource(book_), state_,
-                                 suppressionBitset, capacity, projectionError)) {
-    error = SessionError::PROJECTION_FAILED;
+bool Session::filterShortlist(page_shortlist::Shortlist& shortlist, SessionError& error) {
+  error = SessionError::NONE;
+  if (!readersOpen_ || !stateOpen_ || shortlist.count > page_shortlist::kMaxItems) {
+    error = SessionError::INVALID_INPUT;
     return false;
   }
-  stateOpen_ = true;
+
+  size_t referenceCount = 0;
+  for (uint16_t itemIndex = 0; itemIndex < shortlist.count; ++itemIndex) {
+    const auto& item = shortlist.items[itemIndex];
+    if (item.analysisCount == 0 || item.analysisCount > page_shortlist::kMaxAnalysesPerItem) {
+      error = SessionError::BOOK_ARTIFACT_INVALID;
+      return false;
+    }
+    for (uint8_t analysis = 0; analysis < item.analysisCount; ++analysis) {
+      const size_t flatIndex = static_cast<size_t>(itemIndex) * page_shortlist::kMaxAnalysesPerItem + analysis;
+      if (!globalLexemeId(item.localLemmaIds[analysis], shortlistGlobalIds_[flatIndex])) {
+        error = SessionError::BOOK_ARTIFACT_INVALID;
+        return false;
+      }
+      shortlistStatusOrder_[referenceCount++] = static_cast<uint16_t>(flatIndex);
+    }
+  }
+  sourceReader_.close();
+
+  std::sort(shortlistStatusOrder_, shortlistStatusOrder_ + referenceCount,
+            [this](const uint16_t left, const uint16_t right) {
+              return shortlistGlobalIds_[left] < shortlistGlobalIds_[right];
+            });
+  bool allSuppressed[page_shortlist::kMaxItems]{};
+  std::fill(allSuppressed, allSuppressed + shortlist.count, true);
+  for (size_t index = 0; index < referenceCount; ++index) {
+    const uint16_t flatIndex = shortlistStatusOrder_[index];
+    uint8_t packed = 0;
+    lexeme_state::StateError stateError = lexeme_state::StateError::NONE;
+    const uint32_t globalId = shortlistGlobalIds_[flatIndex];
+    if (!state_.readPackedByte(globalId / 2U, packed, stateError)) {
+      error = SessionError::STATE_FAILED;
+      return false;
+    }
+    const uint8_t raw = (globalId & 1U) == 0 ? packed & 0x0FU : packed >> 4U;
+    if (raw > static_cast<uint8_t>(lexeme_state::Status::ImplicitlyFamiliar)) {
+      error = SessionError::STATE_FAILED;
+      return false;
+    }
+    if (!lexeme_state::isSuppressed(static_cast<lexeme_state::Status>(raw))) {
+      allSuppressed[flatIndex / page_shortlist::kMaxAnalysesPerItem] = false;
+    }
+  }
+
+  uint16_t output = 0;
+  for (uint16_t input = 0; input < shortlist.count; ++input) {
+    if (!allSuppressed[input]) shortlist.items[output++] = shortlist.items[input];
+  }
+  shortlist.count = output;
   return true;
 }
 
@@ -180,11 +226,6 @@ bool Session::setStatus(const uint16_t localLemmaId, const lexeme_state::Status 
   lexeme_state::StateError stateError = lexeme_state::StateError::NONE;
   if (!state_.set(globalId, status, stateError)) {
     error = SessionError::STATE_FAILED;
-    return false;
-  }
-  suppression::ProjectionError projectionError = suppression::ProjectionError::NONE;
-  if (!projection_.patch(localLemmaId, status, state_.generation(), projectionError)) {
-    error = SessionError::PROJECTION_FAILED;
     return false;
   }
   return true;

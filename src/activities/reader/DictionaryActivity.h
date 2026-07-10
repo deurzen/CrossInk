@@ -12,8 +12,7 @@ class DictionaryActivity final : public Activity {
  public:
   DictionaryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                      std::unique_ptr<dictionary::lookup::Session> session,
-                     std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist,
-                     std::unique_ptr<uint8_t[]> suppressionBitset, unsigned long lookupStartedAt);
+                     std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist, unsigned long lookupStartedAt);
 
   void onEnter() override;
   void onExit() override;
@@ -25,8 +24,6 @@ class DictionaryActivity final : public Activity {
   enum class Mode : uint8_t { Shortlist, Definition, Status };
   std::unique_ptr<dictionary::lookup::Session> session_;
   std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist_;
-  // Keeps the caller-sized projection storage alive for the session lifetime.
-  std::unique_ptr<uint8_t[]> suppressionBitset_;
   std::unique_ptr<dictionary::definition::Pager> pager_;
   std::unique_ptr<dictionary::definition::Page> definitionPage_;
   dictionary::definition::Cursor definitionPageStart_{};

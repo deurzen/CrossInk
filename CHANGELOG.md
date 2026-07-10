@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Dictionary lookup now checks learning status only for the bounded visible shortlist instead of rebuilding a whole-book suppression projection.
 - Dictionary shortlist matching now merges sorted visible tokens with candidate hashes and hydrates matches in surface-table order, reducing random SD reads.
 - Dictionary lookup now reads shard, candidate, and matched-surface records through bounded block caches instead of issuing one SD read per tiny record.
 - Dictionary lookup now reuses one switching SD reader instead of reopening a file for every small record read, reducing word-list and definition latency on hardware.

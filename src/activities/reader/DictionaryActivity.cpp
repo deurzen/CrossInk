@@ -66,12 +66,10 @@ dictionary::lexeme_state::Status statusValue(const uint8_t index) {
 DictionaryActivity::DictionaryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                        std::unique_ptr<dictionary::lookup::Session> session,
                                        std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist,
-                                       std::unique_ptr<uint8_t[]> suppressionBitset,
                                        const unsigned long lookupStartedAt)
     : Activity("Dictionary", renderer, mappedInput),
       session_(std::move(session)),
       shortlist_(std::move(shortlist)),
-      suppressionBitset_(std::move(suppressionBitset)),
       lookupStartedAt_(lookupStartedAt) {}
 
 void DictionaryActivity::onEnter() {
@@ -89,7 +87,6 @@ void DictionaryActivity::onExit() {
   pager_.reset();
   shortlist_.reset();
   session_.reset();
-  suppressionBitset_.reset();
   Activity::onExit();
 }
 
@@ -267,7 +264,10 @@ void DictionaryActivity::saveSelectedStatus() {
 }
 
 void DictionaryActivity::returnToShortlist() {
-  session_->projection().filter(*shortlist_);
+  dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
+  if (!session_->filterShortlist(*shortlist_, error)) {
+    LOG_ERR("DICT", "Shortlist status filter failed: %s", dictionary::lookup::sessionErrorName(error));
+  }
   if (shortlist_->count == 0) {
     finish();
     return;

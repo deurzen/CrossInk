@@ -4,7 +4,7 @@
 #include <DictionaryPackage.h>
 #include <HalStorage.h>
 #include <LexemeStateStore.h>
-#include <LocalSuppressionProjection.h>
+#include <PageShortlist.h>
 
 #include <array>
 #include <cstddef>
@@ -41,17 +41,15 @@ class Session {
 
   bool openReaders(const char* languageArtifactPath, const char* bookCachePath,
                    const std::array<uint8_t, 16>& expectedBundleUuid, SessionError& error);
-  bool loadLearningState(uint8_t* suppressionBitset, size_t capacity, SessionError& error);
+  bool openLearningState(SessionError& error);
+  bool filterShortlist(page_shortlist::Shortlist& shortlist, SessionError& error);
 
   bool globalLexemeId(uint16_t localLemmaId, uint32_t& globalLexemeId) const;
   bool setStatus(uint16_t localLemmaId, lexeme_state::Status status, SessionError& error);
   void closeSourceFile() { sourceReader_.close(); }
 
-  size_t requiredSuppressionBytes() const;
   const book_language::BookLanguageReader& book() const { return book_; }
   const DictionaryPackage& package() const { return package_; }
-  const suppression::Projection& projection() const { return projection_; }
-  suppression::Projection& projection() { return projection_; }
   uint32_t stateGeneration() const { return state_.generation(); }
   const io_metrics::Counters& sourceIoMetrics() const { return sourceIoMetrics_; }
   const io_metrics::Counters& stateIoMetrics() const { return stateIoMetrics_; }
@@ -75,7 +73,8 @@ class Session {
   book_language::BookLanguageReader book_{};
   DictionaryPackage package_{};
   lexeme_state::Store state_{};
-  suppression::Projection projection_{};
+  uint32_t shortlistGlobalIds_[page_shortlist::kMaxItems * page_shortlist::kMaxAnalysesPerItem]{};
+  uint16_t shortlistStatusOrder_[page_shortlist::kMaxItems * page_shortlist::kMaxAnalysesPerItem]{};
   io_metrics::Counters sourceIoMetrics_{};
   io_metrics::Counters stateIoMetrics_{};
   io::SwitchingFileReader<HalFile> sourceReader_;

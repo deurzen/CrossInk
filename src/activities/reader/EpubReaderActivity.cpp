@@ -3144,7 +3144,6 @@ void EpubReaderActivity::startDictionaryLookup() {
   LookupOutcome outcome = LookupOutcome::Failed;
   std::unique_ptr<dictionary::lookup::Session> session;
   std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist;
-  std::unique_ptr<uint8_t[]> suppressionBitset;
 
   {
     RenderLock lock(*this);
@@ -3195,42 +3194,37 @@ void EpubReaderActivity::startDictionaryLookup() {
                       millis() - lookupStartedAt, static_cast<unsigned long>(session->book().header().localLemmaCount),
                       static_cast<unsigned long>(session->package().metadata().lexemeCount));
               logDictionaryIoMetrics("Reader open", session->sourceIoMetrics());
-              const size_t suppressionBytes = session->requiredSuppressionBytes();
-              // Allocate exactly one bit per local lemma (maximum 4,096 bytes),
-              // rather than retaining the much larger global status table.
-              suppressionBitset = makeUniqueNoThrow<uint8_t[]>(suppressionBytes);
-              if (!suppressionBitset) {
-                LOG_ERR("DICT", "OOM: suppression projection (%u bytes)", static_cast<unsigned>(suppressionBytes));
+              // The 3.6 KB fixed shortlist outlives this function in the
+              // activity, so stack/static storage is unsuitable.
+              shortlist = makeUniqueNoThrow<dictionary::page_shortlist::Shortlist>();
+              if (!shortlist) {
+                LOG_ERR("DICT", "OOM: page shortlist (%u bytes)",
+                        static_cast<unsigned>(sizeof(dictionary::page_shortlist::Shortlist)));
               } else {
-                LOG_INF("DICT", "Loading learning state: projection=%u bytes", static_cast<unsigned>(suppressionBytes));
-                const unsigned long learningStateStartedAt = millis();
-                if (!session->loadLearningState(suppressionBitset.get(), suppressionBytes, sessionError)) {
-                  LOG_ERR("DICT", "Learning state failed: %s", dictionary::lookup::sessionErrorName(sessionError));
+                dictionary::page_shortlist::GenerateError generateError =
+                    dictionary::page_shortlist::GenerateError::NONE;
+                const unsigned long shortlistStartedAt = millis();
+                if (!generator->generate(session->book(), firstShard, lastShard, *shortlist, generateError)) {
+                  LOG_ERR("DICT", "Shortlist generation failed: %s",
+                          dictionary::page_shortlist::generateErrorName(generateError));
                 } else {
-                  LOG_INF("DICT", "Learning state ready: %lu ms total=%lu ms", millis() - learningStateStartedAt,
-                          millis() - lookupStartedAt);
-                  logDictionaryIoMetrics("Learning state", session->stateIoMetrics());
-                  // The 3.6 KB fixed shortlist outlives this function in the
-                  // activity, so stack/static storage is unsuitable.
-                  shortlist = makeUniqueNoThrow<dictionary::page_shortlist::Shortlist>();
-                  if (!shortlist) {
-                    LOG_ERR("DICT", "OOM: page shortlist (%u bytes)",
-                            static_cast<unsigned>(sizeof(dictionary::page_shortlist::Shortlist)));
+                  LOG_INF("DICT", "Raw shortlist ready: %lu ms total=%lu ms candidates=%u%s",
+                          millis() - shortlistStartedAt, millis() - lookupStartedAt,
+                          static_cast<unsigned>(shortlist->count), shortlist->truncated ? " truncated" : "");
+                  logDictionaryIoMetrics("Shortlist cumulative", session->sourceIoMetrics());
+                  if (shortlist->count == 0) {
+                    outcome = LookupOutcome::NoWords;
                   } else {
-                    dictionary::page_shortlist::GenerateError generateError =
-                        dictionary::page_shortlist::GenerateError::NONE;
-                    const unsigned long shortlistStartedAt = millis();
-                    if (!generator->generate(session->book(), firstShard, lastShard, *shortlist, generateError)) {
-                      LOG_ERR("DICT", "Shortlist generation failed: %s",
-                              dictionary::page_shortlist::generateErrorName(generateError));
+                    const unsigned long learningStateStartedAt = millis();
+                    if (!session->openLearningState(sessionError) ||
+                        !session->filterShortlist(*shortlist, sessionError)) {
+                      LOG_ERR("DICT", "Learning state failed: %s", dictionary::lookup::sessionErrorName(sessionError));
                     } else {
-                      session->projection().filter(*shortlist);
-                      LOG_INF("DICT", "Shortlist ready: %lu ms total=%lu ms words=%u tokens=%u candidates=%u%s",
-                              millis() - shortlistStartedAt, millis() - lookupStartedAt,
+                      LOG_INF("DICT", "Shortlist status filter: %lu ms total=%lu ms words=%u tokens=%u candidates=%u",
+                              millis() - learningStateStartedAt, millis() - lookupStartedAt,
                               static_cast<unsigned>(collected.renderedWordsVisited),
-                              static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned>(shortlist->count),
-                              shortlist->truncated ? " truncated" : "");
-                      logDictionaryIoMetrics("Shortlist cumulative", session->sourceIoMetrics());
+                              static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned>(shortlist->count));
+                      logDictionaryIoMetrics("Learning state", session->stateIoMetrics());
                       outcome = shortlist->count == 0 ? LookupOutcome::NoWords : LookupOutcome::Ready;
                     }
                   }
@@ -3256,8 +3250,8 @@ void EpubReaderActivity::startDictionaryLookup() {
     return;
   }
 
-  auto dictionaryActivity = makeUniqueNoThrow<DictionaryActivity>(
-      renderer, mappedInput, std::move(session), std::move(shortlist), std::move(suppressionBitset), lookupStartedAt);
+  auto dictionaryActivity = makeUniqueNoThrow<DictionaryActivity>(renderer, mappedInput, std::move(session),
+                                                                  std::move(shortlist), lookupStartedAt);
   if (!dictionaryActivity) {
     LOG_ERR("DICT", "OOM: dictionary activity (%u bytes)", static_cast<unsigned>(sizeof(DictionaryActivity)));
     {
