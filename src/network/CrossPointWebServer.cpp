@@ -170,6 +170,80 @@ void sendJsonString(WebServer* const server, const std::string_view value) {
   server->sendContent("\"");
 }
 
+bool sendJsonFileString(WebServer* const server, HalFile& file, size_t remaining) {
+  server->sendContent("\"");
+  uint8_t input[96];
+  char output[96];
+  size_t outputUsed = 0;
+  const auto flush = [&]() {
+    if (outputUsed == 0) return;
+    output[outputUsed] = '\0';
+    server->sendContent(output);
+    outputUsed = 0;
+  };
+
+  while (remaining > 0) {
+    const size_t requested = std::min(remaining, sizeof(input));
+    const int bytesRead = file.read(input, requested);
+    if (bytesRead <= 0) return false;
+    for (int index = 0; index < bytesRead; ++index) {
+      const unsigned char byte = input[index];
+      char escaped[7] = {};
+      size_t escapedLength = 0;
+      switch (byte) {
+        case '\"':
+        case '\\':
+          escaped[0] = '\\';
+          escaped[1] = static_cast<char>(byte);
+          escapedLength = 2;
+          break;
+        case '\b':
+          escaped[0] = '\\';
+          escaped[1] = 'b';
+          escapedLength = 2;
+          break;
+        case '\f':
+          escaped[0] = '\\';
+          escaped[1] = 'f';
+          escapedLength = 2;
+          break;
+        case '\n':
+          escaped[0] = '\\';
+          escaped[1] = 'n';
+          escapedLength = 2;
+          break;
+        case '\r':
+          escaped[0] = '\\';
+          escaped[1] = 'r';
+          escapedLength = 2;
+          break;
+        case '\t':
+          escaped[0] = '\\';
+          escaped[1] = 't';
+          escapedLength = 2;
+          break;
+        default:
+          if (byte < 0x20) {
+            snprintf(escaped, sizeof(escaped), "\\u%04x", byte);
+            escapedLength = 6;
+          } else {
+            escaped[0] = static_cast<char>(byte);
+            escapedLength = 1;
+          }
+          break;
+      }
+      if (outputUsed + escapedLength >= sizeof(output)) flush();
+      memcpy(output + outputUsed, escaped, escapedLength);
+      outputUsed += escapedLength;
+    }
+    remaining -= static_cast<size_t>(bytesRead);
+    esp_task_wdt_reset();
+  }
+  flush();
+  server->sendContent("\"");
+  return true;
+}
+
 bool parseUint32(const String& value, uint32_t& output) {
   if (value.isEmpty() || value.length() > 8) return false;
   uint32_t parsed = 0;
@@ -833,6 +907,13 @@ void CrossPointWebServer::handleWordInboxContext() const {
     return;
   }
 
+  HalFile textFile;
+  const std::string_view bookKey(book.c_str(), book.length());
+  const bool textReady = context.hasText && WordInboxStore::openContextText(bookKey, context, textFile);
+  if (context.hasText && !textReady) {
+    LOG_ERR("WEB", "Could not open Word Inbox context text");
+  }
+
   server->setContentLength(CONTENT_LENGTH_UNKNOWN);
   server->send(200, "application/json", "");
   char fields[192];
@@ -845,10 +926,19 @@ void CrossPointWebServer::handleWordInboxContext() const {
            "\"spineIndex\":%ld,\"page\":%lu,\"totalPages\":%lu,\"progress\":%u,\"hasText\":%s,"
            "\"textTruncated\":%s,\"hasImage\":%s,\"chapter\":",
            static_cast<long>(context.spineIndex), static_cast<unsigned long>(context.currentPage),
-           static_cast<unsigned long>(context.totalPages), context.progressPercent, context.hasText ? "true" : "false",
+           static_cast<unsigned long>(context.totalPages), context.progressPercent, textReady ? "true" : "false",
            context.textTruncated ? "true" : "false", context.hasScreenshot ? "true" : "false");
   server->sendContent(fields);
   sendJsonString(server.get(), context.chapterTitle);
+  server->sendContent(",\"text\":");
+  if (textReady) {
+    if (!sendJsonFileString(server.get(), textFile, context.textLength)) {
+      LOG_ERR("WEB", "Failed while streaming Word Inbox context JSON");
+    }
+    textFile.close();
+  } else {
+    server->sendContent("null");
+  }
   server->sendContent("}");
   server->sendContent("");
 }
