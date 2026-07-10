@@ -57,7 +57,7 @@ class Generator {
   bool addRenderedWord(std::string_view word, bool insertedTrailingHyphen);
   void finishRenderedPage();
   bool generate(const book_language::BookLanguageReader& reader, uint32_t firstShard, uint32_t lastShard,
-                Shortlist& output, GenerateError& error) const;
+                Shortlist& output, GenerateError& error);
 
   size_t visibleTokenCount() const { return tokenCount_; }
   bool visibleTokensTruncated() const { return tokensTruncated_; }

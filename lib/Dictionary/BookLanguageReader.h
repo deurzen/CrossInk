@@ -88,13 +88,19 @@ class BookLanguageReader {
   // bounded while avoiding one read call per 16-byte record.
   mutable uint8_t shardCache_[256]{};
   mutable uint8_t candidateCache_[512]{};
-  mutable uint8_t surfaceCache_[512]{};
+  mutable uint8_t surfaceRecordCache_[256]{};
+  mutable uint8_t surfaceDetailCache_[128]{};
+  mutable uint8_t surfaceStringCache_[128]{};
   mutable uint32_t shardCacheStart_ = UINT32_MAX;
   mutable uint32_t candidateCacheStart_ = UINT32_MAX;
-  mutable uint32_t surfaceCacheStart_ = UINT32_MAX;
+  mutable uint32_t surfaceRecordCacheStart_ = UINT32_MAX;
+  mutable uint32_t surfaceDetailCacheStart_ = UINT32_MAX;
+  mutable uint32_t surfaceStringCacheStart_ = UINT32_MAX;
   mutable uint16_t shardCacheLength_ = 0;
   mutable uint16_t candidateCacheLength_ = 0;
-  mutable uint16_t surfaceCacheLength_ = 0;
+  mutable uint16_t surfaceRecordCacheLength_ = 0;
+  mutable uint16_t surfaceDetailCacheLength_ = 0;
+  mutable uint16_t surfaceStringCacheLength_ = 0;
   // Projection rebuilds visit local lemma IDs in ascending order. Cache 64
   // contiguous records so that path-backed sources open the SD file once per
   // block instead of once per lemma.

@@ -214,13 +214,13 @@ TEST(BookLanguageReader, CachesShardCandidateAndSurfaceBlocks) {
   ASSERT_TRUE(reader.surfaceEquals(surface, "liebe", equal, error));
   ASSERT_TRUE(reader.surfaceEquals(surface, "liebe", equal, error));
   EXPECT_TRUE(equal);
-  EXPECT_EQ(source.reads, 0);
+  EXPECT_EQ(source.reads, 1);
 
   uint16_t localLemmaId = UINT16_MAX;
   source.reads = 0;
   ASSERT_TRUE(reader.readSurfaceAnalysis(surface, 0, localLemmaId, error));
   ASSERT_TRUE(reader.readSurfaceAnalysis(surface, 1, localLemmaId, error));
-  EXPECT_EQ(source.reads, 0);
+  EXPECT_EQ(source.reads, 1);
 }
 
 TEST(BookLanguageReader, RejectsMalformedSurfaceHeader) {

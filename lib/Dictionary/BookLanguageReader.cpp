@@ -55,10 +55,14 @@ bool BookLanguageReader::open(const RandomAccessSource& source, ReaderError& err
   componentCount_ = 0;
   shardCacheStart_ = UINT32_MAX;
   candidateCacheStart_ = UINT32_MAX;
-  surfaceCacheStart_ = UINT32_MAX;
+  surfaceRecordCacheStart_ = UINT32_MAX;
+  surfaceDetailCacheStart_ = UINT32_MAX;
+  surfaceStringCacheStart_ = UINT32_MAX;
   shardCacheLength_ = 0;
   candidateCacheLength_ = 0;
-  surfaceCacheLength_ = 0;
+  surfaceRecordCacheLength_ = 0;
+  surfaceDetailCacheLength_ = 0;
+  surfaceStringCacheLength_ = 0;
   localLemmaCacheFirst_ = 0;
   localLemmaCacheCount_ = 0;
   error = ReaderError::NONE;
@@ -260,8 +264,8 @@ bool BookLanguageReader::readSurface(const uint16_t localSurfaceId, SurfaceRecor
   const uint32_t relativeOffset = surfaceRecordOffset_ + localSurfaceId * kSurfaceRecordSize;
   const uint32_t offset = header_.surfaceDetailOffset + relativeOffset;
   const uint32_t sectionEnd = header_.surfaceDetailOffset + surfaceSectionSize_;
-  if (!readCached(offset, sizeof(data), sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
-                  surfaceCacheLength_, data)) {
+  if (!readCached(offset, sizeof(data), sectionEnd, surfaceRecordCache_, sizeof(surfaceRecordCache_),
+                  surfaceRecordCacheStart_, surfaceRecordCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }
@@ -306,8 +310,8 @@ bool BookLanguageReader::surfaceEquals(const SurfaceRecord& surface, const std::
   while (compared < expected.size()) {
     const size_t length = std::min(sizeof(chunk), expected.size() - compared);
     const uint32_t offset = header_.surfaceDetailOffset + stringPoolOffset_ + surface.stringOffset + compared;
-    if (!readCached(offset, length, sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
-                    surfaceCacheLength_, chunk)) {
+    if (!readCached(offset, length, sectionEnd, surfaceStringCache_, sizeof(surfaceStringCache_),
+                    surfaceStringCacheStart_, surfaceStringCacheLength_, chunk)) {
       error = ReaderError::READ_FAILED;
       return false;
     }
@@ -334,8 +338,8 @@ bool BookLanguageReader::readSurfaceAnalysis(const SurfaceRecord& surface, const
   const uint32_t relativeOffset = analysisOffset_ + (surface.firstAnalysis + index) * sizeof(uint16_t);
   const uint32_t offset = header_.surfaceDetailOffset + relativeOffset;
   const uint32_t sectionEnd = header_.surfaceDetailOffset + surfaceSectionSize_;
-  if (!readCached(offset, sizeof(data), sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
-                  surfaceCacheLength_, data)) {
+  if (!readCached(offset, sizeof(data), sectionEnd, surfaceDetailCache_, sizeof(surfaceDetailCache_),
+                  surfaceDetailCacheStart_, surfaceDetailCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }
@@ -364,8 +368,8 @@ bool BookLanguageReader::readSurfaceComponent(const SurfaceRecord& surface, cons
   const uint32_t relativeOffset = componentOffset_ + (surface.firstComponent + index) * sizeof(uint16_t);
   const uint32_t offset = header_.surfaceDetailOffset + relativeOffset;
   const uint32_t sectionEnd = header_.surfaceDetailOffset + surfaceSectionSize_;
-  if (!readCached(offset, sizeof(data), sectionEnd, surfaceCache_, sizeof(surfaceCache_), surfaceCacheStart_,
-                  surfaceCacheLength_, data)) {
+  if (!readCached(offset, sizeof(data), sectionEnd, surfaceDetailCache_, sizeof(surfaceDetailCache_),
+                  surfaceDetailCacheStart_, surfaceDetailCacheLength_, data)) {
     error = ReaderError::READ_FAILED;
     return false;
   }
