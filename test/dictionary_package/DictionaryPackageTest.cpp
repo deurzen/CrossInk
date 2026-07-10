@@ -279,7 +279,7 @@ TEST(DefinitionPager, StreamsWrappedPagesAcrossEntryFields) {
   dictionary::definition::Page page;
   dictionary::definition::PagerError error;
   const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
-  ASSERT_TRUE(pager.load(package, entry, {}, measurer, 7, page, error))
+  ASSERT_TRUE(pager.load(package, entry, {}, measurer, 7, dictionary::definition::kMaxPageLines, page, error))
       << dictionary::definition::pagerErrorName(error);
 
   ASSERT_GE(page.lineCount, 6);
@@ -311,13 +311,14 @@ TEST(DefinitionPager, ReturnsBoundedContinuationCursorWithoutMaterializingEntry)
   dictionary::definition::Page first;
   dictionary::definition::PagerError error;
   const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
-  ASSERT_TRUE(pager.load(package, entry, {}, measurer, 20, first, error));
+  ASSERT_TRUE(pager.load(package, entry, {}, measurer, 20, dictionary::definition::kMaxPageLines, first, error));
   ASSERT_TRUE(first.hasNext);
   EXPECT_LE(first.textBytesUsed, dictionary::definition::kPageTextBytes);
   EXPECT_LE(first.lineCount, dictionary::definition::kMaxPageLines);
 
   dictionary::definition::Page second;
-  ASSERT_TRUE(pager.load(package, entry, first.next, measurer, 20, second, error));
+  ASSERT_TRUE(
+      pager.load(package, entry, first.next, measurer, 20, dictionary::definition::kMaxPageLines, second, error));
   EXPECT_GT(second.lineCount, 0);
   EXPECT_GT(second.next.fieldByteOffset, first.next.fieldByteOffset);
 }
@@ -340,9 +341,9 @@ TEST(DefinitionPager, RejectsInvalidCursorAndUtf8) {
   const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
   dictionary::definition::Cursor invalid;
   invalid.fieldIndex = 2;
-  EXPECT_FALSE(pager.load(package, entry, invalid, measurer, 20, page, error));
+  EXPECT_FALSE(pager.load(package, entry, invalid, measurer, 20, dictionary::definition::kMaxPageLines, page, error));
   EXPECT_EQ(error, dictionary::definition::PagerError::CURSOR_INVALID);
 
-  EXPECT_FALSE(pager.load(package, entry, {}, measurer, 20, page, error));
+  EXPECT_FALSE(pager.load(package, entry, {}, measurer, 20, dictionary::definition::kMaxPageLines, page, error));
   EXPECT_EQ(error, dictionary::definition::PagerError::INVALID_UTF8);
 }

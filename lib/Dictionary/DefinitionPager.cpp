@@ -43,13 +43,15 @@ bool Pager::readByte(const DictionaryPackage& package, const EntrySlice& entry, 
 }
 
 bool Pager::load(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
-                 const WidthMeasurer& measurer, const int maxLineWidth, Page& output, PagerError& error) {
+                 const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines, Page& output,
+                 PagerError& error) {
   output = {};
   error = PagerError::NONE;
   chunkStart_ = UINT32_MAX;
   chunkLength_ = 0;
 
-  if (!package.isOpen() || measurer.measure == nullptr || maxLineWidth <= 0) {
+  if (!package.isOpen() || measurer.measure == nullptr || maxLineWidth <= 0 || maxLines == 0 ||
+      maxLines > kMaxPageLines) {
     error = PagerError::INVALID_INPUT;
     return false;
   }
@@ -69,7 +71,7 @@ bool Pager::load(const DictionaryPackage& package, const EntrySlice& entry, cons
   }
 
   Cursor cursor = start;
-  while (cursor.fieldIndex < entryHeader.fieldCount && output.lineCount < kMaxPageLines) {
+  while (cursor.fieldIndex < entryHeader.fieldCount && output.lineCount < maxLines) {
     EntryFieldHeader field;
     if (!package.readEntryFieldHeader(entry, cursor.fieldHeaderOffset, field, packageError)) {
       error = PagerError::PACKAGE_READ_FAILED;
@@ -80,7 +82,7 @@ bool Pager::load(const DictionaryPackage& package, const EntrySlice& entry, cons
       return false;
     }
 
-    while (cursor.fieldByteOffset < field.length && output.lineCount < kMaxPageLines) {
+    while (cursor.fieldByteOffset < field.length && output.lineCount < maxLines) {
       while (cursor.fieldByteOffset < field.length) {
         uint8_t byte = 0;
         if (!readByte(package, entry, field.payloadOffset + cursor.fieldByteOffset, byte, error)) return false;

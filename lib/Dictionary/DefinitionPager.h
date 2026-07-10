@@ -57,7 +57,7 @@ enum class PagerError : uint8_t {
 class Pager {
  public:
   bool load(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
-            const WidthMeasurer& measurer, int maxLineWidth, Page& output, PagerError& error);
+            const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
 
  private:
   uint8_t chunk_[kReadChunkBytes]{};
