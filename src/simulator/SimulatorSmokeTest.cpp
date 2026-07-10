@@ -232,6 +232,10 @@ class SimulatorSmokeTest {
       inputScript.push_back(render("Reader after page forward", 4));
     }
 
+    SETTINGS.shortPwrBtn = CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX;
+    addTap(MappedInputManager::Button::Power);
+    inputScript.push_back(render("Reader after Word Inbox capture", 5));
+
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("Reader Menu opened from EPUB", 4));
 
