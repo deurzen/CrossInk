@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Dictionary EPUB compilation now merges credible case-folded analyses behind exact-case matches, preventing capitalization from hiding alternate verb or noun interpretations.
 - Ambiguous dictionary analyses now render consecutively in one bounded definition stream, with short centered dividers between analyses, subtle spacing between meanings, and working overflow navigation.
 - Dictionary shortlist front/bottom navigation buttons move one word while side Up/Down jumps a full visible list page.
 - Dictionary shortlists can embed offline `wordfreq` familiarity scores and now sort all visible candidates hardest-first, with no device-side frequency database or allocation.

@@ -260,21 +260,34 @@ def _insert_markers(xhtml: str, tokens: list[Token], first_shard: int) -> str:
 def _analyze(surface: str, dictionary: CompilerDictionary) -> Candidate | None:
     if surface.casefold() in GERMAN_STOPWORDS:
         return None
-    analysis = dictionary.forms.get(surface)
+
+    exact = dictionary.forms.get(surface)
+    folded = dictionary.folded_forms.get(surface.casefold())
     flags = 0
-    confidence = 0
-    if analysis is None:
-        analysis = dictionary.folded_forms.get(surface.casefold())
-        if analysis is not None:
-            flags |= CANDIDATE_NORMALIZED_FALLBACK
-    if analysis is not None:
-        confidence = analysis.confidence if flags == 0 else min(analysis.confidence, 900)
-        if len(analysis.lexeme_ids) > 1:
-            flags |= CANDIDATE_AMBIGUOUS
-        if len(analysis.lexeme_ids) > MAX_INLINE_ANALYSES:
-            flags |= CANDIDATE_ANALYSES_TRUNCATED
-        return Candidate(surface, analysis.lexeme_ids[:MAX_INLINE_ANALYSES], confidence, flags, analysis.difficulty)
-    return None
+    if exact is not None:
+        # Keep exact-case analyses first, but do not let capitalization hide a
+        # credible folded analysis (especially a sentence-initial German verb).
+        lexeme_ids = exact.lexeme_ids
+        if folded is not None:
+            folded_only = tuple(lexeme_id for lexeme_id in folded.lexeme_ids if lexeme_id not in lexeme_ids)
+            if folded_only:
+                lexeme_ids += folded_only
+                flags |= CANDIDATE_NORMALIZED_FALLBACK
+        confidence = exact.confidence
+        difficulty = exact.difficulty
+    elif folded is not None:
+        lexeme_ids = folded.lexeme_ids
+        confidence = min(folded.confidence, 900)
+        difficulty = folded.difficulty
+        flags |= CANDIDATE_NORMALIZED_FALLBACK
+    else:
+        return None
+
+    if len(lexeme_ids) > 1:
+        flags |= CANDIDATE_AMBIGUOUS
+    if len(lexeme_ids) > MAX_INLINE_ANALYSES:
+        flags |= CANDIDATE_ANALYSES_TRUNCATED
+    return Candidate(surface, lexeme_ids[:MAX_INLINE_ANALYSES], confidence, flags, difficulty)
 
 
 def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> CompiledBook:

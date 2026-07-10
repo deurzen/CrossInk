@@ -125,6 +125,22 @@ class GermanBookCompilerTest(unittest.TestCase):
         self.assertTrue(surfaces["Gingen"]["flags"] & CANDIDATE_NORMALIZED_FALLBACK)
         self.assertEqual(surfaces["Gingen"]["confidence"], 900)
 
+    def test_exact_case_keeps_priority_but_merges_folded_analyses(self):
+        dictionary = compiler_dictionary()
+        exact = dictionary.forms["Liebe"]
+        folded = dictionary.folded_forms["liebe"]
+        self.assertEqual(len(exact.lexeme_ids), 1)
+        self.assertEqual(len(folded.lexeme_ids), 2)
+
+        surfaces = decoded_surfaces(compile_book(["<p>Liebe</p>"], dictionary).language_artifact)
+        candidate = surfaces["Liebe"]
+
+        self.assertEqual(candidate["analyses"][0], exact.lexeme_ids[0])
+        self.assertEqual(set(candidate["analyses"]), set(folded.lexeme_ids))
+        self.assertEqual(candidate["confidence"], exact.confidence)
+        self.assertTrue(candidate["flags"] & CANDIDATE_AMBIGUOUS)
+        self.assertTrue(candidate["flags"] & CANDIDATE_NORMALIZED_FALLBACK)
+
     def test_caps_pathological_surface_ambiguity_without_failing_book(self):
         source = json.loads(FIXTURE.read_text(encoding="utf-8"))
         source = copy.deepcopy(source)

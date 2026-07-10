@@ -55,7 +55,7 @@ class DictionaryWorkerTest(unittest.TestCase):
         spines = [
             {
                 "path": "OPS/chapter1.xhtml",
-                "content": "<html><head><title>gehen</title></head><body><p>Die Ha\u0308u<em>sern</em>, Gingen! liebe Krankenhausaufnahme Mehrdeutig.</p></body></html>",
+                "content": "<html><head><title>gehen</title></head><body><p>Die Ha\u0308u<em>sern</em>, Gingen! Liebe liebe Krankenhausaufnahme Mehrdeutig.</p></body></html>",
             },
             {"path": "OPS/chapter2.xhtml", "content": "<p>" + " ".join(["gingen"] * 65) + "</p>"},
         ]

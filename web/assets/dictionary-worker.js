@@ -290,24 +290,42 @@
 
   function analyze(surface, dictionary) {
     if (STOPWORDS.has(germanFold(surface))) return null;
-    let analysis = dictionary.exactForms.get(surface);
+
+    const exact = dictionary.exactForms.get(surface);
+    const folded = dictionary.foldedForms.get(germanFold(surface));
     let flags = 0;
-    if (!analysis) {
-      analysis = dictionary.foldedForms.get(germanFold(surface));
-      if (analysis) flags |= FLAG_FOLDED;
+    let ids;
+    let confidence;
+    let difficulty;
+    if (exact) {
+      ids = exact.ids;
+      if (folded) {
+        const foldedOnly = folded.ids.filter((id) => !ids.includes(id));
+        if (foldedOnly.length) {
+          ids = ids.concat(foldedOnly);
+          flags |= FLAG_FOLDED;
+        }
+      }
+      confidence = exact.confidence;
+      difficulty = exact.difficulty;
+    } else if (folded) {
+      ids = folded.ids;
+      confidence = Math.min(folded.confidence, 900);
+      difficulty = folded.difficulty;
+      flags |= FLAG_FOLDED;
+    } else {
+      return null;
     }
-    if (analysis) {
-      if (analysis.ids.length > 1) flags |= FLAG_AMBIGUOUS;
-      if (analysis.ids.length > MAX_INLINE_ANALYSES) flags |= FLAG_ANALYSES_TRUNCATED;
-      return {
-        surface,
-        globalIds: analysis.ids.slice(0, MAX_INLINE_ANALYSES),
-          confidence: flags & FLAG_FOLDED ? Math.min(analysis.confidence, 900) : analysis.confidence,
-        flags,
-        difficulty: analysis.difficulty,
-      };
-    }
-    return null;
+
+    if (ids.length > 1) flags |= FLAG_AMBIGUOUS;
+    if (ids.length > MAX_INLINE_ANALYSES) flags |= FLAG_ANALYSES_TRUNCATED;
+    return {
+      surface,
+      globalIds: ids.slice(0, MAX_INLINE_ANALYSES),
+      confidence,
+      flags,
+      difficulty,
+    };
   }
 
   function compileBook(spines, metaInput, formsInput, onProgress) {
