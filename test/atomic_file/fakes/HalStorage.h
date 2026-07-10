@@ -26,24 +26,33 @@ class HalFile {
     storage = other.storage;
     path = std::move(other.path);
     open = other.open;
+    position = other.position;
+    writable = other.writable;
     other.storage = nullptr;
     other.open = false;
+    other.position = 0;
+    other.writable = false;
     return *this;
   }
   HalFile(const HalFile&) = delete;
   HalFile& operator=(const HalFile&) = delete;
 
+  int read(void* data, size_t count);
   size_t write(const void* data, size_t count);
+  uint64_t fileSize64() const;
   bool sync();
   bool close();
   bool isOpen() const { return open; }
 
  private:
-  HalFile(HalStorage* storage, std::string path) : storage(storage), path(std::move(path)), open(true) {}
+  HalFile(HalStorage* storage, std::string path, bool writable)
+      : storage(storage), path(std::move(path)), open(true), writable(writable) {}
 
   HalStorage* storage = nullptr;
   std::string path;
   bool open = false;
+  size_t position = 0;
+  bool writable = false;
 };
 
 class HalStorage {
@@ -69,7 +78,10 @@ class HalStorage {
   bool exists(const char* path) const { return files.find(path) != files.end(); }
   bool remove(const char* path);
   bool rename(const char* oldPath, const char* newPath);
+  bool openFileForRead(const char*, const char* path, HalFile& file);
   bool openFileForWrite(const char*, const char* path, HalFile& file);
+  bool ensureDirectoryExists(const char*) { return !directoryFailure; }
+  void setDirectoryFailure(bool enabled) { directoryFailure = enabled; }
 
  private:
   friend class HalFile;
@@ -84,6 +96,7 @@ class HalStorage {
   bool closeFailure = false;
   bool openFailure = false;
   bool removeFailure = false;
+  bool directoryFailure = false;
   size_t renameCalls = 0;
   size_t failedRenameCall = 0;
 };

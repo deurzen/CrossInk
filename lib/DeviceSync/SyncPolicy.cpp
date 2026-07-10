@@ -132,13 +132,15 @@ void SyncPolicy::clearPathRules() {
 }
 
 bool SyncPolicy::addPathRule(const PathRuleAction action, const char* pattern) {
-  if (ruleCount_ >= rules_.size() || action > PathRuleAction::Include || !patternIsSafe(pattern)) return false;
+  if (ruleCount_ >= rules_.size() || action > PathRuleAction::Include || !isValidPathPattern(pattern)) return false;
   PathRule& rule = rules_[ruleCount_++];
   rule.action = action;
   std::strncpy(rule.pattern, pattern, sizeof(rule.pattern) - 1);
   rule.pattern[sizeof(rule.pattern) - 1] = '\0';
   return true;
 }
+
+bool SyncPolicy::isValidPathPattern(const char* pattern) { return patternIsSafe(pattern); }
 
 bool SyncPolicy::isNormalizedAbsolutePath(const char* path) {
   if (path == nullptr || path[0] != '/') return false;

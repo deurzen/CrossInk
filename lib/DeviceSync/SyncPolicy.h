@@ -48,6 +48,7 @@ class SyncPolicy {
   static bool operationAllowed(const SyncPolicy& sender, const SyncPolicy& receiver, Category category,
                                const char* normalizedPath = nullptr);
   static bool isNormalizedAbsolutePath(const char* path);
+  static bool isValidPathPattern(const char* pattern);
 
  private:
   std::array<Direction, CATEGORY_COUNT> directions_{};

@@ -30,6 +30,7 @@ enum class DecodeResult : uint8_t {
 
 size_t encodedSize(const SyncPolicy& policy);
 bool encode(const SyncPolicy& policy, const Output& output);
+DecodeResult validate(const Input& input);
 DecodeResult decode(const Input& input, SyncPolicy& policy);
 
 }  // namespace DeviceSync::SyncPolicyCodec

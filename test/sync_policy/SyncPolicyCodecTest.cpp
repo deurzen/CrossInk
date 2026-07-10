@@ -48,6 +48,12 @@ SyncPolicyCodec::DecodeResult decodePolicy(const std::vector<uint8_t>& bytes, Sy
   return SyncPolicyCodec::decode(input, policy);
 }
 
+SyncPolicyCodec::DecodeResult validatePolicy(const std::vector<uint8_t>& bytes) {
+  MemoryInput memory{bytes.data(), bytes.size(), 0};
+  const SyncPolicyCodec::Input input{&memory, readMemory, bytes.size()};
+  return SyncPolicyCodec::validate(input);
+}
+
 void expectPoliciesEqual(const SyncPolicy& expected, const SyncPolicy& actual) {
   EXPECT_EQ(actual.mirrorDeletions(), expected.mirrorDeletions());
   for (size_t i = 0; i < CATEGORY_COUNT; ++i) {
@@ -78,6 +84,22 @@ TEST(SyncPolicyCodecTest, RoundTripsAllBoundedFields) {
   SyncPolicy actual;
   ASSERT_EQ(decodePolicy(bytes, actual), SyncPolicyCodec::DecodeResult::Ok);
   expectPoliciesEqual(expected, actual);
+}
+
+TEST(SyncPolicyCodecTest, ValidationOnlyUsesTheSameStrictFormatChecks) {
+  SyncPolicy policy;
+  policy.setDefaults();
+  const std::vector<uint8_t> complete = encodePolicy(policy);
+  EXPECT_EQ(validatePolicy(complete), SyncPolicyCodec::DecodeResult::Ok);
+
+  std::vector<uint8_t> corrupt = complete;
+  corrupt.back() ^= 0x80;
+  EXPECT_EQ(validatePolicy(corrupt), SyncPolicyCodec::DecodeResult::Invalid);
+
+  std::vector<uint8_t> future = complete;
+  future[4] = static_cast<uint8_t>(SyncPolicyCodec::FORMAT_VERSION + 1);
+  future[5] = 0;
+  EXPECT_EQ(validatePolicy(future), SyncPolicyCodec::DecodeResult::Unsupported);
 }
 
 TEST(SyncPolicyCodecTest, EmptyPolicyUsesMinimumEncoding) {

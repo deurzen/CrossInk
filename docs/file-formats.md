@@ -536,3 +536,5 @@ Device Sync policy is a bounded binary record. Multi-byte integers are little-en
 ```
 
 Readers require the exact declared length, category count, bounded rule lengths, known flags/actions/directions, canonical absolute patterns, and a valid CRC. A newer schema is reported as unsupported rather than overwritten.
+
+Updates use same-directory `config.bin.tmp` and `config.bin.bak` sidecars. Recovery retains the previous valid policy until the replacement is synchronized, validated, and promoted. If no policy or sidecars exist, firmware defaults are loaded without writing to the SD card.

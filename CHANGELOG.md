@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Device Sync groundwork now includes bounded policy controls and crash-safe, versioned policy persistence.
+
 ### Fixed
 
 - Per-book reading stats now use recoverable temporary and backup files, so interrupted SD writes cannot replace the last valid stats snapshot.

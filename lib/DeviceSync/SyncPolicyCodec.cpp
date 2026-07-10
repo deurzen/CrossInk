@@ -147,13 +147,15 @@ bool encode(const SyncPolicy& policy, const Output& output) {
   return writer.writeCrc();
 }
 
-DecodeResult decode(const Input& input, SyncPolicy& policy) {
-  policy.reset();
+namespace {
+
+DecodeResult decodeImpl(const Input& input, SyncPolicy* policy) {
+  if (policy != nullptr) policy->reset();
   if (input.readExact == nullptr || input.size < MIN_ENCODED_SIZE || input.size > MAX_ENCODED_SIZE) {
     return DecodeResult::Invalid;
   }
-  const auto invalid = [&policy]() {
-    policy.reset();
+  const auto invalid = [policy]() {
+    if (policy != nullptr) policy->reset();
     return DecodeResult::Invalid;
   };
 
@@ -176,11 +178,13 @@ DecodeResult decode(const Input& input, SyncPolicy& policy) {
     return invalid();
   }
 
-  policy.setMirrorDeletions((flags & FLAG_MIRROR_DELETIONS) != 0);
+  if (policy != nullptr) policy->setMirrorDeletions((flags & FLAG_MIRROR_DELETIONS) != 0);
   for (size_t i = 0; i < CATEGORY_COUNT; ++i) {
     uint8_t rawDirection = 0;
-    if (!reader.readU8(rawDirection) || rawDirection > static_cast<uint8_t>(Direction::Bidirectional) ||
-        !policy.setDirection(static_cast<Category>(i), static_cast<Direction>(rawDirection))) {
+    if (!reader.readU8(rawDirection) || rawDirection > static_cast<uint8_t>(Direction::Bidirectional)) {
+      return invalid();
+    }
+    if (policy != nullptr && !policy->setDirection(static_cast<Category>(i), static_cast<Direction>(rawDirection))) {
       return invalid();
     }
   }
@@ -195,7 +199,10 @@ DecodeResult decode(const Input& input, SyncPolicy& policy) {
       return invalid();
     }
     pattern[patternLength] = '\0';
-    if (!policy.addPathRule(static_cast<PathRuleAction>(rawAction), pattern)) return invalid();
+    if (!SyncPolicy::isValidPathPattern(pattern) ||
+        (policy != nullptr && !policy->addPathRule(static_cast<PathRuleAction>(rawAction), pattern))) {
+      return invalid();
+    }
   }
 
   if (reader.consumed() + sizeof(uint32_t) != input.size || !reader.readAndCheckCrc() ||
@@ -204,5 +211,11 @@ DecodeResult decode(const Input& input, SyncPolicy& policy) {
   }
   return DecodeResult::Ok;
 }
+
+}  // namespace
+
+DecodeResult validate(const Input& input) { return decodeImpl(input, nullptr); }
+
+DecodeResult decode(const Input& input, SyncPolicy& policy) { return decodeImpl(input, &policy); }
 
 }  // namespace DeviceSync::SyncPolicyCodec
