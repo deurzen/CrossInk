@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Dictionary-enabled EPUB uploads now extract, validate, and receipt the language artifact before reporting upload success, so first book open is prewarmed.
 - Dictionary EPUB compilation now caps pathological surfaces at eight deterministic analyses instead of aborting the complete book conversion.
 - Validated EPUB dictionary artifacts now use an identity-bound receipt, avoiding a full multi-megabyte CRC scan on every book or home-carousel open.
 - Firmware dictionary lookup now streams only version-2 self-contained shard records through a bounded 2 KB cache; the unreleased version-1 reader and tables were removed.

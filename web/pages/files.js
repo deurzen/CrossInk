@@ -4132,6 +4132,8 @@ function uploadFileWebSocket(file, onProgress, onComplete, onError) {
         // Server confirmed progress - log for debugging but don't update UI
         // (local progress is smoother, server progress causes jumping)
         console.log("[WS] Server progress:", msg);
+      } else if (msg === "PREPARING") {
+        console.log("[WS] Upload complete; preparing EPUB dictionary cache");
       } else if (msg === "DONE") {
         // Show 100% when server confirms completion
         if (onProgress) onProgress(file.size, file.size);

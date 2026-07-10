@@ -11,6 +11,7 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <WiFi.h>
+#include <ZipFile.h>
 #include <esp_efuse.h>
 #include <esp_efuse_table.h>
 #include <esp_task_wdt.h>
@@ -50,6 +51,31 @@ namespace {
 constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
 constexpr uint16_t UDP_PORTS[] = {54982, 48123, 39001, 44044, 59678};
 constexpr uint16_t LOCAL_UDP_PORT = 8134;
+
+bool prewarmUploadedDictionaryEpub(const String& filePath, String& error) {
+  String lower = filePath;
+  lower.toLowerCase();
+  if (!lower.endsWith(".epub")) return true;
+
+  size_t artifactSize = 0;
+  if (!ZipFile(filePath.c_str()).getInflatedFileSize("META-INF/crossink/language.bin", &artifactSize)) return true;
+  esp_task_wdt_reset();
+  // Epub retains metadata/cache objects and is too large for the network task
+  // stack. This one-shot allocation is released before the upload response.
+  auto epub = makeUniqueNoThrow<Epub>(filePath.c_str(), "/.crosspoint");
+  if (!epub) {
+    error = "Not enough memory to prepare EPUB dictionary";
+    return false;
+  }
+  if (!epub->load(true, true) || !epub->hasBookLanguageArtifact()) {
+    error = "Uploaded EPUB dictionary artifact is invalid";
+    return false;
+  }
+  esp_task_wdt_reset();
+  LOG_INF("WEB", "Prepared EPUB dictionary artifact: %s (%u bytes)", filePath.c_str(),
+          static_cast<unsigned>(artifactSize));
+  return true;
+}
 
 bool prepareDictionaryLearningState(void*, const uint8_t (&uuid)[16], const uint32_t lexemeCount) {
   dictionary::lexeme_state::Store state;
@@ -1285,6 +1311,12 @@ void CrossPointWebServer::handleUpload(UploadState& state) const {
         if (!filePath.endsWith("/")) filePath += "/";
         filePath += state.fileName;
         clearBookCachePreservingUserState(filePath.c_str());
+        if (!prewarmUploadedDictionaryEpub(filePath, state.error)) {
+          LOG_ERR("WEB", "[UPLOAD] EPUB dictionary preparation failed: %s", state.error.c_str());
+          Storage.remove(filePath.c_str());
+          clearBookCachePreservingUserState(filePath.c_str());
+          state.success = false;
+        }
       }
     }
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
@@ -2246,6 +2278,16 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
         if (!filePath.endsWith("/")) filePath += "/";
         filePath += wsUploadFileName;
         clearBookCachePreservingUserState(filePath.c_str());
+        String preparationError;
+        wsServer->sendTXT(num, "PREPARING");
+        if (!prewarmUploadedDictionaryEpub(filePath, preparationError)) {
+          LOG_ERR("WS", "EPUB dictionary preparation failed: %s", preparationError.c_str());
+          Storage.remove(filePath.c_str());
+          clearBookCachePreservingUserState(filePath.c_str());
+          wsServer->sendTXT(num, "ERROR:" + preparationError);
+          wsLastProgressSent = 0;
+          break;
+        }
 
         wsServer->sendTXT(num, "DONE");
         wsLastProgressSent = 0;
