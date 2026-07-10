@@ -280,7 +280,7 @@ def _build_forms(lexemes: list[LexemeInput], bundle_uuid: bytes) -> bytes:
     for form in ordered_forms:
         lexeme_ids = sorted(set(form_to_lexemes[form]))
         if len(lexeme_ids) > 255:
-            raise CompileError(f"form {form.decode('utf-8')!r} has more than 255 analyses")
+            lexeme_ids = lexeme_ids[:255]
         if len(strings) + len(form) > MAX_FORM_STRING_POOL:
             raise CompileError(f"form string pool exceeds {MAX_FORM_STRING_POOL} bytes")
         if analysis_count + len(lexeme_ids) > MAX_FORM_ANALYSES:
