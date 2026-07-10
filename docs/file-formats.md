@@ -164,6 +164,44 @@ single SD file needed for an operation.
 It is required by the installer but is deliberately outside the hot-path binary
 metadata.
 
+### Compiler `forms.bin`
+
+The desktop half of a `.cpdict` archive contains `compiler/forms.bin`. This file
+is not uploaded to the reader. It provides exact NFC surface-form analyses to
+the browser book compiler and uses the same bundle UUID and global lexeme IDs as
+the runtime package.
+
+Its fixed 64-byte header is:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 4 | Magic `CXDF` |
+| 4 | 2 | Format version (`1`) |
+| 6 | 2 | Header size (`64`) |
+| 8 | 16 | Dictionary bundle UUID |
+| 24 | 4 | Form count |
+| 28 | 4 | Analysis count |
+| 32 | 4 | Form-directory offset |
+| 36 | 4 | Analysis-table offset |
+| 40 | 4 | UTF-8 string-pool offset |
+| 44 | 4 | String-pool size |
+| 48 | 4 | Exact file size |
+| 52 | 4 | Reserved; must be zero |
+| 56 | 4 | Payload CRC32 over bytes `[64, fileSize)` |
+| 60 | 4 | Header CRC32 over bytes `[0, 60)` |
+
+Each 20-byte form-directory record contains `surfaceHash:u64`,
+`stringOffset:u32`, `firstAnalysis:u32`, `stringLength:u16`,
+`analysisCount:u8`, and `flags:u8`. Records are ordered by FNV-1a-64 hash and
+then exact UTF-8 bytes; hash matches must therefore still compare the string.
+Each 8-byte analysis contains `globalLexemeId:u32`, `confidence:u16` in the
+range 0–1000, and `flags:u16`. Version 1 emits confidence 1000 for explicit
+source forms and zero flags. A form can retain up to 255 analyses.
+
+Compiler caps are 2,000,000 forms, 4,000,000 analyses, 255 UTF-8 bytes per form,
+and a 512 MiB string pool. These are desktop bounds; none of these tables are
+loaded by firmware.
+
 ## `book.bin`
 
 ### Version 8

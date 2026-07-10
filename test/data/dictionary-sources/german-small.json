@@ -1,0 +1,52 @@
+{
+  "bundleUuid": "12345678-1234-5678-9abc-def012345678",
+  "sourceLanguage": "de",
+  "targetLanguage": "en",
+  "license": {
+    "spdx": "CC0-1.0",
+    "sourceUrl": "https://crossink.example/test-data",
+    "attribution": "Synthetic German dictionary fixture created for CrossInk tests. No external dictionary text is included."
+  },
+  "lexemes": [
+    {
+      "headword": "Haus",
+      "partOfSpeech": "noun",
+      "forms": ["Hauses", "Häuser", "Häusern"],
+      "fields": [
+        {"type": "definition", "text": "house; building used as a home"}
+      ]
+    },
+    {
+      "headword": "gehen",
+      "partOfSpeech": "verb",
+      "forms": ["gehe", "gehst", "geht", "ging", "gingen", "gegangen"],
+      "fields": [
+        {"type": "definition", "text": "to go; to walk"}
+      ]
+    },
+    {
+      "headword": "Liebe",
+      "partOfSpeech": "noun",
+      "forms": ["liebe"],
+      "fields": [
+        {"type": "definition", "text": "love; affection"}
+      ]
+    },
+    {
+      "headword": "lieben",
+      "partOfSpeech": "verb",
+      "forms": ["liebe", "liebst", "liebt", "liebte", "geliebt"],
+      "fields": [
+        {"type": "definition", "text": "to love"}
+      ]
+    },
+    {
+      "headword": "Haus",
+      "partOfSpeech": "noun",
+      "forms": ["Häusern"],
+      "fields": [
+        {"type": "example", "text": "Sie wohnen in alten Häusern."}
+      ]
+    }
+  ]
+}
