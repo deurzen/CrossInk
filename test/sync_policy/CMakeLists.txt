@@ -6,6 +6,7 @@ add_executable(SyncPolicyTest
   PairRecordTest.cpp
   PairRecordStoreTest.cpp
   PairHandshakeTest.cpp
+  PairingCryptoTest.cpp
   ${REPO_ROOT}/lib/DeviceSync/Crc32.cpp
   ${REPO_ROOT}/lib/DeviceSync/DeviceIdentity.cpp
   ${REPO_ROOT}/lib/DeviceSync/DeviceIdentityPlatform.cpp
@@ -14,6 +15,8 @@ add_executable(SyncPolicyTest
   ${REPO_ROOT}/lib/DeviceSync/PairRecordStore.cpp
   ${REPO_ROOT}/lib/DeviceSync/PairHandshake.cpp
   ${REPO_ROOT}/lib/DeviceSync/PairHandshakePlatform.cpp
+  ${REPO_ROOT}/lib/DeviceSync/PairingCrypto.cpp
+  ${REPO_ROOT}/lib/DeviceSync/PairingCryptoPlatform.cpp
   ${REPO_ROOT}/lib/DeviceSync/SyncPolicy.cpp
   ${REPO_ROOT}/lib/DeviceSync/SyncPolicyCodec.cpp
   ${REPO_ROOT}/lib/DeviceSync/SyncPolicyStore.cpp

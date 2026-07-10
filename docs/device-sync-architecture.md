@@ -5,7 +5,7 @@ Status: implementation in progress on `v1.4.0-custom` from CrossInk `v1.4.0`.
 Implemented foundation:
 
 - Phase 0 host and simulator build blockers are repaired in the custom branch.
-- Phase 2 groundwork defines stable MAC-bound identity, crash-safe bounded pair records, deterministic transport roles, persisted handshake replay counters, strong-entropy nonce generation, and bounded category/path policy, with host corruption and power-cut tests.
+- Phase 2 groundwork defines stable MAC-bound identity, crash-safe pair records, deterministic roles, replay counters, strong-entropy nonces, RFC-vector-tested X25519/HKDF pairing keys, and bounded category/path policy.
 - `lib/AtomicFile` provides no-heap, callback-based old-or-new replacement, future-format preservation, and non-resurrecting removal primitives with host power-cut fault injection.
 - The pinned FreeInk fork adds one uncached, result-returning SD space query; CrossInk's HAL exposes it plus SdFat's existing 64-bit truncate operation. No separate SDK metadata-sync API is required by the current SdFat implementation.
 - Global `global_stats.bin`, per-book `stats_v5.bin`, EPUB `progress.bin`, `reader_settings.bin`, bookmark stores, clipping stores, device settings/state, and the shared recent/Wi-Fi/OPDS/KOReader JSON stores use the new primitives; journals and Device Sync transport remain pending.
@@ -951,7 +951,7 @@ Preferred flow:
 
 Nonce/key entropy is exposed through a separate strong-random interface that refuses hardware generation while Arduino Wi-Fi reports the RF driver stopped. Local handshake counters are atomically incremented before use; accepted peer counters are atomically persisted before success, with duplicates distinguished from stale replays.
 
-The local ESP32-C3 framework includes Curve25519 and HKDF support, but a compile-and-memory probe is mandatory before finalizing this choice. Long-term pair-secret derivation remains pending that probe; it must not be replaced with independently generated random secrets.
+The pinned ESP32-C3 framework compile probe confirms mbedTLS Curve25519, ECDH, HKDF, and SHA-256 support. The implementation matches RFC 7748 X25519 and RFC 5869 HKDF-SHA256 host vectors, derives transcript-bound pair/confirmation/directional session keys, and clears private/shared/derived secret buffers. Canonical transcript construction, confirmation messages, and committing the pair record remain pending. Runtime heap peak, stack high-water, and timing must still be measured on X3/X4 before finalizing this choice; mbedTLS internally allocates multiprecision state during the one-shot exchange.
 
 ### 16.5 Temporary network
 

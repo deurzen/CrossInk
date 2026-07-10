@@ -17,6 +17,7 @@ Keep this file focused on repo-specific gotchas that are worth reusing in future
 
 - SdFat on hardware allows only one open reader per file path at a time. If a fallback needs to reopen the same file, close the first handle before reopening.
 - CrossInk pins the `crossink` branch of `deurzen/freeink-sdk`. Keep the fork delta minimal: its current Device Sync addition is only the uncached, result-returning `SDCardManager::sdSpaceBytes()` API; truncate remains a CrossInk `HalFile` wrapper over existing SdFat.
+- The pinned ESP32-C3 mbedTLS config compiles Curve25519/ECDH/HKDF/SHA-256. Device Sync host tests match RFC 7748/5869, but X3/X4 runtime heap peak, stack high-water, timing, and cross-backend vectors still require hardware measurement.
 
 ## Rendering / Reader Pipeline
 

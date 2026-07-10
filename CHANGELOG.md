@@ -2,7 +2,7 @@
 
 ### Added
 
-- Device Sync groundwork now includes stable identity, crash-safe bounded peer authentication and policy records, deterministic roles, and persisted replay counters.
+- Device Sync groundwork now includes stable identity, crash-safe peer records, deterministic roles, replay counters, and transcript-bound X25519/HKDF pairing keys.
 
 ### Fixed
 
