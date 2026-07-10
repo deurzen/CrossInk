@@ -285,15 +285,17 @@ bool Store::visitNonUnseen(const uint32_t firstLexemeId, const uint32_t scanLexe
   }
 
   const uint32_t remaining = lexemeCount_ - firstLexemeId;
-  const uint32_t count = scanLexemeCount < remaining ? scanLexemeCount : remaining;
+  uint32_t count = scanLexemeCount < remaining ? scanLexemeCount : remaining;
+  const uint64_t capacityLexemes = static_cast<uint64_t>(scratchCapacity) * 2U - (firstLexemeId & 1U);
+  if (capacityLexemes == 0) {
+    error = StateError::INVALID_INPUT;
+    return false;
+  }
+  if (count > capacityLexemes) count = static_cast<uint32_t>(capacityLexemes);
   const uint32_t endLexemeId = firstLexemeId + count;
   const uint32_t firstByte = firstLexemeId / 2U;
   const uint32_t endByte = (endLexemeId + 1U) / 2U;
   const size_t bytes = endByte - firstByte;
-  if (scratchCapacity < bytes) {
-    error = StateError::INVALID_INPUT;
-    return false;
-  }
   if (!storage_.readAt(storage_.context, statusPath_, kStatusPayloadOffset + firstByte, scratch, bytes)) {
     error = StateError::IO_FAILED;
     return false;

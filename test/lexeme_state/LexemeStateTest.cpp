@@ -158,6 +158,22 @@ TEST(LexemeState, ScansBoundedNonUnseenWindowsWithOneRead) {
   EXPECT_EQ(storage.readAtCalls, 1);
 }
 
+TEST(LexemeState, OddCursorKeepsMaximumWindowWithin2048Bytes) {
+  MemoryStorage storage;
+  Store store;
+  StateError error;
+  ASSERT_TRUE(store.open(backend(storage), "/state", UUID, 5000, error));
+  uint8_t scratch[2048]{};
+  uint32_t next = 0;
+  StatusCollector collector{{}, 1};
+  storage.readAtCalls = 0;
+  ASSERT_TRUE(store.visitNonUnseen(1, dictionary::lexeme_state::kMaxReviewScanLexemes, scratch, sizeof(scratch),
+                                   &collector, collectStatus, next, error));
+  EXPECT_EQ(next, 4096U);
+  EXPECT_TRUE(collector.items.empty());
+  EXPECT_EQ(storage.readAtCalls, 1);
+}
+
 TEST(LexemeState, RejectsMalformedReviewStatusAndOversizedWindow) {
   MemoryStorage storage;
   Store store;
