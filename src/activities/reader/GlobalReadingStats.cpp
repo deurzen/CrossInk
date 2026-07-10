@@ -1,5 +1,6 @@
 #include "GlobalReadingStats.h"
 
+#include <AtomicFile.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <esp_mac.h>
@@ -49,6 +50,7 @@ static constexpr uint8_t GLOBAL_STATS_VERSION_V2 = 2;
 static constexpr int GLOBAL_STATS_FILE_SIZE_V2 = 17;
 static constexpr int GLOBAL_STATS_FILE_SIZE = static_cast<int>(GlobalReadingStats::CURRENT_FILE_SIZE);
 static constexpr char GLOBAL_STATS_PATH[] = "/.crosspoint/global_stats.bin";
+static constexpr char GLOBAL_STATS_TMP_PATH[] = "/.crosspoint/global_stats.bin.tmp";
 static constexpr char GLOBAL_STATS_BAK_PATH[] = "/.crosspoint/global_stats.bin.bak";
 static constexpr char SYNCED_STATS_DIR[] = "/.crosspoint/synced_stats";
 static bool s_blockDestructiveSave = false;
@@ -177,6 +179,50 @@ StatsLoadOutcome loadFromOpenFile(FsFile& f, GlobalReadingStats& out) {
   return outcome;
 }
 
+StatsLoadOutcome loadFromFile(const char* path, GlobalReadingStats& out) {
+  StatsLoadOutcome outcome;
+  FsFile file;
+  if (!Storage.openFileForRead("GSTATS", path, file)) return outcome;
+  outcome = loadFromOpenFile(file, out);
+  file.close();
+  return outcome;
+}
+
+AtomicFile::ValidationResult validateStatsFile(const char* path, const void*) {
+  if (!Storage.exists(path)) return AtomicFile::ValidationResult::Invalid;
+  HalFile file;
+  if (!Storage.openFileForRead("GSTATS", path, file)) return AtomicFile::ValidationResult::Invalid;
+
+  const uint64_t size = file.fileSize64();
+  uint8_t version = 0;
+  const bool hasVersion = file.read(&version, sizeof(version)) == static_cast<int>(sizeof(version));
+  file.close();
+  if (!hasVersion) return AtomicFile::ValidationResult::Invalid;
+  if (size > static_cast<uint64_t>(GLOBAL_STATS_FILE_SIZE) || version > GLOBAL_STATS_VERSION) {
+    return AtomicFile::ValidationResult::Unsupported;
+  }
+  const bool valid = (version == GLOBAL_STATS_VERSION_V1 && size == GLOBAL_STATS_FILE_SIZE_V1) ||
+                     (version == GLOBAL_STATS_VERSION_V2 && size == GLOBAL_STATS_FILE_SIZE_V2) ||
+                     (version == GLOBAL_STATS_VERSION && size == static_cast<uint64_t>(GLOBAL_STATS_FILE_SIZE));
+  return valid ? AtomicFile::ValidationResult::Valid : AtomicFile::ValidationResult::Invalid;
+}
+
+bool writeStatsFile(HalFile& file, const void* context) {
+  const auto* stats = static_cast<const GlobalReadingStats*>(context);
+  uint8_t data[GLOBAL_STATS_FILE_SIZE];
+  serializeStats(*stats, data);
+  const size_t written = file.write(data, sizeof(data));
+  if (written == sizeof(data)) return true;
+  LOG_ERR("GSTATS", "Short write saving global stats: %u/%u bytes", static_cast<unsigned>(written),
+          static_cast<unsigned>(sizeof(data)));
+  return false;
+}
+
+bool saveToFile(const GlobalReadingStats& stats) {
+  constexpr AtomicFile::Paths paths{GLOBAL_STATS_PATH, GLOBAL_STATS_TMP_PATH, GLOBAL_STATS_BAK_PATH};
+  return AtomicFile::write("GSTATS", paths, writeStatsFile, validateStatsFile, &stats);
+}
+
 std::string localSyncedStatsFileName() {
   uint8_t mac[6] = {};
   if (esp_efuse_mac_get_default(mac) != 0) return {};
@@ -186,121 +232,48 @@ std::string localSyncedStatsFileName() {
   return name;
 }
 
-bool verifyFileSize(const char* path, const size_t expectedSize) {
-  FsFile file;
-  if (!Storage.openFileForRead("GSTATS", path, file)) return false;
-  const size_t actualSize = file.fileSize();
-  file.close();
-  return actualSize == expectedSize;
-}
-
-bool saveToFile(const GlobalReadingStats& stats, const char* path, const char* backupPath) {
-  const std::string tmpPath = std::string(path) + ".tmp";
-  if (Storage.exists(tmpPath.c_str()) && !Storage.remove(tmpPath.c_str())) {
-    LOG_ERR("GSTATS", "Could not remove stale stats temp file: %s", tmpPath.c_str());
-    return false;
-  }
-
-  FsFile f;
-  if (!Storage.openFileForWrite("GSTATS", tmpPath.c_str(), f)) {
-    LOG_ERR("GSTATS", "Could not write stats temp file: %s", tmpPath.c_str());
-    return false;
-  }
-
-  uint8_t data[GLOBAL_STATS_FILE_SIZE];
-  serializeStats(stats, data);
-  const size_t bytesWritten = f.write(data, GLOBAL_STATS_FILE_SIZE);
-  if (bytesWritten != GLOBAL_STATS_FILE_SIZE) {
-    LOG_ERR("GSTATS", "Short write for stats temp file %s: %u/%u bytes", tmpPath.c_str(),
-            static_cast<unsigned>(bytesWritten), static_cast<unsigned>(GLOBAL_STATS_FILE_SIZE));
-    f.close();
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-
-  f.flush();
-  if (!f.sync()) {
-    LOG_ERR("GSTATS", "Failed to sync stats temp file: %s", tmpPath.c_str());
-    f.close();
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-
-  if (!f.close()) {
-    LOG_ERR("GSTATS", "Failed to close stats temp file after save: %s", tmpPath.c_str());
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-
-  if (!verifyFileSize(tmpPath.c_str(), GLOBAL_STATS_FILE_SIZE)) {
-    LOG_ERR("GSTATS", "Stats temp file has unexpected size: %s", tmpPath.c_str());
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-
-  if (backupPath != nullptr) {
-    if (Storage.exists(backupPath) && !Storage.remove(backupPath)) {
-      LOG_ERR("GSTATS", "Could not remove old stats backup: %s", backupPath);
-      Storage.remove(tmpPath.c_str());
-      return false;
-    }
-    if (Storage.exists(path) && !Storage.rename(path, backupPath)) {
-      LOG_ERR("GSTATS", "Could not rotate stats backup: %s", path);
-      Storage.remove(tmpPath.c_str());
-      return false;
-    }
-  } else if (Storage.exists(path) && !Storage.remove(path)) {
-    LOG_ERR("GSTATS", "Could not replace stats file: %s", path);
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-
-  if (!Storage.rename(tmpPath.c_str(), path)) {
-    LOG_ERR("GSTATS", "Could not replace stats file: %s", path);
-    if (backupPath != nullptr && Storage.exists(backupPath) && !Storage.exists(path)) {
-      Storage.rename(backupPath, path);
-    }
-    Storage.remove(tmpPath.c_str());
-    return false;
-  }
-  return true;
-}
 }  // namespace
 
-static StatsLoadOutcome loadFromFile(const char* path, GlobalReadingStats& out) {
-  StatsLoadOutcome outcome;
-  FsFile f;
-  if (!Storage.openFileForRead("GSTATS", path, f)) return outcome;
-  outcome = loadFromOpenFile(f, out);
-  f.close();
-  return outcome;
-}
-
 GlobalReadingStats GlobalReadingStats::load() {
+  s_blockDestructiveSave = false;
+
+  constexpr AtomicFile::Paths paths{GLOBAL_STATS_PATH, GLOBAL_STATS_TMP_PATH, GLOBAL_STATS_BAK_PATH};
+  if (!AtomicFile::recover("GSTATS", paths, validateStatsFile)) {
+    const AtomicFile::ValidationResult primaryProbe = validateStatsFile(GLOBAL_STATS_PATH, nullptr);
+    const AtomicFile::ValidationResult backupProbe = validateStatsFile(GLOBAL_STATS_BAK_PATH, nullptr);
+    const AtomicFile::ValidationResult tempProbe = validateStatsFile(GLOBAL_STATS_TMP_PATH, nullptr);
+    if (primaryProbe == AtomicFile::ValidationResult::Unsupported ||
+        backupProbe == AtomicFile::ValidationResult::Unsupported ||
+        tempProbe == AtomicFile::ValidationResult::Unsupported) {
+      s_blockDestructiveSave = true;
+      LOG_ERR("GSTATS", "Newer global stats candidate detected; preserving all files and refusing to overwrite");
+    } else {
+      LOG_ERR("GSTATS", "Could not recover global stats transaction");
+    }
+  }
+
   GlobalReadingStats stats;
   const StatsLoadOutcome primary = loadFromFile(GLOBAL_STATS_PATH, stats);
   if (primary.result == StatsLoadResult::Ok) return stats;
   if (primary.result == StatsLoadResult::NewerFormat) {
-    s_blockDestructiveSave = true;
-    LOG_ERR("GSTATS", "On-disk stats are from a newer build (v%u, %u bytes); refusing to overwrite", primary.version,
+    LOG_ERR("GSTATS", "On-disk stats are from a newer build (v%u, %u bytes); refusing to load", primary.version,
             static_cast<unsigned>(primary.fileSize));
-    return stats;
+    return GlobalReadingStats{};
   }
 
   const StatsLoadOutcome backup = loadFromFile(GLOBAL_STATS_BAK_PATH, stats);
   if (backup.result == StatsLoadResult::Ok) {
-    LOG_DBG("GSTATS", "Recovered global stats from backup");
+    LOG_DBG("GSTATS", "Loaded global stats from backup");
     return stats;
   }
   if (backup.result == StatsLoadResult::NewerFormat) {
-    s_blockDestructiveSave = true;
-    LOG_ERR("GSTATS", "Backup stats are from a newer build (v%u, %u bytes); refusing to overwrite", backup.version,
+    LOG_ERR("GSTATS", "Backup stats are from a newer build (v%u, %u bytes); refusing to load", backup.version,
             static_cast<unsigned>(backup.fileSize));
-    return stats;
+    return GlobalReadingStats{};
   }
 
   LOG_DBG("GSTATS", "Global stats missing or corrupt, starting fresh");
-  return stats;
+  return GlobalReadingStats{};
 }
 
 GlobalReadingStats GlobalReadingStats::loadAggregated() { return loadAggregated(load()); }
@@ -366,10 +339,15 @@ void GlobalReadingStats::save() const {
     LOG_ERR("GSTATS", "Refusing to overwrite on-disk stats after newer-format file was detected");
     return;
   }
-  saveToFile(*this, GLOBAL_STATS_PATH, GLOBAL_STATS_BAK_PATH);
+  saveToFile(*this);
 }
 
-bool GlobalReadingStats::resetLocal() { return saveToFile(GlobalReadingStats{}, GLOBAL_STATS_PATH, nullptr); }
+bool GlobalReadingStats::resetLocal() {
+  constexpr AtomicFile::Paths paths{GLOBAL_STATS_PATH, GLOBAL_STATS_TMP_PATH, GLOBAL_STATS_BAK_PATH};
+  if (!AtomicFile::remove("GSTATS", paths)) return false;
+  s_blockDestructiveSave = false;
+  return saveToFile(GlobalReadingStats{});
+}
 
 void GlobalReadingStats::recordReadingSpan(const ReadingStatsDateTime& localStart, const uint32_t seconds) {
   recordReadingSpanIntoBuckets(timeOfDaySeconds, dayOfWeekSeconds, localStart, seconds);

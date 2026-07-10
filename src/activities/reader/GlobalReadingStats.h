@@ -40,8 +40,8 @@ struct GlobalReadingStats {
   // Saves stats to /.crosspoint/global_stats.bin.
   void save() const;
 
-  // Replaces /.crosspoint/global_stats.bin with a fresh empty file without
-  // rotating or deleting any backup files.
+  // Replaces local stats with an empty snapshot and removes older transaction
+  // sidecars first so a reset cannot later restore pre-reset totals.
   static bool resetLocal();
 
   void recordReadingSpan(const ReadingStatsDateTime& localStart, uint32_t seconds);
