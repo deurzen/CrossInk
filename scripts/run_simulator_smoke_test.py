@@ -54,6 +54,22 @@ def prepare_fs(temp_root: Path, book: Path) -> str:
     return f"/books/{book.name}"
 
 
+def install_dictionary_fixture(temp_root: Path, device_dir: Path) -> None:
+    required = ("meta.bin", "lexemes.bin", "headwords.bin", "entries.bin")
+    for name in required:
+        if not (device_dir / name).is_file():
+            raise ValueError(f"dictionary fixture is missing {name}: {device_dir}")
+
+    metadata = (device_dir / "meta.bin").read_bytes()
+    if len(metadata) != 80 or metadata[:4] != b"CXDM" or metadata[12:28] == bytes(16):
+        raise ValueError(f"dictionary fixture has invalid meta.bin: {device_dir}")
+
+    target = temp_root / "fs_" / ".crosspoint" / "dictionaries" / metadata[12:28].hex()
+    target.mkdir(parents=True, exist_ok=True)
+    for name in required:
+        shutil.copy2(device_dir / name, target / name)
+
+
 def run_smoke(args: argparse.Namespace) -> int:
     book = Path(args.book).resolve()
     if not book.exists():
@@ -71,11 +87,19 @@ def run_smoke(args: argparse.Namespace) -> int:
     with tempfile.TemporaryDirectory(prefix="crossink-sim-smoke-") as temp_dir_name:
         temp_root = Path(temp_dir_name)
         simulator_book_path = prepare_fs(temp_root, book)
+        if args.dictionary_device_dir:
+            try:
+                install_dictionary_fixture(temp_root, Path(args.dictionary_device_dir).resolve())
+            except ValueError as error:
+                print(error, file=sys.stderr)
+                return 2
 
         env = os.environ.copy()
         env["CROSSINK_SIMULATOR_SMOKE_TEST"] = "1"
         env["CROSSINK_SIMULATOR_SMOKE_BOOK"] = simulator_book_path
         env["CROSSINK_SIMULATOR_SMOKE_PAGE_TURNS"] = str(args.page_turns)
+        if args.dictionary_device_dir:
+            env["CROSSINK_SIMULATOR_SMOKE_DICTIONARY"] = "1"
         if args.theme:
             env["CROSSINK_SIMULATOR_SMOKE_THEME"] = str(THEMES[args.theme])
         if args.headless:
@@ -111,6 +135,10 @@ def run_smoke(args: argparse.Namespace) -> int:
         print("Simulator smoke test did not persist a Word Inbox context", file=sys.stderr)
         return 2
 
+    if args.dictionary_device_dir and "Entering activity: Dictionary" not in proc.stdout:
+        print("Simulator smoke test did not open the Dictionary activity", file=sys.stderr)
+        return 2
+
     return 0
 
 
@@ -120,6 +148,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=45, help="Seconds before the simulator run is treated as hung")
     parser.add_argument("--page-turns", type=int, default=2, help="Number of EPUB page-forward taps to run")
     parser.add_argument("--theme", choices=sorted(THEMES), help="UI theme to use during the smoke test")
+    parser.add_argument(
+        "--dictionary-device-dir",
+        help="Install a matching compiled device/ directory and exercise dictionary shortlist/definition UI",
+    )
     parser.add_argument("--no-build", dest="build", action="store_false", help="Run the existing simulator binary")
     parser.add_argument("--window", dest="headless", action="store_false", help="Show the SDL window instead of using dummy video")
     parser.set_defaults(build=True, headless=True)

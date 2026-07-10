@@ -4,7 +4,8 @@
 
 - Word Inbox captures save visible EPUB and TXT/Markdown text through a configurable reader shortcut, with optional screenshots disabled by default; saved contexts can be reviewed, copied, and deleted in the WebUI.
 - EPUB optimization can compile dictionary candidate shards from a cached `.cpdict` bundle in an off-main-thread browser worker; firmware validates and extracts the resulting artifact with bounded memory.
-- Dictionary-optimized EPUBs now retain source-shard ranges in each rendered page, allowing future lookups to stay correct across font, layout, and orientation changes.
+- Dictionary-optimized EPUBs now retain source-shard ranges in each rendered page, allowing lookups to stay correct across font, layout, and orientation changes.
+- Compatible EPUBs can open a bounded unknown-word shortlist through a configurable shortcut, stream definitions from SD, and mark words as learning, known, or ignored.
 
 ### Changed
 
@@ -12,6 +13,7 @@
 
 ### Fixed
 
+- Dictionary compilation now analyzes only rendered XHTML body text, preventing title and other head metadata from shifting source shards.
 - Word Inbox save notifications now dismiss automatically without re-rendering the page and remain safe across repeated captures or page turns.
 - Text-only Word Inbox contexts now open without a redundant image request, avoiding a broken-screenshot warning and reducing WebUI load time.
 - Word Inbox storage now maintains a recoverable per-book index, keeping context lookup responsive as the inbox grows.

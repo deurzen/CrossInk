@@ -27,6 +27,7 @@
 #include "ClippingStore.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "DictionaryActivity.h"
 #include "EpubReaderBookmarkListActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
 #include "EpubReaderClippingListActivity.h"
@@ -48,6 +49,8 @@
 #include "activities/util/IntervalSelectionActivity.h"
 #include "clippings/ClippingsManager.h"
 #include "components/UITheme.h"
+#include "dictionary/CurrentPageShortlist.h"
+#include "dictionary/DictionaryLookupSession.h"
 #include "fontIds.h"
 #include "util/BookCacheUtils.h"
 #include "util/BookMoveUtils.h"
@@ -3123,6 +3126,121 @@ void EpubReaderActivity::startClipSelection() {
       });
 }
 
+void EpubReaderActivity::startDictionaryLookup() {
+  enum class LookupOutcome : uint8_t { Ready, NoWords, MissingDictionary, Failed };
+  LookupOutcome outcome = LookupOutcome::Failed;
+  std::unique_ptr<dictionary::lookup::Session> session;
+  std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist;
+  std::unique_ptr<uint8_t[]> suppressionBitset;
+
+  {
+    RenderLock lock(*this);
+    if (!epub || !section || !epub->hasBookLanguageArtifact() || section->currentPage < 0 ||
+        section->currentPage >= section->pageCount) {
+      LOG_ERR("DICT", "Current EPUB is not dictionary-compatible");
+    } else {
+      // The 6.4 KB token workspace exceeds the reader task stack. It exists
+      // only for this explicit action and is freed before the UI opens.
+      auto generator = makeUniqueNoThrow<dictionary::page_shortlist::Generator>();
+      if (!generator) {
+        LOG_ERR("DICT", "OOM: shortlist generator (%u bytes)",
+                static_cast<unsigned>(sizeof(dictionary::page_shortlist::Generator)));
+      } else {
+        auto page = section->loadPageFromSectionFile();
+        if (!page || !page->hasLanguageShards()) {
+          LOG_ERR("DICT", "Current page has no dictionary shard range");
+        } else {
+          const uint32_t firstShard = page->languageShardFirst;
+          const uint32_t lastShard = page->languageShardLast;
+          const auto collected = dictionary::current_page_shortlist::collectVisibleTokens(*page, *generator);
+          page.reset();
+
+          // Session retains only bounded paths/readers and global-state handles;
+          // heap ownership avoids roughly 2.5 KB of reader-task stack use.
+          session = makeUniqueNoThrow<dictionary::lookup::Session>();
+          if (!session) {
+            LOG_ERR("DICT", "OOM: dictionary lookup session (%u bytes)",
+                    static_cast<unsigned>(sizeof(dictionary::lookup::Session)));
+          } else {
+            dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
+            if (!session->openReaders(epub->getBookLanguageArtifactPath().c_str(), epub->getCachePath().c_str(),
+                                      epub->getDictionaryBundleUuid(), sessionError)) {
+              LOG_ERR("DICT", "Lookup session failed: %s", dictionary::lookup::sessionErrorName(sessionError));
+              outcome = sessionError == dictionary::lookup::SessionError::DICTIONARY_MISSING
+                            ? LookupOutcome::MissingDictionary
+                            : LookupOutcome::Failed;
+            } else {
+              const size_t suppressionBytes = session->requiredSuppressionBytes();
+              // Allocate exactly one bit per local lemma (maximum 4,096 bytes),
+              // rather than retaining the much larger global status table.
+              suppressionBitset = makeUniqueNoThrow<uint8_t[]>(suppressionBytes);
+              if (!suppressionBitset) {
+                LOG_ERR("DICT", "OOM: suppression projection (%u bytes)", static_cast<unsigned>(suppressionBytes));
+              } else if (!session->loadLearningState(suppressionBitset.get(), suppressionBytes, sessionError)) {
+                LOG_ERR("DICT", "Learning state failed: %s", dictionary::lookup::sessionErrorName(sessionError));
+              } else {
+                // The 3.6 KB fixed shortlist outlives this function in the
+                // activity, so stack/static storage is unsuitable.
+                shortlist = makeUniqueNoThrow<dictionary::page_shortlist::Shortlist>();
+                if (!shortlist) {
+                  LOG_ERR("DICT", "OOM: page shortlist (%u bytes)",
+                          static_cast<unsigned>(sizeof(dictionary::page_shortlist::Shortlist)));
+                } else {
+                  dictionary::page_shortlist::GenerateError generateError =
+                      dictionary::page_shortlist::GenerateError::NONE;
+                  if (!generator->generate(session->book(), firstShard, lastShard, *shortlist, generateError)) {
+                    LOG_ERR("DICT", "Shortlist generation failed: %s",
+                            dictionary::page_shortlist::generateErrorName(generateError));
+                  } else {
+                    session->projection().filter(*shortlist);
+                    LOG_DBG("DICT", "Shortlist ready: words=%u tokens=%u candidates=%u%s",
+                            static_cast<unsigned>(collected.renderedWordsVisited),
+                            static_cast<unsigned>(collected.visibleTokens), static_cast<unsigned>(shortlist->count),
+                            shortlist->truncated ? " truncated" : "");
+                    outcome = shortlist->count == 0 ? LookupOutcome::NoWords : LookupOutcome::Ready;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (outcome != LookupOutcome::Ready) {
+    const char* message = outcome == LookupOutcome::NoWords             ? tr(STR_NO_UNKNOWN_WORDS)
+                          : outcome == LookupOutcome::MissingDictionary ? tr(STR_DICTIONARY_NOT_INSTALLED)
+                                                                        : tr(STR_DICTIONARY_LOOKUP_FAILED);
+    {
+      RenderLock lock(*this);
+      drawToast(renderer, message);
+    }
+    delay(1000);
+    requestUpdate();
+    return;
+  }
+
+  auto dictionaryActivity = makeUniqueNoThrow<DictionaryActivity>(renderer, mappedInput, std::move(session),
+                                                                  std::move(shortlist), std::move(suppressionBitset));
+  if (!dictionaryActivity) {
+    LOG_ERR("DICT", "OOM: dictionary activity (%u bytes)", static_cast<unsigned>(sizeof(DictionaryActivity)));
+    {
+      RenderLock lock(*this);
+      drawToast(renderer, tr(STR_DICTIONARY_LOOKUP_FAILED));
+    }
+    delay(1000);
+    requestUpdate();
+    return;
+  }
+
+  pauseReadingPaceTimer("dictionary");
+  startActivityForResult(std::move(dictionaryActivity), [this](const ActivityResult&) {
+    resumeReadingPaceTimer("dictionary_return");
+    requestUpdate();
+  });
+}
+
 void EpubReaderActivity::saveCurrentPageToWordInbox() {
   // The output can reach 8 KB, which is too large for the reader task stack.
   // Allocate only for this user-triggered cold path instead of holding it for
@@ -3328,6 +3446,9 @@ void EpubReaderActivity::executeReaderQuickAction(CrossPointSettings::LONG_PRESS
     case CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX:
       saveCurrentPageToWordInbox();
       break;
+    case CrossPointSettings::LONG_MENU_DICTIONARY_LOOKUP:
+      startDictionaryLookup();
+      break;
     case CrossPointSettings::LONG_MENU_OFF:
     default:
       break;
@@ -3339,6 +3460,7 @@ bool EpubReaderActivity::quickActionUsesConfirmRelease(const CrossPointSettings:
     case CrossPointSettings::LONG_MENU_READING_STATS:
     case CrossPointSettings::LONG_MENU_CYCLE_PAGE_TURN:
     case CrossPointSettings::LONG_MENU_CREATE_CLIPPING:
+    case CrossPointSettings::LONG_MENU_DICTIONARY_LOOKUP:
       return true;
     case CrossPointSettings::LONG_MENU_FOOTNOTES:
       return currentPageFootnotes.size() > 1;
@@ -3460,6 +3582,10 @@ bool EpubReaderActivity::executeShortPowerButtonAction() {
     case CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX:
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX);
       return true;
+    case CrossPointSettings::SHORT_PWRBTN::DICTIONARY_LOOKUP:
+      mappedInput.suppressNextPowerConfirmRelease();
+      executeReaderQuickAction(CrossPointSettings::LONG_MENU_DICTIONARY_LOOKUP);
+      return true;
     default:
       return false;
   }
@@ -3555,6 +3681,10 @@ bool EpubReaderActivity::executeLongPowerButtonAction() {
       return true;
     case CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX:
       executeReaderQuickAction(CrossPointSettings::LONG_MENU_SAVE_WORD_INBOX);
+      return true;
+    case CrossPointSettings::SHORT_PWRBTN::DICTIONARY_LOOKUP:
+      mappedInput.suppressNextPowerConfirmRelease();
+      executeReaderQuickAction(CrossPointSettings::LONG_MENU_DICTIONARY_LOOKUP);
       return true;
     default:
       return false;

@@ -23,21 +23,19 @@ class DictionaryActivity final : public Activity {
 
  private:
   enum class Mode : uint8_t { Shortlist, Definition, Status };
-  static constexpr uint8_t kMaxDefinitionPages = 64;
-
   std::unique_ptr<dictionary::lookup::Session> session_;
   std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist_;
   // Keeps the caller-sized projection storage alive for the session lifetime.
   std::unique_ptr<uint8_t[]> suppressionBitset_;
   std::unique_ptr<dictionary::definition::Pager> pager_;
   std::unique_ptr<dictionary::definition::Page> definitionPage_;
-  dictionary::definition::Cursor pageStarts_[kMaxDefinitionPages]{};
+  dictionary::definition::Cursor definitionPageStart_{};
   dictionary::LexemeRecord lexeme_{};
   dictionary::EntrySlice entry_{};
   Mode mode_ = Mode::Shortlist;
   uint16_t selected_ = 0;
   uint8_t analysisIndex_ = 0;
-  uint8_t definitionPageIndex_ = 0;
+  uint32_t definitionPageIndex_ = 0;
   uint8_t statusSelection_ = 0;
   char headword_[dictionary::kMaxHeadwordBytes + 1]{};
   char lineScratch_[dictionary::definition::kMaxLineBytes + 1]{};
@@ -45,7 +43,7 @@ class DictionaryActivity final : public Activity {
   bool statusSaved_ = false;
 
   bool openDefinition();
-  bool loadDefinitionPage(uint8_t pageIndex);
+  bool loadDefinitionPage(const dictionary::definition::Cursor& start, uint32_t pageIndex);
   void changeDefinitionPage(int delta);
   void changeAnalysis(int delta);
   void saveSelectedStatus();
@@ -53,6 +51,7 @@ class DictionaryActivity final : public Activity {
   uint16_t selectedLocalLemmaId() const;
   int shortlistRowsPerPage() const;
   int definitionContentWidth() const;
+  void contentMargins(int& top, int& right, int& bottom, int& left) const;
   static int measureDefinitionText(void* context, std::string_view text);
 
   void renderShortlist();

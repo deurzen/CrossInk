@@ -54,7 +54,15 @@ class SimulatorSmokeTest {
   }
 
  private:
-  enum class ScriptActionType : uint8_t { Press, Release, Render, Pause, EnableWordInboxScreenshots };
+  enum class ScriptActionType : uint8_t {
+    Press,
+    Release,
+    Render,
+    Pause,
+    EnableWordInboxScreenshots,
+    EnableDictionaryLookup,
+    EnableWordInbox
+  };
 
   struct ScriptAction {
     ScriptActionType type;
@@ -70,6 +78,8 @@ class SimulatorSmokeTest {
   size_t scriptIndex = 0;
 
   static bool enabled() { return std::getenv("CROSSINK_SIMULATOR_SMOKE_TEST") != nullptr; }
+
+  static bool dictionaryLookupEnabled() { return std::getenv("CROSSINK_SIMULATOR_SMOKE_DICTIONARY") != nullptr; }
 
   static int pageTurnCount() {
     const char* raw = std::getenv("CROSSINK_SIMULATOR_SMOKE_PAGE_TURNS");
@@ -226,6 +236,14 @@ class SimulatorSmokeTest {
     return {ScriptActionType::EnableWordInboxScreenshots, MappedInputManager::Button::Back, nullptr, 0};
   }
 
+  static ScriptAction enableDictionaryLookup() {
+    return {ScriptActionType::EnableDictionaryLookup, MappedInputManager::Button::Back, nullptr, 0};
+  }
+
+  static ScriptAction enableWordInbox() {
+    return {ScriptActionType::EnableWordInbox, MappedInputManager::Button::Back, nullptr, 0};
+  }
+
   void addTap(MappedInputManager::Button button) {
     inputScript.push_back(press(button));
     inputScript.push_back(release(button));
@@ -241,7 +259,19 @@ class SimulatorSmokeTest {
       inputScript.push_back(render("Reader after page forward", 4));
     }
 
-    SETTINGS.shortPwrBtn = CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX;
+    if (dictionaryLookupEnabled()) {
+      inputScript.push_back(enableDictionaryLookup());
+      addTap(MappedInputManager::Button::Power);
+      inputScript.push_back(render("Dictionary shortlist", 4));
+      addTap(MappedInputManager::Button::Confirm);
+      inputScript.push_back(render("Dictionary definition", 4));
+      addTap(MappedInputManager::Button::Back);
+      inputScript.push_back(render("Dictionary shortlist after definition", 3));
+      addTap(MappedInputManager::Button::Back);
+      inputScript.push_back(render("Reader after dictionary lookup", 4));
+    }
+
+    inputScript.push_back(enableWordInbox());
     SETTINGS.wordInboxScreenshots = 0;
     addTap(MappedInputManager::Button::Power);
     // Let the first, text-only capture toast expire without input or a page render.
@@ -445,6 +475,12 @@ class SimulatorSmokeTest {
         break;
       case ScriptActionType::EnableWordInboxScreenshots:
         SETTINGS.wordInboxScreenshots = 1;
+        break;
+      case ScriptActionType::EnableDictionaryLookup:
+        SETTINGS.shortPwrBtn = CrossPointSettings::SHORT_PWRBTN::DICTIONARY_LOOKUP;
+        break;
+      case ScriptActionType::EnableWordInbox:
+        SETTINGS.shortPwrBtn = CrossPointSettings::SHORT_PWRBTN::SAVE_WORD_INBOX;
         break;
     }
   }

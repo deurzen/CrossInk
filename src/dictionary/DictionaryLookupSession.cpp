@@ -17,6 +17,8 @@ bool appendPath(char* output, const size_t capacity, const char* directory, cons
 
 }  // namespace
 
+// Callback ABI requires void* even though the source descriptor is read-only.
+// cppcheck-suppress constParameterPointer
 bool Session::readAt(void* context, const uint32_t offset, void* output, const size_t length) {
   const auto& source = *static_cast<const SourceContext*>(context);
   if (static_cast<uint64_t>(offset) + length > source.size) return false;

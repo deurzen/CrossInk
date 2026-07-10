@@ -73,17 +73,35 @@ void DictionaryActivity::onExit() {
   definitionPage_.reset();
   pager_.reset();
   shortlist_.reset();
-  suppressionBitset_.reset();
   session_.reset();
+  suppressionBitset_.reset();
   Activity::onExit();
 }
 
+void DictionaryActivity::contentMargins(int& top, int& right, int& bottom, int& left) const {
+  renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
+}
+
 int DictionaryActivity::shortlistRowsPerPage() const {
-  return std::max(1, (renderer.getScreenHeight() - kListTop - kBottomReserved) / kRowHeight);
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  int left = 0;
+  contentMargins(top, right, bottom, left);
+  (void)right;
+  (void)left;
+  return std::max(1, (renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved) / kRowHeight);
 }
 
 int DictionaryActivity::definitionContentWidth() const {
-  return std::max(1, renderer.getScreenWidth() - 2 * kSideMargin);
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  int left = 0;
+  contentMargins(top, right, bottom, left);
+  (void)top;
+  (void)bottom;
+  return std::max(1, renderer.getScreenWidth() - left - right - 2 * kSideMargin);
 }
 
 uint16_t DictionaryActivity::selectedLocalLemmaId() const {
@@ -138,20 +156,27 @@ bool DictionaryActivity::openDefinition() {
     return false;
   }
 
-  pageStarts_[0] = {};
+  definitionPageStart_ = {};
   definitionPageIndex_ = 0;
   mode_ = Mode::Definition;
-  return loadDefinitionPage(0);
+  return loadDefinitionPage(definitionPageStart_, 0);
 }
 
-bool DictionaryActivity::loadDefinitionPage(const uint8_t pageIndex) {
-  if (!pager_ || !definitionPage_ || pageIndex >= kMaxDefinitionPages) return false;
+bool DictionaryActivity::loadDefinitionPage(const dictionary::definition::Cursor& start, const uint32_t pageIndex) {
+  if (!pager_ || !definitionPage_) return false;
   dictionary::definition::PagerError error = dictionary::definition::PagerError::NONE;
   const dictionary::definition::WidthMeasurer measurer{this, measureDefinitionText};
   const int lineStep = renderer.getLineHeight(UI_10_FONT_ID) + kDefinitionLineGap;
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  int left = 0;
+  contentMargins(top, right, bottom, left);
+  (void)right;
+  (void)left;
   const size_t visibleLines = static_cast<size_t>(
-      std::max(1, (renderer.getScreenHeight() - kListTop - kBottomReserved) / std::max(1, lineStep)));
-  if (!pager_->load(session_->package(), entry_, pageStarts_[pageIndex], measurer, definitionContentWidth(),
+      std::max(1, (renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved) / std::max(1, lineStep)));
+  if (!pager_->load(session_->package(), entry_, start, measurer, definitionContentWidth(),
                     std::min(visibleLines, dictionary::definition::kMaxPageLines), *definitionPage_, error)) {
     LOG_ERR("DICT", "Definition page failed: %s", dictionary::definition::pagerErrorName(error));
     definitionFailed_ = true;
@@ -159,20 +184,31 @@ bool DictionaryActivity::loadDefinitionPage(const uint8_t pageIndex) {
     return false;
   }
   definitionFailed_ = false;
+  definitionPageStart_ = start;
   definitionPageIndex_ = pageIndex;
-  if (definitionPage_->hasNext && pageIndex + 1 < kMaxDefinitionPages) {
-    pageStarts_[pageIndex + 1] = definitionPage_->next;
-  }
   requestUpdate();
   return true;
 }
 
 void DictionaryActivity::changeDefinitionPage(const int delta) {
   if (definitionFailed_ || !definitionPage_) return;
-  if (delta < 0 && definitionPageIndex_ > 0) {
-    loadDefinitionPage(static_cast<uint8_t>(definitionPageIndex_ - 1));
-  } else if (delta > 0 && definitionPage_->hasNext && definitionPageIndex_ + 1 < kMaxDefinitionPages) {
-    loadDefinitionPage(static_cast<uint8_t>(definitionPageIndex_ + 1));
+  if (delta > 0 && definitionPage_->hasNext) {
+    loadDefinitionPage(definitionPage_->next, definitionPageIndex_ + 1);
+    return;
+  }
+  if (delta >= 0 || definitionPageIndex_ == 0) return;
+
+  // Backward navigation replays bounded pages from the entry start. This keeps
+  // memory independent of definition length; only explicit reverse navigation
+  // pays the additional sequential SD reads.
+  const uint32_t targetPage = definitionPageIndex_ - 1;
+  dictionary::definition::Cursor cursor{};
+  for (uint32_t page = 0; page <= targetPage; ++page) {
+    if (!loadDefinitionPage(cursor, page)) return;
+    if (page < targetPage) {
+      if (!definitionPage_->hasNext) return;
+      cursor = definitionPage_->next;
+    }
   }
 }
 
@@ -212,10 +248,9 @@ void DictionaryActivity::returnToShortlist() {
 }
 
 void DictionaryActivity::loop() {
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    mappedInput.suppressNextBackRelease();
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (mode_ == Mode::Shortlist) {
-      finishAfterBackPress();
+      finish();
     } else if (mode_ == Mode::Status) {
       mode_ = Mode::Definition;
       requestUpdate();
@@ -277,23 +312,30 @@ void DictionaryActivity::loop() {
 }
 
 void DictionaryActivity::renderShortlist() {
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  int left = 0;
+  contentMargins(top, right, bottom, left);
+  (void)bottom;
   char header[48]{};
-  std::snprintf(header, sizeof(header), "%s · %u/%u", tr(STR_UNKNOWN_WORDS), selected_ + 1, shortlist_->count);
-  renderer.drawText(UI_12_FONT_ID, kSideMargin, kHeaderY, header, true, EpdFontFamily::BOLD);
+  std::snprintf(header, sizeof(header), "%s · %u/%u", tr(STR_UNKNOWN_WORDS), static_cast<unsigned>(selected_ + 1),
+                static_cast<unsigned>(shortlist_->count));
+  renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, header, true, EpdFontFamily::BOLD);
 
   const int rows = shortlistRowsPerPage();
   const int pageStart = (selected_ / rows) * rows;
   for (int row = 0; row < rows; ++row) {
     const int index = pageStart + row;
     if (index >= shortlist_->count) break;
-    const int y = kListTop + row * kRowHeight;
+    const int y = top + kListTop + row * kRowHeight;
     const bool selected = index == selected_;
-    if (selected) renderer.fillRect(0, y, renderer.getScreenWidth(), kRowHeight, true);
+    if (selected) renderer.fillRect(left, y, renderer.getScreenWidth() - left - right, kRowHeight, true);
     const std::string_view surface = shortlist_->surface(index);
     const size_t length = std::min(surface.size(), sizeof(lineScratch_) - 1);
     std::memcpy(lineScratch_, surface.data(), length);
     lineScratch_[length] = '\0';
-    renderer.drawText(UI_10_FONT_ID, kSideMargin, y + 5, lineScratch_, !selected);
+    renderer.drawText(UI_10_FONT_ID, left + kSideMargin, y + 5, lineScratch_, !selected);
   }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DEFINITION), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
@@ -301,20 +343,26 @@ void DictionaryActivity::renderShortlist() {
 }
 
 void DictionaryActivity::renderDefinition() {
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  int left = 0;
+  contentMargins(top, right, bottom, left);
   char header[160]{};
   uint8_t analyses = 1;
   if (shortlist_ && selected_ < shortlist_->count) analyses = shortlist_->items[selected_].analysisCount;
   if (analyses > 1) {
-    std::snprintf(header, sizeof(header), "%s · %u/%u", headword_, analysisIndex_ + 1, analyses);
+    std::snprintf(header, sizeof(header), "%s · %u/%u", headword_, static_cast<unsigned>(analysisIndex_ + 1),
+                  static_cast<unsigned>(analyses));
   } else {
     std::snprintf(header, sizeof(header), "%s", headword_);
   }
-  renderer.drawText(UI_12_FONT_ID, kSideMargin, kHeaderY, header, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, header, true, EpdFontFamily::BOLD);
 
   if (definitionFailed_) {
-    renderer.drawText(UI_10_FONT_ID, kSideMargin, kListTop, tr(STR_DICTIONARY_LOOKUP_FAILED));
+    renderer.drawText(UI_10_FONT_ID, left + kSideMargin, top + kListTop, tr(STR_DICTIONARY_LOOKUP_FAILED));
   } else if (definitionPage_) {
-    int y = kListTop;
+    int y = top + kListTop;
     const int lineStep = renderer.getLineHeight(UI_10_FONT_ID) + kDefinitionLineGap;
     for (uint8_t index = 0; index < definitionPage_->lineCount; ++index) {
       const auto text = definitionPage_->lineText(index);
@@ -322,19 +370,19 @@ void DictionaryActivity::renderDefinition() {
       std::memcpy(lineScratch_, text.data(), length);
       lineScratch_[length] = '\0';
       const bool bold = definitionPage_->lines[index].fieldType == 2;
-      renderer.drawText(UI_10_FONT_ID, kSideMargin, y, lineScratch_, true,
+      renderer.drawText(UI_10_FONT_ID, left + kSideMargin, y, lineScratch_, true,
                         bold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
       y += lineStep;
-      if (y >= renderer.getScreenHeight() - kBottomReserved) break;
+      if (y >= renderer.getScreenHeight() - bottom - kBottomReserved) break;
     }
     char pageLabel[16]{};
     std::snprintf(pageLabel, sizeof(pageLabel), "%u%s", definitionPageIndex_ + 1, definitionPage_->hasNext ? "+" : "");
-    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - kSideMargin - 25,
-                      renderer.getScreenHeight() - kBottomReserved, pageLabel);
+    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - right - kSideMargin - 25,
+                      renderer.getScreenHeight() - bottom - kBottomReserved, pageLabel);
   }
 
   if (statusSaved_) {
-    renderer.drawText(SMALL_FONT_ID, kSideMargin, renderer.getScreenHeight() - kBottomReserved,
+    renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
                       tr(STR_WORD_STATUS_SAVED));
   }
   const auto labels =
@@ -343,12 +391,19 @@ void DictionaryActivity::renderDefinition() {
 }
 
 void DictionaryActivity::renderStatus() {
-  renderer.drawText(UI_12_FONT_ID, kSideMargin, kHeaderY, tr(STR_SET_WORD_STATUS), true, EpdFontFamily::BOLD);
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  int left = 0;
+  contentMargins(top, right, bottom, left);
+  (void)bottom;
+  renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, tr(STR_SET_WORD_STATUS), true,
+                    EpdFontFamily::BOLD);
   for (uint8_t index = 0; index < 3; ++index) {
-    const int y = kListTop + index * (kRowHeight + 4);
+    const int y = top + kListTop + index * (kRowHeight + 4);
     const bool selected = index == statusSelection_;
-    if (selected) renderer.fillRect(0, y, renderer.getScreenWidth(), kRowHeight, true);
-    renderer.drawText(UI_10_FONT_ID, kSideMargin, y + 5, statusLabel(index), !selected);
+    if (selected) renderer.fillRect(left, y, renderer.getScreenWidth() - left - right, kRowHeight, true);
+    renderer.drawText(UI_10_FONT_ID, left + kSideMargin, y + 5, statusLabel(index), !selected);
   }
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
