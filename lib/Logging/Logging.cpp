@@ -2,16 +2,6 @@
 
 #include <string>
 
-#ifdef SIMULATOR
-#include <Arduino.h>
-
-MySerialImpl MySerialImpl::instance;
-
-size_t MySerialImpl::write(uint8_t b) { return logSerial.write(b); }
-size_t MySerialImpl::write(const uint8_t* buffer, size_t size) { return logSerial.write(buffer, size); }
-void MySerialImpl::flush() { logSerial.flush(); }
-#endif
-
 #define MAX_ENTRY_LEN 256
 #define MAX_LOG_LINES 16
 

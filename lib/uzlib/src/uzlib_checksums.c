@@ -1,5 +1,6 @@
 #include "uzlib.h"
 
+#ifndef SIMULATOR
 uint32_t uzlib_adler32(const void *data, unsigned int length, uint32_t prev_sum) {
     const uint8_t *buf = (const uint8_t *)data;
     uint32_t s1 = prev_sum & 0xffff;
@@ -26,3 +27,4 @@ uint32_t uzlib_crc32(const void *data, unsigned int length, uint32_t crc) {
     }
     return ~crc;
 }
+#endif
