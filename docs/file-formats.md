@@ -67,11 +67,41 @@ Fixed table records:
 | Local lemmas | 4 | `globalLexemeId:u32` indexed by local lemma ID |
 | Global-to-local | 8 | `globalLexemeId:u32`, `localLemmaId:u16`, `reserved:u16`, sorted by global ID |
 
-`alternateLocalLemmaId` is `UINT16_MAX` when absent. More than two analyses,
-compound components, and other cold-path data are stored in the variable-size
-surface-detail section. Metadata contains versioned attribution and analyzer
-identity records; their concrete record layouts will be locked alongside the
-book compiler before they are consumed by firmware.
+`surfaceHash` is FNV-1a-64 over the exact NFC UTF-8 surface. Candidate flag bit
+0 marks ambiguity, bit 1 marks an offline-split compound, and bit 2 marks a
+case-folded fallback rather than an exact surface match. Other bits are invalid
+in version 1. `alternateLocalLemmaId` is `UINT16_MAX` when absent; both lemma IDs
+are `UINT16_MAX` for a compound without its own dictionary entry.
+
+The surface-detail section begins with this 40-byte header. Its offsets are
+relative to the start of the section and are four-byte aligned:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 4 | Magic `CXSD` |
+| 4 | 2 | Surface-detail version (`1`) |
+| 6 | 2 | Header size (`40`) |
+| 8 | 4 | Surface count |
+| 12 | 4 | Analysis count |
+| 16 | 4 | Compound-component count |
+| 20 | 4 | Surface-record offset |
+| 24 | 4 | Analysis-array offset |
+| 28 | 4 | Component-array offset |
+| 32 | 4 | UTF-8 string-pool offset |
+| 36 | 4 | Exact section size |
+
+Each local surface ID indexes a 20-byte record containing
+`stringOffset:u32`, `firstAnalysis:u32`, `firstComponent:u32`,
+`stringLength:u16`, `analysisCount:u8`, `componentCount:u8`,
+`confidence:u16`, and `flags:u16`. String offsets are relative to the surface
+string pool. Analysis and component arrays contain local lemma IDs as `u16`.
+Confidence ranges from 0 to 1000. This preserves all plausible analyses and
+compound components outside the hot shard record.
+
+The metadata section starts with `CXLM`, `version:u16` (`1`), `headerSize:u16`
+(`16`), `jsonLength:u32`, and reserved zero `u32`, followed by deterministic
+UTF-8 JSON. Version 1 records tokenizer/analyzer versions and the 64-token shard
+size; firmware can ignore this cold-path metadata after compatibility checks.
 
 The allocation-free header validator lives in
 `lib/Dictionary/BookLanguageFormat.*`. It rejects unsupported versions and
