@@ -28,6 +28,7 @@
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
 #include "dictionary/DictionaryStorage.h"
+#include "html/DictionariesPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
@@ -425,6 +426,7 @@ void CrossPointWebServer::begin() {
   LOG_DBG("WEB", "Setting up routes...");
   server->on("/", HTTP_GET, [this] { handleRoot(); });
   server->on("/files", HTTP_GET, [this] { handleFileList(); });
+  server->on("/dictionaries", HTTP_GET, [this] { handleDictionariesPage(); });
   server->on("/word-inbox", HTTP_GET, [this] { handleWordInboxPage(); });
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJszip(); });
   server->on("/js/dictionary-worker.js", HTTP_GET, [this] { handleDictionaryWorker(); });
@@ -677,6 +679,11 @@ void CrossPointWebServer::handleDictionaryWorker() const {
   server->sendHeader("Cache-Control", "no-cache");
   server->send_P(200, "application/javascript", dictionary_workerJs, dictionary_workerJsCompressedSize);
   LOG_DBG("WEB", "Served dictionary-worker.js");
+}
+
+void CrossPointWebServer::handleDictionariesPage() const {
+  sendHtmlContent(server.get(), DictionariesPageHtml, sizeof(DictionariesPageHtml));
+  LOG_DBG("WEB", "Served dictionaries page");
 }
 
 // Shared stylesheet and logo are referenced with a content-hashed ?v= query,

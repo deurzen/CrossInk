@@ -26,6 +26,7 @@ PAGES = {
     "files":    ("/files",    "Files - CrossInk",           "files",    '  <script src="/js/jszip.min.js"></script>'),
     "settings": ("/settings", "Settings - CrossInk Reader", "settings", ""),
     "fonts":    ("/fonts",    "Fonts - CrossInk",           "fonts",    ""),
+    "dictionaries": ("/dictionaries", "Dictionaries - CrossInk", "dictionaries", '  <script src="/js/jszip.min.js"></script>'),
     "word-inbox": ("/word-inbox", "Word Inbox - CrossInk",   "word_inbox", ""),
 }
 ROUTE_TO_SLUG = {route: slug for slug, (route, *_rest) in PAGES.items()}
@@ -42,7 +43,7 @@ def render_page(slug):
         "styles": read(WEB, "pages", f"{slug}.css"),
         "body": read(WEB, "pages", f"{slug}.html"),
         "script": f"<script>\n{js}\n</script>" if js else "",
-        "cls_home": "", "cls_files": "", "cls_settings": "", "cls_fonts": "", "cls_word_inbox": "",
+        "cls_home": "", "cls_files": "", "cls_settings": "", "cls_fonts": "", "cls_dictionaries": "", "cls_word_inbox": "",
     }
     values[f"cls_{active}"] = ' class="active"'
     base = read(WEB, "templates", "base.html")
@@ -57,6 +58,11 @@ MOCK_API = {
         {"name": "The Great Gatsby.epub", "isDirectory": False, "isEpub": True, "size": 384512},
         {"name": "Moby Dick.epub", "isDirectory": False, "isEpub": True, "size": 612000},
         {"name": "notes.txt", "isDirectory": False, "isEpub": False, "size": 2048},
+    ],
+    "/api/dictionaries": [
+        {"uuid": "01020304-0506-0708-090a-0b0c0d0e0f10", "valid": True,
+         "sourceLanguage": "de", "targetLanguage": "en", "lexemeCount": 200000, "runtimeBytes": 48123456},
+        {"uuid": "11111111-2222-3333-4444-555555555555", "valid": False, "error": "crc-mismatch"},
     ],
     "/api/fonts": {"families": [
         {"name": "Bookerly", "sizes": [10, 12, 14], "files": [{"size": 120000}, {"size": 140000}]},

@@ -19,6 +19,7 @@ the IP address shown on the device screen.
 | `GET` | `/files` | File manager page |
 | `GET` | `/settings` | Web settings page |
 | `GET` | `/fonts` | SD-card font manager page |
+| `GET` | `/dictionaries` | Dictionary runtime installation and compatibility page |
 | `GET` | `/word-inbox` | Saved reading-context browser |
 | `GET` | `/js/jszip.min.js` | JavaScript ZIP asset used by the file manager |
 | `GET` | `/js/dictionary-worker.js` | Off-main-thread dictionary book compiler; requested only when dictionary optimization is enabled |

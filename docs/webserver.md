@@ -74,7 +74,7 @@ OPDS server.
 
 ## Web Interface
 
-The browser UI has five primary pages.
+The browser UI has six primary pages.
 
 ### Home
 
@@ -154,12 +154,14 @@ under `/.crosspoint/word_inbox/` when ordinary render caches are cleared.
 
 ### Dictionaries
 
-The dictionary management API accepts the five runtime files extracted from a
-`.cpdict` bundle. Files are uploaded into a hidden staging directory and the
-package becomes visible only after exact-size, UUID, and CRC validation. Browser
-compiler resources remain in IndexedDB and are never uploaded. The dedicated
-Dictionary WebUI is added in the next implementation unit; command-line usage
-is documented in [webserver-endpoints.md](./webserver-endpoints.md).
+The Dictionaries page installs `.cpdict` bundles and reports whether each
+reader runtime has matching compiler data cached in the current desktop
+browser. It extracts and uploads only the five runtime files; `forms.bin` stays
+in IndexedDB for EPUB optimization. Files are uploaded into a hidden staging
+directory and the package becomes visible only after exact-size, UUID, and CRC
+validation. Installation can be cancelled, and replacing a bundle preserves
+the previous runtime until commit. Removing a runtime deliberately retains its
+global learning state.
 
 ### Fonts
 

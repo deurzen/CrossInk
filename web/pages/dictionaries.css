@@ -1,0 +1,35 @@
+h2 { color: var(--title-color); margin: 0 0 8px; font-size: 1.15em; }
+.hint { color: var(--label-color); margin: 4px 0 14px; line-height: 1.45; }
+.section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.dictionary-row { border-bottom: 1px solid var(--border-color); padding: 15px 0; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.dictionary-row:last-child { border-bottom: none; }
+.dictionary-info { min-width: 0; }
+.dictionary-title { color: var(--title-color); font-weight: 650; margin-bottom: 5px; }
+.dictionary-meta { color: var(--label-color); font-size: 0.9em; overflow-wrap: anywhere; }
+.badges { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.badge { border: 1px solid var(--border-color); border-radius: 999px; padding: 2px 8px; font-size: 0.78em; color: var(--label-color); }
+.badge-ready { color: #15803d; border-color: rgba(22, 163, 74, 0.35); background: rgba(22, 163, 74, 0.08); }
+.badge-warn { color: #a16207; border-color: rgba(202, 138, 4, 0.35); background: rgba(202, 138, 4, 0.08); }
+.badge-error { color: #b91c1c; border-color: rgba(220, 38, 38, 0.35); background: rgba(220, 38, 38, 0.08); }
+.install-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.install-row input { flex: 1; min-width: 220px; }
+.btn { padding: 8px 16px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.9em; font-weight: 600; }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn-primary { color: white; background: var(--accent-color); border-color: var(--accent-color); }
+.btn-secondary { color: var(--font-color); background: transparent; border-color: var(--border-color); }
+.btn-danger { color: var(--danger-color); background: transparent; border-color: rgba(220, 38, 38, 0.35); }
+.progress-track { height: 8px; margin-top: 14px; overflow: hidden; border-radius: 999px; background: var(--border-color); }
+#progressBar { height: 100%; width: 0; background: var(--accent-color); transition: width 0.15s; }
+#installStatus { display: none; margin-top: 12px; padding: 11px; border-radius: var(--radius-sm); }
+.status-info { display: block !important; color: var(--label-color); background: rgba(100, 116, 139, 0.08); }
+.status-ok { display: block !important; color: #15803d; background: rgba(22, 163, 74, 0.1); }
+.status-error { display: block !important; color: #b91c1c; background: rgba(220, 38, 38, 0.08); }
+.empty { color: var(--label-color); text-align: center; padding: 18px; }
+code { font-size: 0.9em; }
+@media (max-width: 600px) {
+  body { padding: 16px 12px 40px; font-size: 14px; }
+  .card { padding: 16px; margin: 12px 0; }
+  .section-heading, .dictionary-row { align-items: stretch; flex-direction: column; }
+  .install-row { align-items: stretch; flex-direction: column; }
+  .install-row input { min-width: 0; }
+}

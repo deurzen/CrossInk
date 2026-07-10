@@ -1,0 +1,28 @@
+<div class="card">
+  <div class="section-heading">
+    <div>
+      <h2>Installed Dictionaries</h2>
+      <p class="hint">Runtime definitions stored on the reader. Learning state is retained when a dictionary is removed.</p>
+    </div>
+    <button class="btn btn-secondary" type="button" onclick="loadDictionaries()">Refresh</button>
+  </div>
+  <div id="dictionaryList"><p class="empty">Loading…</p></div>
+</div>
+
+<div class="card">
+  <h2>Install Dictionary Bundle</h2>
+  <p class="hint">Select a <code>.cpdict</code> bundle. Runtime files are installed on the reader; compiler forms stay only in this browser for EPUB optimization.</p>
+  <div class="install-row">
+    <input type="file" id="bundleInput" accept=".cpdict,application/zip" />
+    <button class="btn btn-primary" id="installBtn" type="button" onclick="installSelectedBundle()">Install</button>
+    <button class="btn btn-danger" id="cancelBtn" type="button" onclick="cancelInstall()" hidden>Cancel</button>
+  </div>
+  <div class="progress-track" id="progressTrack" hidden><div id="progressBar"></div></div>
+  <div id="installStatus"></div>
+</div>
+
+<div class="card">
+  <h2>Browser Compiler Cache</h2>
+  <div id="compilerStatus"><p class="empty">Checking this browser…</p></div>
+  <p class="hint">Compiler data is stored in IndexedDB on this computer. It never crosses the reader’s network connection.</p>
+</div>
