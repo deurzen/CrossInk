@@ -20,7 +20,7 @@ enum class DecodeResult : uint8_t {
 
 size_t encodedSize(const PairRecord& record);
 bool encode(const PairRecord& record, const CodecOutput& output);
-DecodeResult validate(const CodecInput& input);
+DecodeResult validate(const CodecInput& input, const DeviceId* expectedPeerDeviceId = nullptr);
 DecodeResult decode(const CodecInput& input, PairRecord& record);
 
 }  // namespace DeviceSync::PairRecordCodec

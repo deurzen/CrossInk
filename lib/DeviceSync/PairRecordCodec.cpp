@@ -100,7 +100,7 @@ class Reader {
   size_t consumed_ = 0;
 };
 
-DecodeResult decodeImpl(const CodecInput& input, PairRecord* record) {
+DecodeResult decodeImpl(const CodecInput& input, PairRecord* record, const DeviceId* expectedPeerDeviceId) {
   if (record != nullptr) record->reset();
   if (input.readExact == nullptr || input.size < sizeof(MAGIC) + sizeof(uint16_t)) return DecodeResult::Invalid;
   const auto invalid = [record]() {
@@ -139,8 +139,8 @@ DecodeResult decodeImpl(const CodecInput& input, PairRecord* record) {
   output.peerDisplayName[nameLength] = '\0';
   output.hasLastSuccessfulSession = (flags & FLAG_HAS_LAST_SESSION) != 0;
 
-  if (!output.valid() || reader.consumed() + sizeof(uint32_t) != input.size || !reader.checkCrc() ||
-      reader.consumed() != input.size) {
+  if (!output.valid() || (expectedPeerDeviceId != nullptr && output.peerDeviceId != *expectedPeerDeviceId) ||
+      reader.consumed() + sizeof(uint32_t) != input.size || !reader.checkCrc() || reader.consumed() != input.size) {
     return invalid();
   }
   return DecodeResult::Ok;
@@ -177,8 +177,10 @@ bool encode(const PairRecord& record, const CodecOutput& output) {
   return writer.writeCrc();
 }
 
-DecodeResult validate(const CodecInput& input) { return decodeImpl(input, nullptr); }
+DecodeResult validate(const CodecInput& input, const DeviceId* expectedPeerDeviceId) {
+  return decodeImpl(input, nullptr, expectedPeerDeviceId);
+}
 
-DecodeResult decode(const CodecInput& input, PairRecord& record) { return decodeImpl(input, &record); }
+DecodeResult decode(const CodecInput& input, PairRecord& record) { return decodeImpl(input, &record, nullptr); }
 
 }  // namespace DeviceSync::PairRecordCodec

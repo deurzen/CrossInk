@@ -556,7 +556,9 @@ Pair records contain authentication material and must never be logged or transmi
 [last 4] CRC-32 over all preceding bytes (u32)
 ```
 
-The peer ID, pair secret, generation, and next local counter must be nonzero. A set/clear last-session flag requires a nonzero/zero SessionId respectively. Readers reject unknown flags, nonzero reserved fields, malformed UTF-8, truncation, trailing bytes, and CRC mismatch; larger newer versions are preserved as unsupported.
+The peer ID, pair secret, generation, and next local counter must be nonzero. A set/clear last-session flag requires a nonzero/zero SessionId respectively. Readers reject unknown flags, nonzero reserved fields, malformed UTF-8, truncation, trailing bytes, CRC mismatch, and a peer ID that differs from the lowercase hexadecimal filename; larger newer versions are preserved as unsupported.
+
+Updates use same-directory `.tmp` and `.bak` sidecars through `AtomicFile`. A complete interrupted first pairing is promoted; an incomplete first-pair temp is removed and reported as missing because no secret was committed. Unpairing removes sidecars before the final record so an interrupted deletion cannot resurrect authentication material.
 
 ## `/.crosspoint/device-sync/config.bin`
 

@@ -56,6 +56,11 @@ bool validUtf8DisplayName(const char* name) {
 
 }  // namespace
 
+PairRecord::~PairRecord() {
+  volatile uint8_t* secret = pairSecret.data();
+  for (size_t i = 0; i < pairSecret.size(); ++i) secret[i] = 0;
+}
+
 void PairRecord::reset() {
   peerDeviceId.fill(0);
   peerDisplayName[0] = '\0';

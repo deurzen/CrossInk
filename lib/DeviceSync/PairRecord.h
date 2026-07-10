@@ -24,6 +24,7 @@ struct PairRecord {
   char peerDisplayName[PAIR_DISPLAY_NAME_BYTES] = {};
   bool hasLastSuccessfulSession = false;
 
+  ~PairRecord();
   void reset();
   bool setPeerDisplayName(const char* name);
   bool valid() const;
