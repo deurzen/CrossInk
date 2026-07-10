@@ -124,6 +124,30 @@ language cache files, a changed member size retries validation, and clearing the
 book cache removes the marker. Transient open/read/write failures do not create
 the marker and can therefore recover on the next open.
 
+## Dictionary learning state
+
+Global learning state is stored outside EPUB caches under
+`/.crosspoint/language-state/<bundle-uuid>/`. `state.meta` is 36 bytes:
+`CXSM`, version/header size (`u16`, `u16`), bundle UUID (16 bytes), global
+lexeme count (`u32`), reserved zero (`u32`), and CRC32 over the first 32 bytes.
+
+`status.bin` starts with a 32-byte `CXST` header containing version/header size,
+bundle UUID, global lexeme count, and generation (`u32`). Four-bit statuses are
+packed low nibble first: 0 unseen, 1 known, 2 learning, 3 ignored, and 4
+implicitly familiar. All nonzero states suppress a lexeme from ordinary
+shortlists.
+
+A 40-byte `status.wal` (`CXWL`) records bundle UUID, lexeme ID, target
+generation, new status, three reserved bytes, and CRC32. Updates sync the WAL,
+status byte, and generation in that order. Recovery idempotently replays the WAL
+before removing it.
+
+Each EPUB cache may contain `dictionary-suppress.bin`: a 36-byte `CXSP` header
+with bundle UUID, local lemma count, global generation, and payload byte count,
+followed by one suppression bit per local lemma. Generation or format mismatch
+causes an atomic rebuild from `language.bin` and global state. Deleting an EPUB
+cache removes only this reproducible projection, never global learning state.
+
 ## `/.crosspoint/dictionaries/<bundle-uuid>/`
 
 ### Native dictionary package version 1

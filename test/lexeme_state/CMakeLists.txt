@@ -1,6 +1,10 @@
 add_executable(LexemeStateTest
   LexemeStateTest.cpp
   ${REPO_ROOT}/lib/Dictionary/LexemeStateStore.cpp
+  ${REPO_ROOT}/lib/Dictionary/LocalSuppressionProjection.cpp
+  ${REPO_ROOT}/lib/Dictionary/BookLanguageFormat.cpp
+  ${REPO_ROOT}/lib/Dictionary/BookLanguageReader.cpp
+  ${REPO_ROOT}/lib/Dictionary/PageShortlist.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
 )
 
