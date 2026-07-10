@@ -5,6 +5,80 @@ All POD fields are written in the ESP32 little-endian representation used by
 `Serialization.h`; strings are length-prefixed UTF-8 unless a format notes a
 fixed-size char buffer.
 
+## EPUB `META-INF/crossink/language.bin`
+
+### Version 1
+
+Dictionary-compatible optimized EPUBs contain `META-INF/crossink/language.bin`
+as an uncompressed ZIP member. It maps stable source-text shards to dictionary
+lexemes without tying those shards to a particular font, orientation, or page
+layout. Firmware validates the embedded artifact before extracting it to the
+book's render-cache directory for random access. The embedded member remains
+the source of truth; user learning state is stored separately and is not part
+of this file.
+
+All integers are unsigned little-endian. All offsets are absolute file offsets,
+are four-byte aligned, and point to non-overlapping sections in the order shown
+below. CRC32 uses the standard zlib polynomial and representation. The header
+CRC covers bytes `[0, 104)`; the payload CRC covers bytes `[108, fileSize)`.
+
+Fixed 108-byte header:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 4 | Magic `CXLG` |
+| 4 | 2 | Format version (`1`) |
+| 6 | 2 | Header size (`108`) |
+| 8 | 4 | Flags; version 1 requires zero |
+| 12 | 2 | Tokenizer version |
+| 14 | 2 | Analyzer version |
+| 16 | 16 | Dictionary bundle UUID; an all-zero UUID is invalid |
+| 32 | 8 | Zero-padded source-language tag, maximum 7 ASCII bytes |
+| 40 | 8 | Zero-padded target-language tag, maximum 7 ASCII bytes |
+| 48 | 2 | Spine count |
+| 50 | 2 | Reserved; must be zero |
+| 52 | 4 | Shard count |
+| 56 | 4 | Total shard-candidate record count |
+| 60 | 4 | Local lemma count |
+| 64 | 4 | Local surface count |
+| 68 | 4 | Spine-directory offset |
+| 72 | 4 | Shard-directory offset |
+| 76 | 4 | Shard-candidate table offset |
+| 80 | 4 | Local-lemma table offset |
+| 84 | 4 | Global-to-local table offset |
+| 88 | 4 | Surface-detail section offset |
+| 92 | 4 | Metadata section offset |
+| 96 | 4 | Exact file size |
+| 100 | 4 | Payload CRC32 |
+| 104 | 4 | Header CRC32 |
+
+Firmware version-1 limits are part of the format contract: 64 MiB maximum file
+size, 4096 spines, 65535 shards, 1,000,000 shard-candidate records, 32768 local
+lemmas, and 65535 local surfaces. Compilers must fail rather than emit an
+artifact beyond these limits.
+
+Fixed table records:
+
+| Table | Record size | Version-1 record |
+| --- | ---: | --- |
+| Spine directory | 8 | `firstShard:u32`, `shardCount:u32` |
+| Shard directory | 16 | `firstRecord:u32`, `recordCount:u16`, `reserved:u16`, `sourceTokenStart:u32`, `sourceTokenEnd:u32` |
+| Shard candidates | 16 | `surfaceHash:u64`, `localSurfaceId:u16`, `primaryLocalLemmaId:u16`, `alternateLocalLemmaId:u16`, `surfaceByteLength:u8`, `flags:u8` |
+| Local lemmas | 4 | `globalLexemeId:u32` indexed by local lemma ID |
+| Global-to-local | 8 | `globalLexemeId:u32`, `localLemmaId:u16`, `reserved:u16`, sorted by global ID |
+
+`alternateLocalLemmaId` is `UINT16_MAX` when absent. More than two analyses,
+compound components, and other cold-path data are stored in the variable-size
+surface-detail section. Metadata contains versioned attribution and analyzer
+identity records; their concrete record layouts will be locked alongside the
+book compiler before they are consumed by firmware.
+
+The allocation-free header validator lives in
+`lib/Dictionary/BookLanguageFormat.*`. It rejects unsupported versions and
+flags, malformed language tags, zero dictionary identities, excessive counts,
+misaligned or overlapping tables, mismatched file sizes, and CRC failures
+before later readers seek into a table.
+
 ## `book.bin`
 
 ### Version 8

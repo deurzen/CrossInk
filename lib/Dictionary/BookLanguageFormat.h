@@ -1,0 +1,84 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+namespace dictionary::book_language {
+
+constexpr uint16_t kFormatVersion = 1;
+constexpr size_t kHeaderSize = 108;
+constexpr uint32_t kMaxFileSize = 64U * 1024U * 1024U;
+constexpr uint16_t kMaxSpineCount = 4096;
+constexpr uint32_t kMaxShardCount = 65535;
+constexpr uint32_t kMaxShardRecordCount = 1000000;
+constexpr uint32_t kMaxLocalLemmaCount = 32768;
+constexpr uint32_t kMaxLocalSurfaceCount = 65535;
+
+constexpr uint32_t kSpineRecordSize = 8;
+constexpr uint32_t kShardDirectoryRecordSize = 16;
+constexpr uint32_t kShardCandidateRecordSize = 16;
+constexpr uint32_t kLocalLemmaRecordSize = 4;
+constexpr uint32_t kGlobalToLocalRecordSize = 8;
+
+struct Header {
+  uint16_t formatVersion = 0;
+  uint16_t headerSize = 0;
+  uint32_t flags = 0;
+  uint16_t tokenizerVersion = 0;
+  uint16_t analyzerVersion = 0;
+  uint8_t dictionaryBundleUuid[16]{};
+  char sourceLanguage[8]{};
+  char targetLanguage[8]{};
+  uint16_t spineCount = 0;
+  uint32_t shardCount = 0;
+  uint32_t shardRecordCount = 0;
+  uint32_t localLemmaCount = 0;
+  uint32_t localSurfaceCount = 0;
+  uint32_t spineDirectoryOffset = 0;
+  uint32_t shardDirectoryOffset = 0;
+  uint32_t shardRecordsOffset = 0;
+  uint32_t localLemmaTableOffset = 0;
+  uint32_t globalToLocalTableOffset = 0;
+  uint32_t surfaceDetailOffset = 0;
+  uint32_t metadataOffset = 0;
+  uint32_t fileSize = 0;
+  uint32_t payloadCrc32 = 0;
+  uint32_t headerCrc32 = 0;
+};
+
+enum class FormatError : uint8_t {
+  NONE = 0,
+  HEADER_TRUNCATED,
+  BAD_MAGIC,
+  UNSUPPORTED_VERSION,
+  BAD_HEADER_SIZE,
+  BAD_HEADER_CRC,
+  UNSUPPORTED_FLAGS,
+  RESERVED_FIELD_NONZERO,
+  INVALID_DICTIONARY_UUID,
+  INVALID_LANGUAGE,
+  COUNT_OUT_OF_RANGE,
+  FILE_SIZE_OUT_OF_RANGE,
+  FILE_SIZE_MISMATCH,
+  OFFSET_UNALIGNED,
+  OFFSET_ORDER_INVALID,
+  TABLE_OUT_OF_BOUNDS,
+  BAD_PAYLOAD_CRC,
+};
+
+// Standard CRC32 compatible with zlib.crc32(). Pass the previous return value
+// to continue across chunks; use zero for the first chunk.
+uint32_t updateCrc32(uint32_t crc, const uint8_t* data, size_t length);
+
+// Parses and validates only the fixed header. This function allocates no memory.
+// actualFileSize is the size reported by storage and may exceed uint32_t.
+bool parseHeader(const uint8_t* data, size_t dataSize, uint64_t actualFileSize, Header& out, FormatError& error);
+
+// Validates the payload when the complete artifact is already available.
+// Firmware file readers should compute the same CRC incrementally instead of
+// allocating the whole artifact.
+bool validatePayload(const uint8_t* fileData, size_t dataSize, const Header& header, FormatError& error);
+
+const char* formatErrorName(FormatError error);
+
+}  // namespace dictionary::book_language
