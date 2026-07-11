@@ -202,8 +202,9 @@ back or the clipping store is migrated.
 
 Word Inbox data is kept outside render-cache directories so clearing an EPUB,
 TXT, or XTC cache does not remove saved learning contexts. The directory suffix
-is `uzlib_crc32()` of the source book's SD-card path. A valid capture consists
-of a context file and a BMP with the same eight-digit ID:
+is `uzlib_crc32()` of the source book's SD-card path. A valid capture always has
+a context file and may have a BMP with the same eight-digit ID when screenshots
+were enabled:
 
 ```text
 /.crosspoint/word_inbox/epub_1234567890/book.bin
@@ -233,9 +234,10 @@ Each `.ctx` layout:
 - chapter title (`String`, maximum 512 bytes)
 - visible text (`String`, maximum 8192 bytes)
 
-Writes use `.tmp` files. The BMP is renamed first and the `.ctx` file last, so
-the final context rename is the commit point. Readers ignore temporary files and
-must treat a missing same-ID BMP as an incomplete/corrupt capture. The stored
+Writes use `.tmp` files. When present, the BMP is renamed first and the `.ctx`
+file last, so the final context rename is the commit point. Readers ignore
+temporary files and treat a missing same-ID BMP as incomplete only when bit 2
+is set. The stored
 source path also detects the unlikely case where two paths produce the same
 CRC32 directory name.
 

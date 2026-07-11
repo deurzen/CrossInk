@@ -134,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
                     "previousId": ids[index - 1] if index > 0 else 0,
                     "nextId": ids[index + 1] if index + 1 < len(ids) else 0,
                     "spineIndex": -1 if is_xtc else 2, "page": 8, "totalPages": 21, "progress": 37,
-                    "hasText": not is_xtc, "textTruncated": False, "hasImage": True,
+                    "hasText": not is_xtc, "textTruncated": False, "hasImage": is_xtc or context_id != 12,
                     "chapter": "" if is_xtc else "Kapitel Drei"}
             self._send(200, json.dumps(data), "application/json")
             return

@@ -3174,9 +3174,11 @@ void EpubReaderActivity::saveCurrentPageToWordInbox() {
       static_cast<uint8_t>(clampPercent(static_cast<int>(getCurrentBookProgressPercent() + 0.5f)));
   capture.text = std::string_view(visibleText.text, visibleText.length);
   capture.textTruncated = visibleText.truncated;
-  capture.framebuffer = renderer.getFrameBuffer();
-  capture.displayWidth = renderer.getDisplayWidth();
-  capture.displayHeight = renderer.getDisplayHeight();
+  if (SETTINGS.wordInboxScreenshots) {
+    capture.framebuffer = renderer.getFrameBuffer();
+    capture.displayWidth = renderer.getDisplayWidth();
+    capture.displayHeight = renderer.getDisplayHeight();
+  }
 
   // Release the deserialized page arena before SD persistence; only the bounded
   // text buffer and the existing framebuffer are needed from this point.

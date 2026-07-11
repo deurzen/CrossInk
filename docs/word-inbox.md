@@ -4,9 +4,9 @@ Implement a **Word Inbox context capture** integrated into CrossInk’s existing
 
 A capture stores:
 
-1. The current framebuffer as a 1-bit BMP.
-2. Copyable text reconstructed from the visible page.
-3. Book, chapter, page, progress, format, and capture-order metadata.
+1. Copyable text reconstructed from the visible page.
+2. Book, chapter, page, progress, format, and capture-order metadata.
+3. Optionally, the current framebuffer as a 1-bit BMP. Screenshots are disabled by default to keep capture and WebUI browsing fast.
 
 The action should take one button press, show a small non-blocking confirmation badge, and leave the reader on the same page. No `freeink-sdk` changes, no network during reading, no new on-device activity, and no dictionary engine.
 
@@ -24,9 +24,9 @@ This plan targets the current clean `v1.4.0` checkout on branch `v1.4.0-dictiona
    - Long-press Menu
    - Long-press Back
 2. While reading, trigger the shortcut.
-3. CrossInk captures the currently displayed page before drawing feedback.
-4. A small **Saved to Word Inbox** badge appears in the status-bar area.
-5. Reading continues without opening a menu or moving the page.
+3. CrossInk captures the visible text and metadata, plus the framebuffer when **Settings → Reader → Word Inbox screenshots** is enabled.
+4. A small **Saved to Word Inbox** badge appears near the bottom of the page.
+5. The badge dismisses automatically and reading continues without opening a menu or moving the page.
 
 Long-press Menu is probably the best default recommendation, but the feature should not assign itself automatically.
 
@@ -52,9 +52,9 @@ Initial selection should be the latest capture from the latest book.
 
 | Format | Screenshot | Copyable text | Notes |
 | --- | --: | --: | --- |
-| EPUB | Yes | Yes | Primary target and best-quality implementation |
-| TXT/Markdown | Yes | Yes | `currentPageLines` already contains rendered lines |
-| XTC/XTCH | Yes | No | These formats contain only pre-rendered bitmap pages |
+| EPUB | Optional | Yes | Primary target and best-quality implementation |
+| TXT/Markdown | Optional | Yes | `currentPageLines` already contains rendered lines |
+| XTC/XTCH | Optional | No | Without screenshots, these captures retain location metadata only |
 | Image preview | No | No | Not treated as a reading context |
 
 TXT already retains the visible lines in `TxtReaderActivity::currentPageLines` (`src/activities/reader/TxtReaderActivity.h:21-24`) and renders those exact lines at `src/activities/reader/TxtReaderActivity.cpp:524-589`.
@@ -274,9 +274,9 @@ Capture IDs are monotonically increasing per book. Determine the next ID by scan
 
 1. Ensure root and book directories exist.
 2. Update `book.bin` through `book.bin.tmp`, `sync()`, close, rename.
-3. Write screenshot to `<id>.bmp.tmp`.
+3. When enabled, write the screenshot to `<id>.bmp.tmp`.
 4. Write context to `<id>.ctx.tmp`, `sync()`, close.
-5. Rename BMP to its final name.
+5. When present, rename BMP to its final name.
 6. Rename context last; the `.ctx` rename is the commit point.
 7. On failure, remove temporary and partially promoted files.
 
@@ -303,7 +303,7 @@ The lower-level writer already:
 
 One caveat: this records the composed 1-bit framebuffer, not the panel’s transient grayscale waveform state. It preserves content, layout, status bars, dark mode, and image composition, but anti-alias gray levels may not exactly match the physical panel.
 
-Expected SD usage is approximately one framebuffer-sized BMP plus text per capture: around 50–60 KB, depending on device dimensions and metadata. There is no additional framebuffer allocation.
+With screenshots enabled, expected SD usage is approximately one framebuffer-sized BMP plus text per capture: around 50–60 KB, depending on device dimensions and metadata. With the default text-only mode, captures are bounded at 8 KB plus small metadata and usually much smaller. There is no additional framebuffer allocation.
 
 ---
 
@@ -346,16 +346,13 @@ Do not use the existing screenshot animation or a modal activity.
 
 After successful persistence:
 
-- Draw a compact **Inbox saved** badge in the status-bar area.
-- Perform one FAST refresh.
-- Leave the badge until the next normal page redraw.
+- Back up only the compact toast region.
+- Draw **Saved to Word Inbox** near the bottom and perform one FAST refresh.
+- After 1.2 seconds, restore that region and perform another differential FAST refresh.
 
-On failure:
+On failure, show **Could not save to Word Inbox** for 2 seconds and log the exact reason.
 
-- Draw **Inbox save failed** in the same location.
-- Log the exact storage/allocation reason.
-
-The framebuffer must be saved before drawing the badge. This avoids two e-ink refreshes and keeps the interruption near one fast-refresh cycle rather than several seconds.
+Repeated captures restore the clean framebuffer before persistence, preventing feedback from entering a screenshot. A page render cancels the pending toast restoration because the new page replaces it.
 
 The feedback drawing should be a shared helper in `ReaderUtils` or a small reusable reader helper, not copied across three readers.
 

@@ -358,9 +358,11 @@ void TxtReaderActivity::saveCurrentPageToWordInbox() {
   capture.progressPercent = static_cast<uint8_t>(std::clamp(info.progressPercent, 0, 100));
   capture.text = std::string_view(visibleText.text, visibleText.length);
   capture.textTruncated = visibleText.truncated;
-  capture.framebuffer = renderer.getFrameBuffer();
-  capture.displayWidth = renderer.getDisplayWidth();
-  capture.displayHeight = renderer.getDisplayHeight();
+  if (SETTINGS.wordInboxScreenshots) {
+    capture.framebuffer = renderer.getFrameBuffer();
+    capture.displayWidth = renderer.getDisplayWidth();
+    capture.displayHeight = renderer.getDisplayHeight();
+  }
 
   uint32_t captureId = 0;
   wordInboxFeedback.show(renderer, WordInboxStore::save(capture, captureId));
