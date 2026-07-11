@@ -128,15 +128,19 @@ not returned by the API.
 
 ### Word Inbox
 
-The Word Inbox page groups captured reading contexts by book. It displays the
-saved reader screenshot, chapter/page/progress metadata, and copyable visible
-text for EPUB and TXT/Markdown captures. XTC/XTCH captures are screenshot-only
+The Word Inbox page groups captured reading contexts by book. It displays
+chapter/page/progress metadata and copyable visible text for EPUB and
+TXT/Markdown captures, plus a reader screenshot when that optional setting was
+enabled. XTC/XTCH captures contain location metadata and an optional screenshot
 because those formats contain pre-rendered pages rather than source text.
 
-Use Previous/Next or the keyboard arrow keys to review captures. Individual
-contexts or all contexts for a book can be deleted from this page. Word Inbox
-data remains under `/.crosspoint/word_inbox/` when ordinary render caches are
-cleared.
+Use Previous/Next or the keyboard arrow keys to review captures. The browser
+keeps a bounded cache of five contexts in each direction; context metadata and
+text arrive in one response, while screenshots are loaded only for the visible
+context. Per-book on-disk indexes keep navigation lookups independent of the
+number of captures after a one-time migration rebuild. Individual contexts or
+all contexts for a book can be deleted from this page. Word Inbox data remains
+under `/.crosspoint/word_inbox/` when ordinary render caches are cleared.
 
 ### Fonts
 

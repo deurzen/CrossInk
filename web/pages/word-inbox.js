@@ -1,5 +1,71 @@
-const state = { books: [], book: null, context: null, request: 0 };
+const PREFETCH_DISTANCE = 5;
+const CONTEXT_CACHE_LIMIT = PREFETCH_DISTANCE * 2 + 1;
+const state = { books: [], book: null, context: null, request: 0, cache: new Map() };
 const el = id => document.getElementById(id);
+
+function contextCacheKey(book, id) {
+  return book.key + ':' + id;
+}
+
+function clearContextCache() {
+  state.cache.clear();
+}
+
+async function fetchContext(book, id) {
+  const key = contextCacheKey(book, id);
+  if (state.cache.has(key)) return state.cache.get(key);
+
+  const query = 'book=' + encodeURIComponent(book.key) + '&id=' + encodeURIComponent(id);
+  const pending = fetch('/api/word-inbox/context?' + query).then(async response => {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  });
+  state.cache.set(key, pending);
+  const currentKey = state.context && state.book?.key === book.key ? contextCacheKey(book, state.context.id) : key;
+  trimContextCache(currentKey);
+  try {
+    return await pending;
+  } catch (error) {
+    state.cache.delete(key);
+    throw error;
+  }
+}
+
+function trimContextCache(currentKey) {
+  while (state.cache.size > CONTEXT_CACHE_LIMIT) {
+    const oldest = state.cache.keys().next().value;
+    if (oldest === currentKey) {
+      const current = state.cache.get(oldest);
+      state.cache.delete(oldest);
+      state.cache.set(oldest, current);
+      continue;
+    }
+    state.cache.delete(oldest);
+  }
+}
+
+function schedulePrefetch(book, context, request) {
+  setTimeout(async () => {
+    let previousId = context.previousId;
+    let nextId = context.nextId;
+    for (let distance = 0; distance < PREFETCH_DISTANCE; distance++) {
+      if (request !== state.request || state.book?.key !== book.key) return;
+      for (const direction of ['next', 'previous']) {
+        const id = direction === 'next' ? nextId : previousId;
+        if (!id) continue;
+        try {
+          const prefetched = await fetchContext(book, id);
+          if (direction === 'next') nextId = prefetched.nextId;
+          else previousId = prefetched.previousId;
+        } catch (_) {
+          if (direction === 'next') nextId = 0;
+          else previousId = 0;
+        }
+      }
+    }
+    trimContextCache(contextCacheKey(book, context.id));
+  }, 0);
+}
 
 function showStatus(message, error = false) {
   const status = el('status');
@@ -24,6 +90,7 @@ function bookLabel(book) {
 
 async function loadBooks(preferredKey = '', preferredId = 0) {
   clearStatus();
+  clearContextCache();
   const select = el('bookSelect');
   select.disabled = true;
   try {
@@ -64,11 +131,10 @@ async function loadContext(id) {
   const request = ++state.request;
   clearStatus();
   el('position').textContent = 'Loading…';
-  const query = 'book=' + encodeURIComponent(state.book.key) + '&id=' + encodeURIComponent(id);
+  const book = state.book;
+  const query = 'book=' + encodeURIComponent(book.key) + '&id=' + encodeURIComponent(id);
   try {
-    const response = await fetch('/api/word-inbox/context?' + query);
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    const context = await response.json();
+    const context = await fetchContext(book, id);
     if (request !== state.request) return;
     state.context = context;
 
@@ -107,12 +173,10 @@ async function loadContext(id) {
     text.hidden = !context.hasText;
     noText.hidden = context.hasText;
     copy.disabled = !context.hasText;
-    if (context.hasText) {
-      const textResponse = await fetch('/api/word-inbox/text?' + query);
-      if (!textResponse.ok) throw new Error('Could not load context text');
-      const body = await textResponse.text();
-      if (request === state.request) text.textContent = body;
-    }
+    if (context.hasText) text.textContent = context.text || '';
+
+    trimContextCache(contextCacheKey(book, context.id));
+    schedulePrefetch(book, context, request);
   } catch (error) {
     if (request === state.request) showStatus('Could not load the context: ' + error.message, true);
   }
@@ -164,6 +228,7 @@ async function deleteBook() {
 
 el('bookSelect').addEventListener('change', event => {
   state.book = state.books.find(book => book.key === event.target.value);
+  clearContextCache();
   if (state.book) loadContext(state.book.latestId);
 });
 el('previousBtn').addEventListener('click', () => state.context && loadContext(state.context.previousId));

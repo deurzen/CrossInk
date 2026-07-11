@@ -70,20 +70,22 @@ Lists books that have at least one complete context:
 
 ### `GET /api/word-inbox/context`
 
-Returns navigation and location metadata for one context:
+Returns navigation, location metadata, and copyable text for one context in a
+single streamed response:
 
 ```bash
 curl "http://crosspoint.local/api/word-inbox/context?book=epub_1234567890&id=4"
 ```
 
 ```json
-{"id":4,"position":3,"count":3,"previousId":2,"nextId":0,"spineIndex":5,"page":8,"totalPages":21,"progress":37,"hasText":true,"textTruncated":false,"hasImage":true,"chapter":"Kapitel Drei"}
+{"id":4,"position":3,"count":3,"previousId":2,"nextId":0,"spineIndex":5,"page":8,"totalPages":21,"progress":37,"hasText":true,"textTruncated":false,"hasImage":true,"chapter":"Kapitel Drei","text":"Das Gespräch wurde plötzlich still."}
 ```
 
 ### `GET /api/word-inbox/text`
 
-Streams the visible UTF-8 text as `text/plain`. It returns `404` for
-screenshot-only XTC/XTCH contexts.
+Compatibility endpoint that streams the visible UTF-8 text as `text/plain`.
+The WebUI normally uses the `text` field from `/context` to avoid a second
+request. It returns `404` for contexts without text.
 
 ```bash
 curl "http://crosspoint.local/api/word-inbox/text?book=epub_1234567890&id=4"

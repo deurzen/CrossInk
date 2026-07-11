@@ -268,7 +268,7 @@ bit 1: text truncated
 bit 2: screenshot available
 ```
 
-Capture IDs are monotonically increasing per book. Determine the next ID by scanning numeric `.ctx` filenames and selecting `max + 1`. This is an occasional cold-path directory scan and avoids maintaining/recovering another mutable counter file.
+Capture IDs are monotonically increasing per book. A compact `index.bin` stores the sorted IDs, count, endpoints, and next ID. Existing directories scan their `.ctx` files once to build it; normal capture and WebUI navigation use the index without repeated directory scans.
 
 ## Atomic write protocol
 
@@ -277,10 +277,11 @@ Capture IDs are monotonically increasing per book. Determine the next ID by scan
 3. When enabled, write the screenshot to `<id>.bmp.tmp`.
 4. Write context to `<id>.ctx.tmp`, `sync()`, close.
 5. When present, rename BMP to its final name.
-6. Rename context last; the `.ctx` rename is the commit point.
-7. On failure, remove temporary and partially promoted files.
+6. Rename the context to its final name.
+7. Publish a synced index generation through `index.bin.tmp`, retaining the previous generation as `index.bin.bak`.
+8. On failure, remove temporary and partially promoted files.
 
-The WebUI enumerates only valid final `.ctx` files. Therefore power loss cannot expose a capture without readable metadata.
+The index is the WebUI visibility point. A context committed just before power loss is detected at the index's next ID and incorporated by a bounded-memory rebuild.
 
 ---
 
@@ -390,7 +391,7 @@ Stream a bounded JSON array:
 
 ## Context response
 
-Return metadata only:
+Return metadata and text together so reviewing a context needs one request:
 
 ```json
 {
@@ -405,17 +406,19 @@ Return metadata only:
   "progress": 37,
   "hasText": true,
   "textTruncated": false,
-  "hasImage": true
+  "hasImage": true,
+  "text": "Das Gespräch wurde plötzlich still."
 }
 ```
 
-A single directory scan can compute count, rank, previous ID, and next ID without allocating a context list.
+The sorted on-disk ID index provides count and rank directly and finds previous/next IDs by binary search. Lookup cost is O(log n) small reads rather than O(n) context-file opens.
 
 ## Text and image responses
 
-Serve text and BMP separately rather than embedding either in JSON:
+Stream JSON-escaped text directly from the `.ctx` file with a fixed buffer. Keep the separate `text/plain` endpoint for compatibility. Continue serving optional screenshots separately so prefetch does not transfer images:
 
-- Text: `text/plain; charset=utf-8`
+- Context JSON: metadata plus streamed text
+- Compatibility text: `text/plain; charset=utf-8`
 - Image: `image/bmp`
 - Stream from SD using a fixed 512-byte or 1 KB reusable buffer.
 - Do not allocate a complete response body.
@@ -472,6 +475,7 @@ Use a `<pre>` or read-only `<textarea>` for text so line breaks survive and sele
 - Empty and error states
 - Truncation warning
 - “Text unavailable for pre-rendered XTC page” state
+- A desktop-browser-only cache of the current context plus five previous and five next contexts; prefetch metadata/text sequentially so the ESP32's single web server is not flooded
 
 Update the preview server with mock books, context metadata, text, and image responses so the WebUI can be developed without firmware or hardware (`scripts/preview_web.py:23-55`, `scripts/preview_web.py:103-123`).
 

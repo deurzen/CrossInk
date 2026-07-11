@@ -135,7 +135,8 @@ class Handler(BaseHTTPRequestHandler):
                     "nextId": ids[index + 1] if index + 1 < len(ids) else 0,
                     "spineIndex": -1 if is_xtc else 2, "page": 8, "totalPages": 21, "progress": 37,
                     "hasText": not is_xtc, "textTruncated": False, "hasImage": is_xtc or context_id != 12,
-                    "chapter": "" if is_xtc else "Kapitel Drei"}
+                    "chapter": "" if is_xtc else "Kapitel Drei",
+                    "text": None if is_xtc else "Das Gespräch wurde plötzlich still.\nEr kannte dieses Wort noch nicht."}
             self._send(200, json.dumps(data), "application/json")
             return
         if path == "/api/word-inbox/text":
