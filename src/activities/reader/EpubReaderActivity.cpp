@@ -1950,6 +1950,8 @@ void EpubReaderActivity::loop() {
     return;
   }
 
+  dismissWordInboxFeedbackIfDue();
+
   if (completionPromptQueued) {
     completionPromptQueued = false;
     completionPromptShown = true;
@@ -3130,21 +3132,25 @@ void EpubReaderActivity::saveCurrentPageToWordInbox() {
     LOG_ERR("WIN", "OOM: visible page text buffer (%u bytes)",
             static_cast<unsigned>(VisiblePageText::MAX_TEXT_BYTES + 1));
     RenderLock lock(*this);
-    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    wordInboxFeedback.show(renderer, WordInboxSaveResult::InvalidInput);
     return;
   }
 
   RenderLock lock(*this);
+  if (!wordInboxFeedback.prepareForCapture(renderer)) {
+    requestUpdate();
+    return;
+  }
   if (!epub || !section || section->currentPage < 0 || section->currentPage >= section->pageCount) {
     LOG_ERR("WIN", "EPUB page is unavailable for capture");
-    WordInboxFeedback::show(renderer, WordInboxSaveResult::InvalidInput);
+    wordInboxFeedback.show(renderer, WordInboxSaveResult::InvalidInput);
     return;
   }
 
   auto page = section->loadPageFromSectionFile();
   if (!page) {
     LOG_ERR("WIN", "Failed to reload current EPUB page for capture");
-    WordInboxFeedback::show(renderer, WordInboxSaveResult::StorageError);
+    wordInboxFeedback.show(renderer, WordInboxSaveResult::StorageError);
     return;
   }
 
@@ -3178,7 +3184,22 @@ void EpubReaderActivity::saveCurrentPageToWordInbox() {
 
   uint32_t captureId = 0;
   const WordInboxSaveResult result = WordInboxStore::save(capture, captureId);
-  WordInboxFeedback::show(renderer, result);
+  wordInboxFeedback.show(renderer, result);
+}
+
+void EpubReaderActivity::dismissWordInboxFeedbackIfDue() {
+  if (!wordInboxFeedback.dismissalDue() || RenderLock::peek()) {
+    return;
+  }
+
+  WordInboxFeedback::Controller::DismissResult result;
+  {
+    RenderLock lock(*this);
+    result = wordInboxFeedback.dismissIfDue(renderer);
+  }
+  if (result == WordInboxFeedback::Controller::DismissResult::NeedsRender) {
+    requestUpdate();
+  }
 }
 
 void EpubReaderActivity::resetReadingPaceData() {
@@ -3799,6 +3820,7 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn, const char* source) {
 
 // TODO: Failure handling
 void EpubReaderActivity::render(RenderLock&& lock) {
+  wordInboxFeedback.prepareForRender(renderer);
   if (!epub) {
     return;
   }

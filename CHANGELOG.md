@@ -4,6 +4,10 @@
 
 - Word Inbox captures save visible EPUB and TXT/Markdown pages as screenshots with copyable text, plus screenshot-only XTC/XTCH pages, through a configurable reader shortcut; saved contexts can be reviewed, copied, and deleted in the WebUI.
 
+### Fixed
+
+- Word Inbox save notifications now dismiss automatically without re-rendering the page and remain safe across repeated captures or page turns.
+
 ## [v1.4.0] - 2026-07-10
 
 ### Added

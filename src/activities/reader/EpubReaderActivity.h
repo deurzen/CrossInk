@@ -15,6 +15,7 @@
 #include "EpubReaderMenuActivity.h"
 #include "GlobalReadingStats.h"
 #include "activities/Activity.h"
+#include "word_inbox/WordInboxFeedback.h"
 
 struct ToastRect {
   int x = 0;
@@ -101,6 +102,7 @@ class EpubReaderActivity final : public Activity {
   bool longPowerButtonHandled = false;
   bool sideButtonLongPressHandled = false;
   bool frontButtonLongPressHandled = false;
+  WordInboxFeedback::Controller wordInboxFeedback;
   int pageLoadRetryCount = 0;
   enum class BookmarkFeedbackType : uint8_t {
     Added,
@@ -188,6 +190,7 @@ class EpubReaderActivity final : public Activity {
   void openAutoPageTurnIntervalPicker(bool ignoreInitialConfirmRelease = false);
   void startClipSelection();
   void saveCurrentPageToWordInbox();
+  void dismissWordInboxFeedbackIfDue();
   void resetReadingPaceData();
   void captureGlobalReaderSettings();
   void restoreGlobalReaderSettings();
