@@ -334,7 +334,92 @@ class SimulatorSmokeTest {
     if (!WordInboxStore::visitBooks(&afterBookDelete, visitor) || afterBookDelete.found) {
       fail("Deleted Word Inbox book remained visible");
     }
-    LOG_INF("SMOKE", "Validated Word Inbox feedback races and context CRUD API");
+
+    constexpr uint32_t BULK_CONTEXT_COUNT = 500;
+    WordInboxCapture bulkCapture;
+    bulkCapture.bookType = WordInboxBookType::Epub;
+    bulkCapture.bookPath = "/books/word-inbox-index-scale.epub";
+    bulkCapture.title = "Word Inbox Index Scale";
+    bulkCapture.text = "bulk context";
+    for (uint32_t expectedId = 1; expectedId <= BULK_CONTEXT_COUNT; ++expectedId) {
+      uint32_t captureId = 0;
+      if (WordInboxStore::save(bulkCapture, captureId) != WordInboxSaveResult::Saved || captureId != expectedId) {
+        fail("Word Inbox bulk index write failed at %lu", static_cast<unsigned long>(expectedId));
+      }
+    }
+
+    ValidationState bulkState;
+    if (!WordInboxStore::visitBooks(&bulkState, visitor) || !bulkState.found ||
+        bulkState.book.contextCount != BULK_CONTEXT_COUNT || bulkState.book.latestContextId != BULK_CONTEXT_COUNT) {
+      fail("Word Inbox 500-context index enumeration failed");
+    }
+
+    // Existing installations have no index. Removing both copies exercises the
+    // one-time directory rebuild without changing the context format.
+    char indexPath[96];
+    snprintf(indexPath, sizeof(indexPath), "/.crosspoint/word_inbox/%s/index.bin", bulkState.book.key);
+    Storage.remove(indexPath);
+    snprintf(indexPath, sizeof(indexPath), "/.crosspoint/word_inbox/%s/index.bin.bak", bulkState.book.key);
+    Storage.remove(indexPath);
+    ValidationState rebuiltState;
+    if (!WordInboxStore::visitBooks(&rebuiltState, visitor) || !rebuiltState.found ||
+        rebuiltState.book.contextCount != BULK_CONTEXT_COUNT) {
+      fail("Word Inbox index migration rebuild failed");
+    }
+
+    // Simulate power loss after a context was hidden for deletion but before
+    // the index update. The next lookup must finish the pending operation.
+    char pendingPath[96];
+    char contextPath[96];
+    char deletionPath[96];
+    snprintf(pendingPath, sizeof(pendingPath), "/.crosspoint/word_inbox/%s/delete.pending", rebuiltState.book.key);
+    snprintf(contextPath, sizeof(contextPath), "/.crosspoint/word_inbox/%s/00000300.ctx", rebuiltState.book.key);
+    snprintf(deletionPath, sizeof(deletionPath), "/.crosspoint/word_inbox/%s/00000300.ctx.del", rebuiltState.book.key);
+    HalFile pendingDelete = Storage.open(pendingPath, O_WRONLY | O_CREAT | O_TRUNC);
+    const uint32_t pendingId = 300;
+    if (!pendingDelete || pendingDelete.write(&pendingId, sizeof(pendingId)) != sizeof(pendingId) ||
+        !pendingDelete.sync()) {
+      fail("Could not create pending Word Inbox deletion fixture");
+    }
+    pendingDelete.close();
+    if (!Storage.rename(contextPath, deletionPath)) fail("Could not hide pending Word Inbox context fixture");
+    WordInboxContextInfo afterPendingDelete;
+    if (!WordInboxStore::getContext(rebuiltState.book.key, 301, afterPendingDelete) ||
+        afterPendingDelete.position != 300 || afterPendingDelete.previousId != 299 ||
+        afterPendingDelete.contextCount != BULK_CONTEXT_COUNT - 1) {
+      fail("Word Inbox pending deletion recovery failed");
+    }
+
+    const unsigned long lookupStarted = millis();
+    WordInboxContextInfo middle;
+    if (!WordInboxStore::getContext(rebuiltState.book.key, 250, middle) || middle.position != 250 ||
+        middle.previousId != 249 || middle.nextId != 251 || middle.contextCount != BULK_CONTEXT_COUNT - 1) {
+      fail("Word Inbox indexed middle lookup failed");
+    }
+    const unsigned long lookupMs = millis() - lookupStarted;
+    if (!WordInboxStore::deleteContext(rebuiltState.book.key, 250)) {
+      fail("Word Inbox indexed middle deletion failed");
+    }
+    WordInboxContextInfo afterMiddleDelete;
+    if (!WordInboxStore::getContext(rebuiltState.book.key, 251, afterMiddleDelete) ||
+        afterMiddleDelete.position != 250 || afterMiddleDelete.previousId != 249 ||
+        afterMiddleDelete.contextCount != BULK_CONTEXT_COUNT - 2) {
+      fail("Word Inbox indexed navigation after deletion failed");
+    }
+
+    // Corrupt the newest generation. The retained backup still references the
+    // deleted neighbor, so lookup must detect that mismatch and rebuild safely.
+    snprintf(indexPath, sizeof(indexPath), "/.crosspoint/word_inbox/%s/index.bin", rebuiltState.book.key);
+    if (!Storage.writeFile(indexPath, "bad")) fail("Could not corrupt Word Inbox index fixture");
+    WordInboxContextInfo recovered;
+    if (!WordInboxStore::getContext(rebuiltState.book.key, 251, recovered) || recovered.position != 250 ||
+        recovered.previousId != 249 || recovered.contextCount != BULK_CONTEXT_COUNT - 2) {
+      fail("Word Inbox corrupt-index recovery failed");
+    }
+    if (!WordInboxStore::deleteBook(rebuiltState.book.key)) {
+      fail("Word Inbox indexed test book deletion failed");
+    }
+    LOG_INF("SMOKE", "Validated Word Inbox index with 500 contexts (middle lookup %lums)", lookupMs);
   }
 
   void runReaderInputScript() {
