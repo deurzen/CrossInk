@@ -108,6 +108,17 @@ scripts/build_de_de_definition_source.py \
   --output tmp.local/german-wiktionary.cpdef
 ```
 
+A private dict.cc export is streamed without loading the TSV wholesale:
+
+```sh
+scripts/build_dictcc_definition_source.py \
+  --source tmp.local/dict-de-en.txt \
+  --canonical tmp.local/german-canonical.cplex \
+  --output tmp.local/dictcc-de-en.cpdef
+```
+
+Both the dict.cc source and output remain private-use artifacts.
+
 ## Transformer benchmark environment
 
 `de-zdl-dist` is pinned only to reproduce C10. Install

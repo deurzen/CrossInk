@@ -54,6 +54,7 @@ class CompiledDefinitionSource:
     source_uuid: uuid.UUID
     coverage_count: int
     unmatched_count: int
+    truncated_field_count: int
 
 
 def _crc32(data: bytes) -> int:
@@ -141,6 +142,7 @@ def compile_definition_source(
     source_label: str,
     license_text: str,
     provenance: dict,
+    max_fields_per_entry: int = MAX_FIELDS,
 ) -> CompiledDefinitionSource:
     source_language_bytes = _language(source_language)
     target_language_bytes = _language(target_language)
@@ -149,10 +151,14 @@ def compile_definition_source(
         raise DefinitionSourceError("license text must be non-empty")
     if not isinstance(provenance, dict):
         raise DefinitionSourceError("provenance must be an object")
+    if not isinstance(max_fields_per_entry, int) or not 1 <= max_fields_per_entry <= MAX_FIELDS:
+        raise DefinitionSourceError(f"field cap must be between 1 and {MAX_FIELDS}")
 
     fields_by_id: dict[int, set[tuple[int, bytes]]] = {}
+    discarded_fields_by_id: dict[int, set[tuple[int, bytes]]] = {}
     unmatched = []
     unmatched_count = 0
+    truncated_field_count = 0
     for entry_index, entry in enumerate(entries):
         if not isinstance(entry, DefinitionEntryInput):
             raise DefinitionSourceError(f"entry {entry_index} has invalid type")
@@ -178,11 +184,19 @@ def compile_definition_source(
                     }
                 )
             continue
-        fields_by_id.setdefault(canonical_id, set()).update(prepared_fields)
-        if len(fields_by_id[canonical_id]) > MAX_FIELDS:
-            raise DefinitionSourceError(
-                f"canonical entry {canonical_id} exceeds {MAX_FIELDS} fields"
-            )
+        target_fields = fields_by_id.setdefault(canonical_id, set())
+        discarded_fields = discarded_fields_by_id.get(canonical_id)
+        new_fields = prepared_fields - target_fields
+        if discarded_fields is not None:
+            new_fields -= discarded_fields
+        target_fields.update(new_fields)
+        if len(target_fields) > max_fields_per_entry:
+            ordered_fields = sorted(target_fields, key=lambda item: (item[0], item[1]))
+            retained = set(ordered_fields[:max_fields_per_entry])
+            newly_discarded = target_fields - retained
+            discarded_fields_by_id.setdefault(canonical_id, set()).update(newly_discarded)
+            truncated_field_count += len(newly_discarded)
+            fields_by_id[canonical_id] = retained
 
     index = bytearray(canonical.lexeme_count * INDEX_RECORD_SIZE)
     payload = bytearray()
@@ -237,6 +251,8 @@ def compile_definition_source(
         ),
         "unmatchedCount": unmatched_count,
         "unmatchedExamples": unmatched,
+        "truncatedFieldCount": truncated_field_count,
+        "fieldCapPerEntry": max_fields_per_entry,
         "provenance": provenance,
     }
     files = {
@@ -273,6 +289,7 @@ def compile_definition_source(
         source_uuid,
         len(fields_by_id),
         unmatched_count,
+        truncated_field_count,
     )
 
 
