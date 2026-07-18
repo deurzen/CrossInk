@@ -53,6 +53,9 @@ class DictionaryActivity final : public Activity {
   uint32_t definitionPageIndex_ = 0;
   uint8_t statusSelection_ = 0;
   char headword_[dictionary::contextual::kMaxCanonicalHeadwordBytes + 1]{};
+  // Activities are heap-owned. Retaining one additional bounded canonical
+  // headword avoids stack storage and is populated only after opening a word.
+  char canonicalHeadword_[dictionary::contextual::kMaxCanonicalHeadwordBytes + 1]{};
   char lineScratch_[dictionary::definition::kMaxLineBytes + 1]{};
   unsigned long lookupStartedAt_ = 0;
   bool definitionFailed_ = false;

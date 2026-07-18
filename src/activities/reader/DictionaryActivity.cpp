@@ -155,6 +155,7 @@ bool DictionaryActivity::openDefinition() {
   contextualSourceWarning_ = false;
   definitionFailure_ = DefinitionFailure::None;
   statusSaved_ = false;
+  canonicalHeadword_[0] = '\0';
   if (!session_ || !shortlist_ || selected_ >= shortlist_->count) {
     LOG_ERR("DICT", "Definition selection is invalid");
     definitionFailed_ = true;
@@ -184,6 +185,14 @@ bool DictionaryActivity::openDefinition() {
   const size_t headwordLength = std::min(surface.size(), sizeof(headword_) - 1);
   std::memcpy(headword_, surface.data(), headwordLength);
   headword_[headwordLength] = '\0';
+
+  size_t canonicalHeadwordLength = 0;
+  dictionary::lookup::SessionError headwordError = dictionary::lookup::SessionError::NONE;
+  if (!session_->readCanonicalHeadword(shortlist_->items[selected_].localLemmaIds[0], canonicalHeadword_,
+                                       sizeof(canonicalHeadword_), canonicalHeadwordLength, headwordError)) {
+    LOG_ERR("DICT", "Canonical lemma unavailable: %s", dictionary::lookup::sessionErrorName(headwordError));
+    canonicalHeadword_[0] = '\0';
+  }
 
   if (!pager_) {
     // 644-byte wrapping workspace is retained and reused in definition mode;
@@ -531,8 +540,12 @@ void DictionaryActivity::renderDefinition() {
   int bottom = 0;
   int left = 0;
   contentMargins(top, right, bottom, left);
-  char header[160]{};
-  std::snprintf(header, sizeof(header), "%s", headword_);
+  char header[200]{};
+  if (canonicalHeadword_[0] != '\0' && std::strcmp(headword_, canonicalHeadword_) != 0) {
+    std::snprintf(header, sizeof(header), "%s · %s", headword_, canonicalHeadword_);
+  } else {
+    std::snprintf(header, sizeof(header), "%s", headword_);
+  }
   renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, header, true, EpdFontFamily::BOLD);
 
   if (definitionFailed_) {

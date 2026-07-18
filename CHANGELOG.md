@@ -7,6 +7,7 @@
 - Compatible EPUBs can open a bounded unknown-word shortlist through a configurable shortcut, stream definitions from SD, and mark words as learning, known, or ignored.
 - A pinned host compiler can build deterministic canonical German lexicons, independently aligned definition-source bundles, and contextually analyzed EPUB artifacts from DWDSmor, ZDL, and the de-DE form inventory while preserving the canonical OPF.
 - The Dictionaries WebUI can transactionally install canonical `.cplex` and definition-source `.cpdef` packages, show compatibility and coverage, and atomically order up to three attached sources.
+- Dictionary definition headers show an inflected surface together with its primary canonical lemma, for example `knipste · knipsen`.
 
 ### Changed
 
