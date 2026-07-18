@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- Dictionary definition headers and footer feedback now keep clear of adjacent text and physical button boxes on X3/X4, use compact Up/Down hints, and preview the literal words reached by the side buttons.
 - WebUI EPUB conversion now keeps contextual dictionary artifacts uncompressed so large v5 books can be validated and uploaded within ESP32-C3 memory limits.
 - Contextual EPUB compilation now excludes Wiktextract form metadata and safely rejects pathological fallback fan-out, preventing common words such as `sein` from acquiring hundreds of unrelated verb analyses.
 

@@ -19,10 +19,11 @@ button remapping, inverted mode and landscape swapping continue to be handled by
 `MappedInputManager`; the dictionary consumes only
 `MappedInputManager::Button::*`.
 
-The four bottom/front hints describe Back, Confirm, Left and Right. U14 updates
-the definition header with a `current/total` word indicator so side-button word
-movement has visible feedback without pretending the side actions are front
-button hints.
+The four bottom/front hints describe Back, Confirm and compact Up/Down page
+movement. Hardware qualification replaced the longer previous/next-page labels
+because they overflowed the X3/X4 hint boxes. Definition mode separately shows
+a `current/total` word indicator plus bounded `Up: previous-word` and
+`Down: next-word` previews so side-button word movement is visible before input.
 
 ## Event priority
 
@@ -148,11 +149,13 @@ Definition mode exposes two independent positions:
 
 - `current/total` in the header is the one-based sorted word position;
 - the existing bottom-right page indicator is the one-based definition page and
-  retains `+` while another page exists.
+  retains `+` while another page exists;
+- the footer previews show the literal words reached by side Up and Down,
+  including wrap destinations, without grammar or SD reads.
 
 Changing definition pages updates only the page indicator. Changing words
-updates the word indicator and resets the page indicator to page one. Neither
-indicator is persisted.
+updates the word indicator and both previews, then resets the page indicator to
+page one. Neither indicator is persisted.
 
 ## Lifecycle and one-reader behavior
 

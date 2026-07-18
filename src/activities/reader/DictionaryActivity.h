@@ -64,6 +64,8 @@ class DictionaryActivity final : public Activity {
   char titleLine_[192]{};
   char grammarLine_[192]{};
   char wordPosition_[16]{};
+  char previousWordPreview_[64]{};
+  char nextWordPreview_[64]{};
   // The activity is heap-owned. Eight fixed cache slots retain labels only for
   // the selected word; loading uses the session's single switching SD reader.
   std::array<AnalysisLabelCacheEntry, dictionary::page_shortlist::kMaxAnalysesPerItem> analysisLabels_{};

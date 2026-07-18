@@ -5,6 +5,7 @@
 #include <I18n.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <Utf8.h>
 
 #include <algorithm>
 #include <climits>
@@ -18,8 +19,8 @@
 namespace {
 constexpr int kSideMargin = 20;
 constexpr int kHeaderY = 15;
-constexpr int kGrammarY = 37;
-constexpr int kListTop = 58;
+constexpr int kGrammarY = 45;
+constexpr int kListTop = 68;
 constexpr int kRowHeight = 34;
 constexpr int kDefinitionLineGap = 3;
 constexpr int kDefinitionMeaningGap = 4;
@@ -27,7 +28,9 @@ constexpr int kAnalysisDividerHeight = 22;
 constexpr int kAnalysisDividerGap = 8;
 constexpr int kSourceDividerHeight = 22;
 constexpr int kSourceDividerGap = 8;
-constexpr int kBottomReserved = 48;
+constexpr int kBottomReserved = 100;
+constexpr int kWordPreviewBottomOffset = 80;
+constexpr int kStatusBottomOffset = 60;
 
 constexpr StrId kGrammarStringIds[] = {
     StrId::STR_GRAMMAR_POS_UNKNOWN,
@@ -261,6 +264,8 @@ int DictionaryActivity::measureTitleText(void* context, const std::string_view t
 void DictionaryActivity::prepareDefinitionHeader() {
   titleLine_[0] = '\0';
   wordPosition_[0] = '\0';
+  previousWordPreview_[0] = '\0';
+  nextWordPreview_[0] = '\0';
   if (!shortlist_ || selected_ >= shortlist_->count) return;
   std::snprintf(wordPosition_, sizeof(wordPosition_), "%u/%u", static_cast<unsigned>(selected_ + 1),
                 static_cast<unsigned>(shortlist_->count));
@@ -291,6 +296,26 @@ void DictionaryActivity::prepareDefinitionHeader() {
     titleLine_[0] = '\0';
     LOG_ERR("DICT", "Definition title presentation failed");
   }
+
+  const int previewWidth = std::max(1, (definitionContentWidth() - 16) / 2);
+  const dictionary::grammar_presentation::TextMeasurer previewMeasurer{this, measureSmallText};
+  const auto preparePreview = [&](const dictionary::navigation::Action action, const char* direction, char* output,
+                                  const size_t capacity) {
+    const auto move = dictionary::navigation::moveWord(selected_, shortlist_->count, action);
+    if (!move.changed) return;
+    const std::string_view previewSurface = shortlist_->surface(move.selection);
+    std::snprintf(grammarLine_, sizeof(grammarLine_), "%s: %.*s", direction, static_cast<int>(previewSurface.size()),
+                  previewSurface.data());
+    grammarLine_[utf8SafeTruncateBuffer(grammarLine_, static_cast<int>(std::strlen(grammarLine_)))] = '\0';
+    size_t previewLength = 0;
+    if (!dictionary::grammar_presentation::fitText(grammarLine_, previewMeasurer, previewWidth, output, capacity,
+                                                   previewLength)) {
+      output[0] = '\0';
+    }
+  };
+  preparePreview(dictionary::navigation::Action::Up, tr(STR_DIR_UP), previousWordPreview_,
+                 sizeof(previousWordPreview_));
+  preparePreview(dictionary::navigation::Action::Down, tr(STR_DIR_DOWN), nextWordPreview_, sizeof(nextWordPreview_));
 }
 
 void DictionaryActivity::preparePrimaryGrammarLine() {
@@ -836,19 +861,23 @@ void DictionaryActivity::renderDefinition() {
       std::snprintf(pageLabel, sizeof(pageLabel), "%u%s", definitionPageIndex_ + 1,
                     definitionPage_->hasNext ? "+" : "");
       renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - right - kSideMargin - 25,
-                        renderer.getScreenHeight() - bottom - kBottomReserved, pageLabel);
+                        renderer.getScreenHeight() - bottom - kStatusBottomOffset, pageLabel);
     }
   }
 
+  const int previewY = renderer.getScreenHeight() - bottom - kWordPreviewBottomOffset;
+  renderer.drawText(SMALL_FONT_ID, left + kSideMargin, previewY, previousWordPreview_);
+  const int nextPreviewWidth = renderer.getTextAdvanceX(SMALL_FONT_ID, nextWordPreview_, EpdFontFamily::REGULAR);
+  renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - right - kSideMargin - nextPreviewWidth, previewY,
+                    nextWordPreview_);
+
+  const int statusY = renderer.getScreenHeight() - bottom - kStatusBottomOffset;
   if (statusSaved_) {
-    renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
-                      tr(STR_WORD_STATUS_SAVED));
+    renderer.drawText(SMALL_FONT_ID, left + kSideMargin, statusY, tr(STR_WORD_STATUS_SAVED));
   } else if (contextualSourceWarning_ && !definitionFailed_) {
-    renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
-                      tr(STR_SOME_DEFINITION_SOURCES_UNAVAILABLE));
+    renderer.drawText(SMALL_FONT_ID, left + kSideMargin, statusY, tr(STR_SOME_DEFINITION_SOURCES_UNAVAILABLE));
   }
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DICTIONARY_PREVIOUS_PAGE),
-                                            tr(STR_DICTIONARY_NEXT_PAGE));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 

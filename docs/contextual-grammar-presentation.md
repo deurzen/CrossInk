@@ -20,8 +20,9 @@ primary POS · grammatical explanation
 ```
 
 - The title remains bold `UI_12_FONT_ID` at the current header position.
-- The grammatical line uses `SMALL_FONT_ID`, regular weight, below the title and
-  above the existing definition-content start.
+- The grammatical line uses `SMALL_FONT_ID`, regular weight, with an eight-pixel
+  larger title-to-grammar baseline gap than the first hardware build and remains
+  above definition content.
 - U14 owns the right-aligned `current/total` counter. Title fitting reserves its
   measured width plus an eight-pixel gap.
 - If surface and canonical lemma are byte-identical, the title contains one
@@ -234,10 +235,11 @@ usable.
 
 ## Pagination and memory
 
-The grammar line consumes only the already-empty header gap; definition content
-continues to start at the current list/content offset. Labeled alternative
-analysis dividers replace the existing anonymous divider slot rather than adding
-a second slot.
+The grammar line and its hardware-qualified title gap reserve 68 pixels from
+the bezel-safe top before definition content. Labeled alternative analysis
+dividers replace the existing anonymous divider slot rather than adding a
+second slot. The footer reserves enough height for one previous/next-word
+preview line and one status/page-indicator line above the 40-pixel hint boxes.
 
 The presentation budget is:
 
@@ -245,6 +247,7 @@ The presentation budget is:
 | --- | ---: | --- |
 | primary grammar UTF-8 line | 192 bytes | dictionary activity |
 | eight cached display headwords + POS/state | ≤512 bytes | dictionary activity |
+| previous/next word previews | 128 bytes | dictionary activity |
 | formatter component metadata | ≤96 bytes | transient stack |
 
 Formatting writes directly into the activity buffer and may reuse the existing
