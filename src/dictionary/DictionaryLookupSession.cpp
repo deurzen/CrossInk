@@ -172,8 +172,8 @@ void Session::discoverDefinitionSources(const char* canonicalDirectory) {
       definitionSources_.catalog.skippedCount == 0 ? SourceDiscoveryStatus::READY : SourceDiscoveryStatus::PARTIAL;
 }
 
-bool Session::openReaders(const char* languageArtifactPath,
-                          const std::array<uint8_t, 16>& expectedCanonicalUuid, SessionError& error) {
+bool Session::openReaders(const char* languageArtifactPath, const std::array<uint8_t, 16>& expectedCanonicalUuid,
+                          SessionError& error) {
   readersOpen_ = false;
   stateOpen_ = false;
   runtimeLexemeCount_ = 0;

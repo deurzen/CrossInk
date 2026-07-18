@@ -85,7 +85,7 @@ committed.
 | C31 | Removed | Migrate monolithic de-DE IDs into canonical IDs | No compatibility or migration path is shipped; old EPUBs and state are intentionally unsupported |
 | C32 | Removed | Migrate bundle-keyed learning state | Learning state is canonical-UUID-keyed only |
 | C33 | Done | Add compiler differential fixtures | Token offsets, shard markers, IDs and binary records agree across deterministic host stages |
-| C34 | Planned | Run complete host, simulator, firmware and static-analysis suite | All tests/builds pass; generated files clean; static DRAM and flash deltas recorded |
+| C34 | Done | Run complete host, simulator, firmware and static-analysis suite | All tests/builds pass; generated files clean; static DRAM and flash deltas recorded |
 | C35 | Planned | Validate production novel and all three sources on X3/X4 | Cold/warm lookup, opens/seeks/reads/bytes, heap/largest block and stack high-water recorded |
 | C36 | Planned | Run 100-lookup/status/source-reorder endurance test | No heap decline, stale handle, state loss, cache dependency or attachment corruption |
 | C37 | Planned | Promote and document the contextual pipeline | User workflow and asset setup documented; unsupported EPUBs intentionally recompiled; changelog complete |
@@ -353,7 +353,29 @@ accidental dependence on source order.
 The fixture and decoder are host-test-only and add no firmware flash, DRAM, heap
 or SD I/O. Focused contextual coverage is now 92 tests.
 
+## C34 implementation note
+
+Automated qualification passes 185 CMake/CTest host tests, 92 focused contextual
+Python tests, contextual WebUI package validation, Node syntax checks, format
+fixture reproducibility, the PlatformIO `tiny` and `default` firmware builds,
+the native simulator build and smoke flow, clang-format 21, and cppcheck at low,
+medium and high defect thresholds. Re-running generators through the firmware
+and simulator builds leaves no generated or ignored source changes.
+
+Measured with `firmware_size_history.py` against pre-contextual commit
+`ad2d4016c8`, the `default` image uses 5,581,587 flash bytes, **1,004 bytes less**
+than the 5,582,591-byte baseline. Static RAM is unchanged at 50,964 bytes because
+lookup/session state is activity-owned heap storage rather than permanent
+`.data`/`.bss`; the linked DRAM map is 117,685 bytes including 66,724 bytes of
+IRAM text. The release-equivalent `tiny` build uses 5,581,555 flash bytes and
+50,964 static RAM bytes, leaving 958,192 bytes in the OTA app partition.
+
+These host and simulator checks do not claim ESP32 heap, largest-block, stack or
+physical one-reader behavior; those measurements remain the C35-C36 hardware
+gates.
+
 ## Immediate next work
 
-1. Complete C34 automated qualification.
-2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
+1. Complete C35 production-novel measurements on X3/X4.
+2. Run the C36 100-cycle hardware endurance sequence.
+3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

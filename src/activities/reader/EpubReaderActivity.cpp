@@ -3140,13 +3140,7 @@ void EpubReaderActivity::startClipSelection() {
 void EpubReaderActivity::startDictionaryLookup() {
   const unsigned long lookupStartedAt = millis();
   LOG_INF("DICT", "Lookup start: free=%u maxAlloc=%u", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-  enum class LookupOutcome : uint8_t {
-    Ready,
-    NoWords,
-    MissingCanonicalLexicon,
-    InvalidCanonicalLexicon,
-    Failed
-  };
+  enum class LookupOutcome : uint8_t { Ready, NoWords, MissingCanonicalLexicon, InvalidCanonicalLexicon, Failed };
   LookupOutcome outcome = LookupOutcome::Failed;
   std::unique_ptr<dictionary::lookup::Session> session;
   std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist;
