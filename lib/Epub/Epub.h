@@ -45,7 +45,7 @@ class Epub {
   uint32_t totalReferencePages = 0;
   bool xLocationsLoaded = false;
   bool bookLanguageArtifactLoaded = false;
-  std::array<uint8_t, 16> dictionaryBundleUuid{};
+  std::array<uint8_t, 16> dictionaryIdentityUuid{};
   enum class CssParseStatus : uint8_t {
     Failed,
     Partial,
@@ -122,7 +122,7 @@ class Epub {
   bool hasXLocations() const { return xLocationsLoaded; }
   bool hasBookLanguageArtifact() const { return bookLanguageArtifactLoaded; }
   std::string getBookLanguageArtifactPath() const;
-  const std::array<uint8_t, 16>& getDictionaryBundleUuid() const { return dictionaryBundleUuid; }
+  const std::array<uint8_t, 16>& getDictionaryIdentityUuid() const { return dictionaryIdentityUuid; }
   bool hasStablePageNumbers() const {
     return xLocationsLoaded && totalWords > 0 && wordsPerReferencePage > 0 && totalReferencePages > 0;
   }

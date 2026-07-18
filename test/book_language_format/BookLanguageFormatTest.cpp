@@ -31,18 +31,19 @@ void refreshCrcs(std::vector<uint8_t>& data) {
   writeU32(data, 104, dictionary::book_language::updateCrc32(0, data.data(), 104));
 }
 
-std::vector<uint8_t> makeValidArtifact() {
+std::vector<uint8_t> makeValidArtifact(const uint16_t formatVersion = dictionary::book_language::kLegacyFormatVersion) {
   // Header + one spine + one v2 shard directory entry + one minimal blob
   // record + one local lemma + four metadata bytes.
   std::vector<uint8_t> data(160, 0);
   std::memcpy(data.data(), "CXLG", 4);
-  writeU16(data, 4, dictionary::book_language::kFormatVersion);
+  writeU16(data, 4, formatVersion);
   writeU16(data, 6, dictionary::book_language::kHeaderSize);
   writeU16(data, 12, 1);  // Tokenizer version.
   writeU16(data, 14, 1);  // Analyzer version.
   for (size_t i = 0; i < 16; ++i) data[16 + i] = static_cast<uint8_t>(i + 1);
   std::memcpy(data.data() + 32, "de", 2);
-  std::memcpy(data.data() + 40, "en", 2);
+  std::memcpy(data.data() + 40, formatVersion == dictionary::book_language::kContextualFormatVersion ? "und" : "en",
+              formatVersion == dictionary::book_language::kContextualFormatVersion ? 3 : 2);
   writeU16(data, 48, 1);    // Spine count.
   writeU32(data, 52, 1);    // Shard count.
   writeU32(data, 56, 1);    // Shard candidate count.
@@ -80,6 +81,35 @@ TEST(BookLanguageFormat, ParsesValidHeaderAndPayload) {
   EXPECT_STREQ(header.sourceLanguage, "de");
   EXPECT_STREQ(header.targetLanguage, "en");
   EXPECT_TRUE(dictionary::book_language::validatePayload(data.data(), data.size(), header, error));
+}
+
+TEST(BookLanguageFormat, ParsesContextualCanonicalIdentity) {
+  const std::vector<uint8_t> data = makeValidArtifact(dictionary::book_language::kContextualFormatVersion);
+  Header header;
+  FormatError error;
+  ASSERT_TRUE(parse(data, header, error)) << dictionary::book_language::formatErrorName(error);
+  EXPECT_TRUE(header.usesCanonicalIdentity());
+  EXPECT_STREQ(header.targetLanguage, "und");
+  EXPECT_EQ(header.dictionaryIdentityUuid[0], 1);
+  uint8_t expected[16]{};
+  std::memcpy(expected, data.data() + 16, sizeof(expected));
+  EXPECT_TRUE(dictionary::book_language::matchesIdentity(header, expected));
+  expected[0] ^= 1U;
+  EXPECT_FALSE(dictionary::book_language::matchesIdentity(header, expected));
+
+  std::vector<uint8_t> invalid = data;
+  for (size_t index = 40; index < 48; ++index) invalid[index] = 0;
+  invalid[40] = 'e';
+  invalid[41] = 'n';
+  refreshCrcs(invalid);
+  EXPECT_FALSE(parse(invalid, header, error));
+  EXPECT_EQ(error, FormatError::INVALID_CONTEXTUAL_CONTRACT);
+
+  invalid = data;
+  writeU16(invalid, 14, 2);
+  refreshCrcs(invalid);
+  EXPECT_FALSE(parse(invalid, header, error));
+  EXPECT_EQ(error, FormatError::INVALID_CONTEXTUAL_CONTRACT);
 }
 
 TEST(BookLanguageFormat, CrcCanBeUpdatedInChunks) {

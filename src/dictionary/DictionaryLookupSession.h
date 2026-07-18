@@ -1,6 +1,7 @@
 #pragma once
 
 #include <BookLanguageReader.h>
+#include <ContextualRuntimeFormat.h>
 #include <DictionaryPackage.h>
 #include <HalStorage.h>
 #include <LexemeStateStore.h>
@@ -16,6 +17,7 @@
 namespace dictionary::lookup {
 
 inline constexpr char DICTIONARY_ROOT_PATH[] = "/.crosspoint/dictionaries";
+inline constexpr char CANONICAL_ROOT_PATH[] = "/.crosspoint/lexicons";
 constexpr size_t kMaxLookupPath = 256;
 
 enum class SessionError : uint8_t {
@@ -26,7 +28,7 @@ enum class SessionError : uint8_t {
   BOOK_ARTIFACT_INVALID,
   DICTIONARY_MISSING,
   DICTIONARY_INVALID,
-  BUNDLE_MISMATCH,
+  IDENTITY_MISMATCH,
   STATE_FAILED,
   PROJECTION_FAILED,
 };
@@ -40,7 +42,7 @@ class Session {
   Session();
 
   bool openReaders(const char* languageArtifactPath, const char* bookCachePath,
-                   const std::array<uint8_t, 16>& expectedBundleUuid, SessionError& error);
+                   const std::array<uint8_t, 16>& expectedIdentityUuid, SessionError& error);
   bool openLearningState(SessionError& error);
   bool filterShortlist(page_shortlist::Shortlist& shortlist, SessionError& error);
   bool openDefinitionPackage(SessionError& error);
@@ -51,6 +53,8 @@ class Session {
 
   const book_language::BookLanguageReader& book() const { return book_; }
   const DictionaryPackage& package() const { return package_; }
+  const contextual::CanonicalLexiconReader& canonical() const { return canonical_; }
+  bool usesCanonicalIdentity() const { return contextualIdentity_; }
   uint32_t runtimeLexemeCount() const { return runtimeLexemeCount_; }
   uint32_t stateGeneration() const { return state_.generation(); }
   const io_metrics::Counters& sourceIoMetrics() const { return sourceIoMetrics_; }
@@ -71,10 +75,11 @@ class Session {
   SourceContext headwordsSource_{};
   SourceContext entriesSource_{};
   char cachePath_[kMaxLookupPath]{};
-  uint8_t bundleUuid_[16]{};
+  uint8_t identityUuid_[16]{};
   uint32_t runtimeLexemeCount_ = 0;
   book_language::BookLanguageReader book_{};
   DictionaryPackage package_{};
+  contextual::CanonicalLexiconReader canonical_{};
   lexeme_state::Store state_{};
   uint32_t shortlistGlobalIds_[page_shortlist::kMaxItems * page_shortlist::kMaxAnalysesPerItem]{};
   uint16_t shortlistStatusOrder_[page_shortlist::kMaxItems * page_shortlist::kMaxAnalysesPerItem]{};
@@ -83,12 +88,14 @@ class Session {
   io::SwitchingFileReader<HalFile> sourceReader_;
   bool readersOpen_ = false;
   bool stateOpen_ = false;
+  bool contextualIdentity_ = false;
 
   static bool openForRead(void* context, const char* path, HalFile& file);
   static bool readAt(void* context, uint32_t offset, void* output, size_t length);
   bool initializeSource(SourceContext& context, const char* path, uint8_t sourceToken);
   bool setSourcePath(SourceContext& context, const char* path, uint8_t sourceToken);
-  bool validateRuntimeMetadata(SessionError& error);
+  bool validateLegacyRuntimeMetadata(SessionError& error);
+  bool openCanonicalRuntime(const char* directory, SessionError& error);
 };
 
 const char* sessionErrorName(SessionError error);

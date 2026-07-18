@@ -7,7 +7,7 @@ fixed-size char buffer.
 
 ## EPUB `META-INF/crossink/language.bin`
 
-### Version 3 (current)
+### Versions 3 and 4
 
 Version 3 retains the version-2 108-byte header and self-contained shard blobs, and assigns the former candidate reserved byte to an optional language-neutral difficulty score. All integers are unsigned little-endian; offsets are absolute and four-byte aligned.
 
@@ -80,9 +80,11 @@ file cap, 4096-spine cap, 65535-shard cap, 32768-local-lemma cap, payload CRC,
 and header CRC apply. Version-3 compilers fail on oversized records/blobs rather
 than truncating structural data.
 
-Firmware accepts only version 3 and streams shards sequentially into the same bounded `Shortlist` and global learning-state IDs. It sorts scored candidates hardest-first using confidence and original page order as deterministic tie-breakers; unscored artifacts preserve page order. Older EPUBs must be recompiled.
+Version 4 is the contextual artifact contract. It keeps the same 108-byte header and table layout, but bytes `[16,32)` are the canonical lexicon UUID, target language must be `und`, analyzer version must be `1`, and local-lemma entries resolve directly to canonical lexeme IDs. Candidate flag bits 4 and 5 additionally mark separable-verb recombination and proper-noun classification. Firmware resolves v4 packages only under `/.crosspoint/lexicons/<canonical-uuid>/`; it never falls back to a legacy dictionary package with the same UUID.
 
-After full extraction validation, firmware writes a 44-byte `language.valid` receipt: `CXLR`, version/header size (`u16`, `u16`), embedded size (`u32`), ZIP central-directory CRC (`u32`), payload CRC (`u32`), header CRC (`u32`), bundle UUID (16 bytes), and receipt CRC32 over the first 40 bytes. On later opens, matching ZIP identity plus the cached artifact's size and validated 108-byte header avoids rereading the full payload. Missing, stale, or corrupt receipts fall back to full streaming validation and are replaced atomically through `language.valid.tmp`.
+During the explicit migration window, firmware accepts legacy version 3 and contextual version 4. Version 3 continues to use bundle-keyed learning state and version 4 uses canonical-UUID-keyed learning state, so legacy statuses cannot leak into the canonical namespace. Both versions stream shards sequentially into the same bounded `Shortlist`. Scored candidates sort hardest-first using confidence and original page order as deterministic tie-breakers; unscored artifacts preserve page order. Older formats must be recompiled.
+
+After full extraction validation, firmware writes a 44-byte `language.valid` receipt: `CXLR`, version/header size (`u16`, `u16`), embedded size (`u32`), ZIP central-directory CRC (`u32`), payload CRC (`u32`), header CRC (`u32`), artifact identity UUID (bundle UUID for v3, canonical lexicon UUID for v4; 16 bytes), and receipt CRC32 over the first 40 bytes. On later opens, matching ZIP identity plus the cached artifact's size and validated 108-byte header avoids rereading the full payload. Missing, stale, or corrupt receipts fall back to full streaming validation and are replaced atomically through `language.valid.tmp`.
 
 A deterministically invalid embedded artifact creates `<book-cache>/language.invalid`:
 magic `CXLI` followed by its `fileSize:u32`. This prevents repeated extraction

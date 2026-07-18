@@ -74,7 +74,7 @@ committed.
 
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
-| C24 | Planned | Switch learning state and book artifacts to canonical UUID identity | Existing explicit states remain isolated until migration; mismatch behavior tested |
+| C24 | Done | Switch learning state and book artifacts to canonical UUID identity | Existing explicit states remain isolated until migration; mismatch behavior tested |
 | C25 | Planned | Discover and retain at most three bounded definition descriptors | Measured session growth ≤3.5 KB; no source index or entry loaded wholesale |
 | C26 | Planned | Read canonical entry-index records through the switching SD reader | One 8-byte index read per source/lemma; no simultaneous file handles; I/O metrics covered |
 | C27 | Planned | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
@@ -204,8 +204,27 @@ attach/reorder/detach sources and reboot. Expected behavior is stable ordering,
 no uploaded `compiler/` files, no simultaneous `DIN` open failures, and full
 network-mode heap recovery after returning to the reader.
 
+## C24 implementation note
+
+The frozen version-4 `language.bin` header now treats bytes `[16,32)` as an
+explicit canonical identity, enforces analyzer version 1 and target `und`, and
+accepts the two contextual provenance flag bits without weakening version 3.
+`Epub` exposes the artifact identity rather than a bundle-specific value.
+Lookup selects `/.crosspoint/lexicons/<uuid>/` for v4, validates canonical
+metadata and lexeme bounds, and keys the existing WAL state store by that
+canonical UUID. Version 3 remains on the legacy package root and bundle-keyed
+state namespace, so there is no implicit migration or status leakage.
+
+This adds no heap allocation. The lookup session retains one allocation-free
+canonical reader and reuses its existing switching `HalFile`; metadata,
+lexeme-table and headword-table sizes are discovered sequentially. On hardware,
+open a v4-compiled EPUB with the matching canonical package, change one status,
+reboot and confirm it persists across another v4 book using that canonical UUID.
+Then open a v3 book with explicit state and confirm neither status appears in
+the other namespace. A missing or mismatched canonical UUID must fail lookup
+without opening a same-named legacy package.
+
 ## Immediate next work
 
-1. Switch learning state and book artifacts to canonical UUID identity in C24.
-2. Discover and retain at most three bounded definition descriptors in C25.
-3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
+1. Discover and retain at most three bounded definition descriptors in C25.
+2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

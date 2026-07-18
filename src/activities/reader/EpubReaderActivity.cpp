@@ -3184,7 +3184,7 @@ void EpubReaderActivity::startDictionaryLookup() {
             dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
             const unsigned long readersStartedAt = millis();
             if (!session->openReaders(epub->getBookLanguageArtifactPath().c_str(), epub->getCachePath().c_str(),
-                                      epub->getDictionaryBundleUuid(), sessionError)) {
+                                      epub->getDictionaryIdentityUuid(), sessionError)) {
               LOG_ERR("DICT", "Lookup session failed: %s", dictionary::lookup::sessionErrorName(sessionError));
               outcome = sessionError == dictionary::lookup::SessionError::DICTIONARY_MISSING
                             ? LookupOutcome::MissingDictionary

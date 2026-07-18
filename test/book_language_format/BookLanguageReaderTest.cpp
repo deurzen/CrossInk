@@ -32,7 +32,7 @@ void refreshCrc(std::vector<uint8_t>& data) {
   writeU32(data, 104, dictionary::book_language::updateCrc32(0, data.data(), 104));
 }
 
-std::vector<uint8_t> makeArtifact() {
+std::vector<uint8_t> makeArtifact(const uint16_t formatVersion = dictionary::book_language::kLegacyFormatVersion) {
   constexpr size_t spineOffset = 108;
   constexpr size_t shardOffset = 116;
   constexpr size_t blobOffset = 136;
@@ -40,13 +40,14 @@ std::vector<uint8_t> makeArtifact() {
   constexpr size_t metadataOffset = 172;
   std::vector<uint8_t> data(176, 0);
   std::memcpy(data.data(), "CXLG", 4);
-  writeU16(data, 4, dictionary::book_language::kFormatVersion);
+  writeU16(data, 4, formatVersion);
   writeU16(data, 6, 108);
   writeU16(data, 12, 1);
   writeU16(data, 14, 1);
   for (size_t i = 0; i < 16; ++i) data[16 + i] = i + 1;
   std::memcpy(data.data() + 32, "de", 2);
-  std::memcpy(data.data() + 40, "en", 2);
+  std::memcpy(data.data() + 40, formatVersion == dictionary::book_language::kContextualFormatVersion ? "und" : "en",
+              formatVersion == dictionary::book_language::kContextualFormatVersion ? 3 : 2);
   writeU16(data, 48, 1);
   writeU32(data, 52, 1);
   writeU32(data, 56, 1);
@@ -165,6 +166,28 @@ TEST(BookLanguageReader, RejectsMalformedShardAndCandidateRecords) {
   ASSERT_TRUE(reader.open(sourceFor(data), error));
   ASSERT_TRUE(reader.readShard(0, shard, error));
   const dictionary::book_language::InlineCandidate* candidate = nullptr;
+  EXPECT_FALSE(reader.readCandidate(shard, 0, candidate, error));
+  EXPECT_EQ(error, ReaderError::CANDIDATE_RECORD_INVALID);
+}
+
+TEST(BookLanguageReader, AppliesVersionedCandidateFlagContract) {
+  auto contextual = makeArtifact(dictionary::book_language::kContextualFormatVersion);
+  contextual[148] = 0x20;  // Proper-noun contextual classification.
+  refreshCrc(contextual);
+  BookLanguageReader reader;
+  ReaderError error;
+  ASSERT_TRUE(reader.open(sourceFor(contextual), error));
+  dictionary::book_language::ShardDirectoryRecord shard;
+  ASSERT_TRUE(reader.readShard(0, shard, error));
+  const dictionary::book_language::InlineCandidate* candidate = nullptr;
+  ASSERT_TRUE(reader.readCandidate(shard, 0, candidate, error));
+  EXPECT_EQ(candidate->flags, 0x20);
+
+  auto legacy = makeArtifact();
+  legacy[148] = 0x20;
+  refreshCrc(legacy);
+  ASSERT_TRUE(reader.open(sourceFor(legacy), error));
+  ASSERT_TRUE(reader.readShard(0, shard, error));
   EXPECT_FALSE(reader.readCandidate(shard, 0, candidate, error));
   EXPECT_EQ(error, ReaderError::CANDIDATE_RECORD_INVALID);
 }

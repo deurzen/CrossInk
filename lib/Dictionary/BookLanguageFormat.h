@@ -9,7 +9,10 @@ namespace dictionary::book_language {
 
 using dictionary::updateCrc32;
 
-constexpr uint16_t kFormatVersion = 3;
+constexpr uint16_t kLegacyFormatVersion = 3;
+constexpr uint16_t kContextualFormatVersion = 4;
+// Existing exact-form compiler/tests continue to emit v3 until final cutover.
+constexpr uint16_t kFormatVersion = kLegacyFormatVersion;
 constexpr size_t kHeaderSize = 108;
 constexpr uint32_t kMaxFileSize = 64U * 1024U * 1024U;
 constexpr uint16_t kMaxSpineCount = 4096;
@@ -30,7 +33,7 @@ struct Header {
   uint32_t flags = 0;
   uint16_t tokenizerVersion = 0;
   uint16_t analyzerVersion = 0;
-  uint8_t dictionaryBundleUuid[16]{};
+  uint8_t dictionaryIdentityUuid[16]{};
   char sourceLanguage[8]{};
   char targetLanguage[8]{};
   uint16_t spineCount = 0;
@@ -45,6 +48,8 @@ struct Header {
   uint32_t fileSize = 0;
   uint32_t payloadCrc32 = 0;
   uint32_t headerCrc32 = 0;
+
+  bool usesCanonicalIdentity() const { return formatVersion == kContextualFormatVersion; }
 };
 
 enum class FormatError : uint8_t {
@@ -58,6 +63,7 @@ enum class FormatError : uint8_t {
   RESERVED_FIELD_NONZERO,
   INVALID_DICTIONARY_UUID,
   INVALID_LANGUAGE,
+  INVALID_CONTEXTUAL_CONTRACT,
   COUNT_OUT_OF_RANGE,
   FILE_SIZE_OUT_OF_RANGE,
   FILE_SIZE_MISMATCH,
@@ -75,6 +81,7 @@ bool parseHeader(const uint8_t* data, size_t dataSize, uint64_t actualFileSize, 
 // Firmware file readers should compute the same CRC incrementally instead of
 // allocating the whole artifact.
 bool validatePayload(const uint8_t* fileData, size_t dataSize, const Header& header, FormatError& error);
+bool matchesIdentity(const Header& header, const uint8_t* expectedIdentityUuid);
 
 // Incremental validator used while extracting or scanning an artifact. It owns
 // only the fixed 108-byte header and CRC state; payload bytes are never retained.

@@ -79,6 +79,7 @@ StorageBackend backend(MemoryStorage& storage) {
 }
 
 constexpr uint8_t UUID[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+constexpr uint8_t CANONICAL_UUID[16] = {16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
 
 struct StatusCollector {
   std::vector<std::pair<uint32_t, Status>> items;
@@ -127,6 +128,25 @@ TEST(LexemeState, InitializesPackedStatusesAndPersistsUpdates) {
   ASSERT_TRUE(reopened.get(4, status, error));
   EXPECT_EQ(status, Status::Ignored);
   EXPECT_TRUE(dictionary::lexeme_state::isSuppressed(status));
+}
+
+TEST(LexemeState, CanonicalIdentityDoesNotReuseLegacyExplicitState) {
+  MemoryStorage storage;
+  StateError error;
+  Store legacy;
+  ASSERT_TRUE(legacy.open(backend(storage), "/state", UUID, 5, error));
+  ASSERT_TRUE(legacy.set(2, Status::Known, error));
+
+  Store canonical;
+  ASSERT_TRUE(canonical.open(backend(storage), "/state", CANONICAL_UUID, 5, error));
+  Status status;
+  ASSERT_TRUE(canonical.get(2, status, error));
+  EXPECT_EQ(status, Status::Unseen);
+  ASSERT_TRUE(canonical.set(2, Status::Learning, error));
+
+  ASSERT_TRUE(legacy.get(2, status, error));
+  EXPECT_EQ(status, Status::Known);
+  EXPECT_NE(std::memcmp(UUID, CANONICAL_UUID, 16), 0);
 }
 
 TEST(LexemeState, CachesSequentialPackedStatusReads) {

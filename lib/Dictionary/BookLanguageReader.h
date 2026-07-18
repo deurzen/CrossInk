@@ -46,7 +46,7 @@ enum class ReaderError : uint8_t {
   LOCAL_LEMMA_ID_OUT_OF_RANGE,
 };
 
-// Allocation-free reader for the CRC-validated version-3 language artifact.
+// Allocation-free reader for CRC-validated legacy v3 and contextual v4 artifacts.
 // Shard records are consumed sequentially through one bounded cache.
 class BookLanguageReader {
  public:

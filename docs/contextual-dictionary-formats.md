@@ -200,9 +200,10 @@ encoding. This minimizes firmware risk. The semantic changes are:
 
 The header fields, offsets and caps remain those documented for version 3 in
 [`file-formats.md`](file-formats.md), except format version is `4` and the UUID
-field is named `canonicalLexiconUuid`. Firmware accepts only the production
-format version selected at cutover; unreleased v4 drafts receive no compatibility
-branch.
+field is named `canonicalLexiconUuid`. The contextual path accepts only frozen
+version 4; unreleased v4 drafts receive no compatibility branch. During the C24
+migration window, legacy version 3 remains readable through its separate bundle
+identity path and is never reinterpreted as contextual data.
 
 ### Candidate flags and confidence
 
