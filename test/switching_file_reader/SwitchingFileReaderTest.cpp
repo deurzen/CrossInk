@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "ContextualRuntimeFormat.h"
 #include "SwitchingFileReader.h"
 
 namespace {
@@ -67,6 +68,20 @@ bool openFake(void* context, const char* path, FakeFile& file) {
   return true;
 }
 
+struct IndexSourceContext {
+  dictionary::io::SwitchingFileReader<FakeFile>* reader = nullptr;
+  dictionary::io_metrics::Counters* metrics = nullptr;
+  const char* path = nullptr;
+  uint64_t size = 0;
+  uint8_t token = 0;
+};
+
+bool readIndexAt(void* context, const uint32_t offset, void* output, const size_t length) {
+  const auto& source = *static_cast<const IndexSourceContext*>(context);
+  return source.reader &&
+         source.reader->readAt(source.path, source.token, source.size, offset, output, length, source.metrics);
+}
+
 }  // namespace
 
 TEST(SwitchingFileReader, ReusesOneHandleUntilTheSourceChanges) {
@@ -99,6 +114,34 @@ TEST(SwitchingFileReader, ReusesOneHandleUntilTheSourceChanges) {
   reader.close();
   EXPECT_EQ(storage.closes, 2U);
   EXPECT_EQ(reader.activeSourceToken(), 0U);
+}
+
+TEST(SwitchingFileReader, ReadsOneEightByteIndexRecordPerSourceWithOneOpenHandle) {
+  FakeStorage storage{
+      {{"/one", std::vector<uint8_t>(16)}, {"/two", std::vector<uint8_t>(16)}, {"/three", std::vector<uint8_t>(16)}}};
+  dictionary::io_metrics::Counters metrics;
+  dictionary::io::SwitchingFileReader<FakeFile> reader(&storage, openFake);
+  IndexSourceContext sources[] = {
+      {&reader, &metrics, "/one", 16, 1}, {&reader, &metrics, "/two", 16, 2}, {&reader, &metrics, "/three", 16, 3}};
+
+  for (auto& sourceContext : sources) {
+    const dictionary::RandomAccessSource source{&sourceContext, sourceContext.size, readIndexAt};
+    dictionary::contextual::DefinitionIndexRecord record;
+    dictionary::contextual::RuntimeFormatError error;
+    ASSERT_TRUE(dictionary::contextual::readDefinitionIndexRecord(source, 2, 0, 1, record, error));
+    EXPECT_FALSE(record.present());
+  }
+
+  EXPECT_EQ(metrics.readCalls, 3U);
+  EXPECT_EQ(metrics.seekAttempts, 3U);
+  EXPECT_EQ(metrics.bytesRead, 3U * dictionary::contextual::kDefinitionIndexRecordSize);
+  EXPECT_EQ(metrics.openAttempts, 3U);
+  EXPECT_EQ(metrics.sourceSwitches, 2U);
+  EXPECT_EQ(storage.opens, 3U);
+  EXPECT_EQ(storage.closes, 2U);
+  EXPECT_EQ(reader.activeSourceToken(), 3U);
+  reader.close();
+  EXPECT_EQ(storage.closes, 3U);
 }
 
 TEST(SwitchingFileReader, FailedSwitchLeavesNoReaderOpenAndCanRetry) {

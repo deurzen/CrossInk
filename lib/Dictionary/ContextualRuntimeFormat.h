@@ -92,6 +92,11 @@ enum class RuntimeFormatError : uint8_t {
   COVERAGE_MISMATCH,
 };
 
+// Reads exactly one fixed 8-byte index record from already validated source
+// metadata. This supports retained descriptors without reopening meta.bin.
+bool readDefinitionIndexRecord(const RandomAccessSource& index, uint32_t canonicalLexemeCount, uint32_t entriesFileSize,
+                               uint32_t canonicalId, DefinitionIndexRecord& out, RuntimeFormatError& error);
+
 class CanonicalLexiconReader {
  public:
   bool open(const RandomAccessSource& meta, const RandomAccessSource& lexemes, const RandomAccessSource& headwords,

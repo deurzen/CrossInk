@@ -29,6 +29,18 @@ enum class SourceDiscoveryStatus : uint8_t {
   ATTACHMENTS_INVALID,
 };
 
+enum class DefinitionIndexStatus : uint8_t {
+  MISSING = 0,
+  PRESENT,
+  SOURCE_UNAVAILABLE,
+  RECORD_INVALID,
+};
+
+struct DefinitionIndexLookup {
+  contextual::DefinitionIndexRecord record{};
+  DefinitionIndexStatus status = DefinitionIndexStatus::MISSING;
+};
+
 enum class SessionError : uint8_t {
   NONE = 0,
   INVALID_INPUT,
@@ -55,6 +67,9 @@ class Session {
   bool openLearningState(SessionError& error);
   bool filterShortlist(page_shortlist::Shortlist& shortlist, SessionError& error);
   bool openDefinitionPackage(SessionError& error);
+  bool readDefinitionIndexes(uint32_t canonicalId,
+                             std::array<DefinitionIndexLookup, contextual::kMaxAttachedSources>& output,
+                             uint8_t& outputCount, SessionError& error);
 
   bool globalLexemeId(uint16_t localLemmaId, uint32_t& globalLexemeId) const;
   bool setStatus(uint16_t localLemmaId, lexeme_state::Status status, SessionError& error);
@@ -91,11 +106,12 @@ class Session {
     SourceContext metaSource{};
     SourceContext indexSource{};
     SourceContext entriesSource{};
+    SourceContext retainedIndexSources[contextual::kMaxAttachedSources]{};
     contextual::DefinitionSourceCatalog catalog{};
     SourceDiscoveryStatus status = SourceDiscoveryStatus::NOT_APPLICABLE;
   };
   static_assert(sizeof(DefinitionSources) <= 3584,
-                "definition-source discovery must add no more than 3.5 KiB to the lookup session");
+                "contextual definition state must add no more than 3.5 KiB to the lookup session");
 
   SourceContext languageSource_{};
   SourceContext metaSource_{};
@@ -128,6 +144,7 @@ class Session {
   void discoverDefinitionSources(const char* canonicalDirectory);
   static bool loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[16],
                                      contextual::DefinitionMetadata& output);
+  bool prepareDefinitionIndexSource(uint8_t sourceIndex);
 };
 
 const char* sessionErrorName(SessionError error);

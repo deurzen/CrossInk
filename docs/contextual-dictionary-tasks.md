@@ -76,7 +76,7 @@ committed.
 | --- | --- | --- | --- |
 | C24 | Done | Switch learning state and book artifacts to canonical UUID identity | Existing explicit states remain isolated until migration; mismatch behavior tested |
 | C25 | Done | Discover and retain at most three bounded definition descriptors | Measured session growth ≤3.5 KB; no source index or entry loaded wholesale |
-| C26 | Planned | Read canonical entry-index records through the switching SD reader | One 8-byte index read per source/lemma; no simultaneous file handles; I/O metrics covered |
+| C26 | Done | Read canonical entry-index records through the switching SD reader | One 8-byte index read per source/lemma; no simultaneous file handles; I/O metrics covered |
 | C27 | Planned | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
 | C28 | Planned | Render labeled source dividers and existing analysis/meaning separators | de-DE, dict.cc and Kaikki visibly distinct; pagination accounts for divider height without clipping |
 | C29 | Planned | Apply status once to the canonical lexical item | Known/Learning/Ignore suppresses the item independent of source availability or order |
@@ -234,17 +234,37 @@ retain their relative order. The session exposes the attachment generation,
 valid/skipped counts and a ready/partial/invalid discovery status for later UI
 work.
 
-`DefinitionSources` is 1,536 bytes in the ESP32-C3 DWARF layout, enforced by a
-3.5 KiB compile-time ceiling. That state contains three copied 104-byte metadata
-descriptors, one reusable definition reader, three path/source contexts and the
-attachment store. Discovery reads only the 88-byte attachment record and each
+After C26, `DefinitionSources` is 2,376 bytes in the ESP32-C3 DWARF layout,
+enforced by a 3.5 KiB compile-time ceiling. C25's discovery-only state measured
+1,536 bytes; C26 adds three retained index paths so lookups do not reopen
+metadata. The combined state contains three copied 104-byte metadata descriptors,
+one reusable definition reader, six path/source contexts and the attachment
+store. Discovery reads only the 88-byte attachment record and each
 144-byte metadata header plus file sizes; it never reads a source index or entry
 payload and allocates no heap. On X3/X4, attach three sources, open a v4 book and
 confirm serial/SD tracing shows one reader switching across metadata files.
 Remove one source directory manually and reopen: lookup must retain the other
 two in order, report partial discovery, and show no `DIN` multiple-reader error.
 
+## C26 implementation note
+
+For each retained source, lookup now keeps the validated `entry-index.bin` path
+and metadata-declared size. Resolving one canonical lemma performs exactly one
+8-byte read per source through the existing `SwitchingFileReader`; changing
+sources closes the previous `HalFile` before opening the next. Zero-length
+records remain ordinary source misses. Read failures and malformed offset/length
+records are logged and classified per source so later pagination can skip only
+the affected source.
+
+The index result array is caller-owned and bounded to three records; there is no
+heap allocation or additional page buffer. Host instrumentation verifies three
+sources produce three seeks, three reads, 24 bytes read, two source switches and
+never more than one open handle. On X3/X4, look up a lemma covered by all three
+sources and confirm the same counters in the dictionary I/O log. Remove or
+truncate one index, reopen the book, and confirm the other source records still
+resolve without a `DIN` multiple-reader failure.
+
 ## Immediate next work
 
-1. Read canonical entry-index records through the switching SD reader in C26.
+1. Stream source × analysis definitions through the existing pager/page in C27.
 2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

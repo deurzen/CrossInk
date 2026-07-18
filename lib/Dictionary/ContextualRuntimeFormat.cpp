@@ -464,28 +464,46 @@ bool DefinitionSourceReader::validatePayloadCrc(uint8_t* scratch, const size_t s
          validateRuntimeCrc(entries_, metadata_.entriesCrc32, scratch, scratchSize, error);
 }
 
-bool DefinitionSourceReader::readIndex(const uint32_t canonicalId, DefinitionIndexRecord& out,
-                                       RuntimeFormatError& error) const {
+bool readDefinitionIndexRecord(const RandomAccessSource& index, const uint32_t canonicalLexemeCount,
+                               const uint32_t entriesFileSize, const uint32_t canonicalId, DefinitionIndexRecord& out,
+                               RuntimeFormatError& error) {
   out = {};
   error = RuntimeFormatError::NONE;
-  if (!open_) {
+  if (!sourceCanRead(index)) {
     error = RuntimeFormatError::SOURCE_UNAVAILABLE;
     return false;
   }
-  if (canonicalId >= metadata_.canonicalLexemeCount) {
+  if (canonicalLexemeCount == 0 || canonicalLexemeCount > kMaxCanonicalLexemes ||
+      index.size != static_cast<uint64_t>(canonicalLexemeCount) * kDefinitionIndexRecordSize ||
+      entriesFileSize > kMaxDefinitionEntriesSize) {
+    error = RuntimeFormatError::FILE_SIZE_OUT_OF_RANGE;
+    return false;
+  }
+  if (canonicalId >= canonicalLexemeCount) {
     error = RuntimeFormatError::RECORD_ID_OUT_OF_RANGE;
     return false;
   }
   uint8_t data[kDefinitionIndexRecordSize]{};
-  if (!index_.readAt(index_.context, canonicalId * kDefinitionIndexRecordSize, data, sizeof(data))) {
+  if (!index.readAt(index.context, canonicalId * kDefinitionIndexRecordSize, data, sizeof(data))) {
     error = RuntimeFormatError::RECORD_READ_FAILED;
     return false;
   }
-  if (!decodeDefinitionIndex(data, metadata_.entriesFileSize, out)) {
+  if (!decodeDefinitionIndex(data, entriesFileSize, out)) {
     error = RuntimeFormatError::RECORD_INVALID;
     return false;
   }
   return true;
+}
+
+bool DefinitionSourceReader::readIndex(const uint32_t canonicalId, DefinitionIndexRecord& out,
+                                       RuntimeFormatError& error) const {
+  if (!open_) {
+    out = {};
+    error = RuntimeFormatError::SOURCE_UNAVAILABLE;
+    return false;
+  }
+  return readDefinitionIndexRecord(index_, metadata_.canonicalLexemeCount, metadata_.entriesFileSize, canonicalId, out,
+                                   error);
 }
 
 bool DefinitionSourceReader::validateIndex(uint8_t* scratch, const size_t scratchSize,

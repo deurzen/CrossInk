@@ -136,6 +136,22 @@ bool Session::loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[
   return true;
 }
 
+bool Session::prepareDefinitionIndexSource(const uint8_t sourceIndex) {
+  if (sourceIndex >= definitionSources_.catalog.sourceCount) return false;
+  const auto& metadata = definitionSources_.catalog.sources[sourceIndex];
+  char uuidHex[33]{};
+  formatUuid(metadata.sourceUuid, uuidHex);
+  char path[kMaxLookupPath]{};
+  const int written = std::snprintf(path, sizeof(path), "%s/%s/entry-index.bin", DEFINITION_SOURCE_ROOT_PATH, uuidHex);
+  auto& source = definitionSources_.retainedIndexSources[sourceIndex];
+  if (written <= 0 || static_cast<size_t>(written) >= sizeof(path) ||
+      !setSourcePath(source, path, static_cast<uint8_t>(8U + sourceIndex))) {
+    return false;
+  }
+  source.size = metadata.indexFileSize;
+  return true;
+}
+
 void Session::discoverDefinitionSources(const char* canonicalDirectory) {
   definitionSources_ = {};
   definitionSources_.status = SourceDiscoveryStatus::ATTACHMENTS_INVALID;
@@ -164,6 +180,13 @@ void Session::discoverDefinitionSources(const char* canonicalDirectory) {
   }
   sourceReader_.close();
   definitionSources_.reader = {};
+  for (uint8_t sourceIndex = 0; sourceIndex < definitionSources_.catalog.sourceCount; ++sourceIndex) {
+    if (!prepareDefinitionIndexSource(sourceIndex)) {
+      LOG_ERR("DICT", "Failed to retain definition index path");
+      definitionSources_.catalog = {};
+      return;
+    }
+  }
   definitionSources_.status =
       definitionSources_.catalog.skippedCount == 0 ? SourceDiscoveryStatus::READY : SourceDiscoveryStatus::PARTIAL;
 }
@@ -327,6 +350,38 @@ bool Session::filterShortlist(page_shortlist::Shortlist& shortlist, SessionError
     if (!allSuppressed[input]) shortlist.items[output++] = shortlist.items[input];
   }
   shortlist.count = output;
+  return true;
+}
+
+bool Session::readDefinitionIndexes(const uint32_t canonicalId,
+                                    std::array<DefinitionIndexLookup, contextual::kMaxAttachedSources>& output,
+                                    uint8_t& outputCount, SessionError& error) {
+  output = {};
+  outputCount = 0;
+  error = SessionError::NONE;
+  if (!readersOpen_ || !contextualIdentity_ || canonicalId >= runtimeLexemeCount_) {
+    error = SessionError::INVALID_INPUT;
+    return false;
+  }
+
+  outputCount = definitionSources_.catalog.sourceCount;
+  for (uint8_t sourceIndex = 0; sourceIndex < outputCount; ++sourceIndex) {
+    const auto& metadata = definitionSources_.catalog.sources[sourceIndex];
+    auto& result = output[sourceIndex];
+    auto& sourceContext = definitionSources_.retainedIndexSources[sourceIndex];
+    const RandomAccessSource source{&sourceContext, sourceContext.size, readAt};
+    contextual::RuntimeFormatError formatError;
+    if (!contextual::readDefinitionIndexRecord(source, metadata.canonicalLexemeCount, metadata.entriesFileSize,
+                                               canonicalId, result.record, formatError)) {
+      result.status = formatError == contextual::RuntimeFormatError::RECORD_INVALID
+                          ? DefinitionIndexStatus::RECORD_INVALID
+                          : DefinitionIndexStatus::SOURCE_UNAVAILABLE;
+      LOG_ERR("DICT", "Definition index read failed for %s: %s", metadata.sourceLabel,
+              contextual::runtimeFormatErrorName(formatError));
+      continue;
+    }
+    result.status = result.record.present() ? DefinitionIndexStatus::PRESENT : DefinitionIndexStatus::MISSING;
+  }
   return true;
 }
 

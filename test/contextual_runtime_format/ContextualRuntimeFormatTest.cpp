@@ -41,6 +41,23 @@ RandomAccessSource sourceFor(const std::vector<uint8_t>& data) {
   return {const_cast<std::vector<uint8_t>*>(&data), data.size(), readVector};
 }
 
+struct TrackedSource {
+  const std::vector<uint8_t>* data = nullptr;
+  uint32_t calls = 0;
+  uint32_t lastOffset = 0;
+  size_t lastLength = 0;
+};
+
+bool readTracked(void* context, const uint32_t offset, void* output, const size_t length) {
+  auto& tracked = *static_cast<TrackedSource*>(context);
+  ++tracked.calls;
+  tracked.lastOffset = offset;
+  tracked.lastLength = length;
+  if (!tracked.data || static_cast<uint64_t>(offset) + length > tracked.data->size()) return false;
+  std::memcpy(output, tracked.data->data() + offset, length);
+  return true;
+}
+
 struct CanonicalFixture {
   std::vector<uint8_t> meta;
   std::vector<uint8_t> lexemes;
@@ -211,6 +228,26 @@ TEST(DefinitionSourceReader, ReadsFixedMissingAndPresentIndexRecords) {
   ASSERT_TRUE(reader.validateIndex(scratch.data(), scratch.size(), error));
   EXPECT_FALSE(reader.validateIndex(scratch.data(), 7, error));
   EXPECT_EQ(error, RuntimeFormatError::OUTPUT_BUFFER_TOO_SMALL);
+}
+
+TEST(DefinitionSourceReader, StandaloneIndexLookupReadsExactlyOneFixedRecord) {
+  DefinitionFixture fixture = makeDefinitionFixture();
+  TrackedSource tracked{&fixture.index};
+  const RandomAccessSource source{&tracked, fixture.index.size(), readTracked};
+  dictionary::contextual::DefinitionIndexRecord record;
+  RuntimeFormatError error;
+
+  ASSERT_TRUE(dictionary::contextual::readDefinitionIndexRecord(source, 3, fixture.entries.size(), 2, record, error));
+  EXPECT_EQ(tracked.calls, 1U);
+  EXPECT_EQ(tracked.lastOffset, 16U);
+  EXPECT_EQ(tracked.lastLength, dictionary::contextual::kDefinitionIndexRecordSize);
+  EXPECT_EQ(record.entryOffset, 4U);
+  EXPECT_EQ(record.entryLength, 4U);
+
+  tracked.calls = 0;
+  EXPECT_FALSE(dictionary::contextual::readDefinitionIndexRecord(source, 3, fixture.entries.size(), 3, record, error));
+  EXPECT_EQ(error, RuntimeFormatError::RECORD_ID_OUT_OF_RANGE);
+  EXPECT_EQ(tracked.calls, 0U);
 }
 
 TEST(DefinitionSourceReader, RejectsIdentityCountLabelAndSourceSizeMismatch) {
