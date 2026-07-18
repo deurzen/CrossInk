@@ -1358,6 +1358,7 @@ bool Epub::loadBookLanguageArtifact() { return loadBookLanguageArtifactImpl(true
 
 bool Epub::loadBookLanguageArtifactImpl(const bool requireMetadataCompatibility) {
   bookLanguageArtifactLoaded = false;
+  contextualLanguageArtifact = false;
   dictionaryIdentityUuid.fill(0);
   if (requireMetadataCompatibility && (!bookMetadataCache || !bookMetadataCache->isLoaded())) return false;
 
@@ -1403,6 +1404,7 @@ bool Epub::loadBookLanguageArtifactImpl(const bool requireMetadataCompatibility)
     if (fullyValidated) writeBookLanguageReceipt(receiptPath, receiptTemporaryPath, embeddedSize, embeddedCrc, header);
     std::copy(header.dictionaryIdentityUuid, header.dictionaryIdentityUuid + sizeof(header.dictionaryIdentityUuid),
               dictionaryIdentityUuid.begin());
+    contextualLanguageArtifact = header.usesCanonicalIdentity();
     bookLanguageArtifactLoaded = true;
     return true;
   }
@@ -1468,6 +1470,7 @@ bool Epub::loadBookLanguageArtifactImpl(const bool requireMetadataCompatibility)
   writeBookLanguageReceipt(receiptPath, receiptTemporaryPath, embeddedSize, embeddedCrc, header);
   std::copy(header.dictionaryIdentityUuid, header.dictionaryIdentityUuid + sizeof(header.dictionaryIdentityUuid),
             dictionaryIdentityUuid.begin());
+  contextualLanguageArtifact = header.usesCanonicalIdentity();
   bookLanguageArtifactLoaded = true;
   LOG_INF("EBP", "Cached dictionary language artifact: %zu bytes", embeddedSize);
   return true;

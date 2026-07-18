@@ -30,6 +30,14 @@ class DictionaryActivity final : public Activity {
   };
 
   enum class Mode : uint8_t { Shortlist, Definition, Status };
+  enum class DefinitionFailure : uint8_t {
+    None = 0,
+    General,
+    AttachmentsInvalid,
+    NoCompatibleSources,
+    NoDefinition,
+    SourceCorrupt,
+  };
   std::unique_ptr<dictionary::lookup::Session> session_;
   std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist_;
   std::unique_ptr<dictionary::definition::Pager> pager_;
@@ -50,7 +58,9 @@ class DictionaryActivity final : public Activity {
   char lineScratch_[dictionary::definition::kMaxLineBytes + 1]{};
   unsigned long lookupStartedAt_ = 0;
   bool definitionFailed_ = false;
+  bool contextualSourceWarning_ = false;
   bool statusSaved_ = false;
+  DefinitionFailure definitionFailure_ = DefinitionFailure::None;
 
   bool openDefinition();
   bool loadDefinitionPage(const DefinitionCursor& start, uint32_t pageIndex);
@@ -65,6 +75,7 @@ class DictionaryActivity final : public Activity {
   int definitionContentWidth() const;
   void contentMargins(int& top, int& right, int& bottom, int& left) const;
   static int measureDefinitionText(void* context, std::string_view text);
+  const char* definitionFailureMessage() const;
 
   void renderShortlist();
   void renderDefinition();

@@ -3140,7 +3140,14 @@ void EpubReaderActivity::startClipSelection() {
 void EpubReaderActivity::startDictionaryLookup() {
   const unsigned long lookupStartedAt = millis();
   LOG_INF("DICT", "Lookup start: free=%u maxAlloc=%u", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-  enum class LookupOutcome : uint8_t { Ready, NoWords, MissingDictionary, Failed };
+  enum class LookupOutcome : uint8_t {
+    Ready,
+    NoWords,
+    MissingDictionary,
+    MissingCanonicalLexicon,
+    InvalidCanonicalLexicon,
+    Failed
+  };
   LookupOutcome outcome = LookupOutcome::Failed;
   std::unique_ptr<dictionary::lookup::Session> session;
   std::unique_ptr<dictionary::page_shortlist::Shortlist> shortlist;
@@ -3186,9 +3193,18 @@ void EpubReaderActivity::startDictionaryLookup() {
             if (!session->openReaders(epub->getBookLanguageArtifactPath().c_str(), epub->getCachePath().c_str(),
                                       epub->getDictionaryIdentityUuid(), sessionError)) {
               LOG_ERR("DICT", "Lookup session failed: %s", dictionary::lookup::sessionErrorName(sessionError));
-              outcome = sessionError == dictionary::lookup::SessionError::DICTIONARY_MISSING
-                            ? LookupOutcome::MissingDictionary
-                            : LookupOutcome::Failed;
+              if (epub->hasContextualLanguageArtifact()) {
+                if (sessionError == dictionary::lookup::SessionError::DICTIONARY_MISSING) {
+                  outcome = LookupOutcome::MissingCanonicalLexicon;
+                } else if (sessionError == dictionary::lookup::SessionError::DICTIONARY_INVALID ||
+                           sessionError == dictionary::lookup::SessionError::IDENTITY_MISMATCH) {
+                  outcome = LookupOutcome::InvalidCanonicalLexicon;
+                }
+              } else {
+                outcome = sessionError == dictionary::lookup::SessionError::DICTIONARY_MISSING
+                              ? LookupOutcome::MissingDictionary
+                              : LookupOutcome::Failed;
+              }
             } else {
               LOG_INF("DICT", "Readers open: %lu ms total=%lu ms local=%lu global=%lu", millis() - readersStartedAt,
                       millis() - lookupStartedAt, static_cast<unsigned long>(session->book().header().localLemmaCount),
@@ -3238,9 +3254,11 @@ void EpubReaderActivity::startDictionaryLookup() {
   }
 
   if (outcome != LookupOutcome::Ready) {
-    const char* message = outcome == LookupOutcome::NoWords             ? tr(STR_NO_UNKNOWN_WORDS)
-                          : outcome == LookupOutcome::MissingDictionary ? tr(STR_DICTIONARY_NOT_INSTALLED)
-                                                                        : tr(STR_DICTIONARY_LOOKUP_FAILED);
+    const char* message = outcome == LookupOutcome::NoWords                   ? tr(STR_NO_UNKNOWN_WORDS)
+                          : outcome == LookupOutcome::MissingDictionary       ? tr(STR_DICTIONARY_NOT_INSTALLED)
+                          : outcome == LookupOutcome::MissingCanonicalLexicon ? tr(STR_CANONICAL_LEXICON_NOT_INSTALLED)
+                          : outcome == LookupOutcome::InvalidCanonicalLexicon ? tr(STR_CANONICAL_LEXICON_INVALID)
+                                                                              : tr(STR_DICTIONARY_LOOKUP_FAILED);
     {
       RenderLock lock(*this);
       drawToast(renderer, message);

@@ -20,6 +20,7 @@
 - Contextual definitions now stream across every retained analysis and attached source through the existing single page buffer, with bounded forward cursors and replay-based backward navigation.
 - Contextual definition pages now identify each source with a centered labeled divider while preserving separate analysis and meaning spacing without clipping the content area.
 - Contextual Known, Learning, and Ignore actions now update the primary canonical lexical item once, keeping suppression independent of alternative analyses and definition-source order.
+- Contextual dictionary failures now distinguish missing or incompatible canonical lexicons, attachment problems, unavailable sources, missing definitions, and damaged source data with actionable translated messages.
 
 ### Fixed
 

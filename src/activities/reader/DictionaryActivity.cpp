@@ -124,6 +124,23 @@ int DictionaryActivity::definitionContentWidth() const {
   return std::max(1, renderer.getScreenWidth() - left - right - 2 * kSideMargin);
 }
 
+const char* DictionaryActivity::definitionFailureMessage() const {
+  switch (definitionFailure_) {
+    case DefinitionFailure::AttachmentsInvalid:
+      return tr(STR_DICTIONARY_ATTACHMENTS_INVALID);
+    case DefinitionFailure::NoCompatibleSources:
+      return tr(STR_NO_COMPATIBLE_DEFINITION_SOURCES);
+    case DefinitionFailure::NoDefinition:
+      return tr(STR_NO_ATTACHED_SOURCE_DEFINITION);
+    case DefinitionFailure::SourceCorrupt:
+      return tr(STR_DEFINITION_SOURCE_INVALID);
+    case DefinitionFailure::None:
+    case DefinitionFailure::General:
+      return tr(STR_DICTIONARY_LOOKUP_FAILED);
+  }
+  return tr(STR_DICTIONARY_LOOKUP_FAILED);
+}
+
 int DictionaryActivity::measureDefinitionText(void* context, const std::string_view text) {
   auto& activity = *static_cast<DictionaryActivity*>(context);
   if (text.size() >= sizeof(activity.lineScratch_)) return INT_MAX;
@@ -152,13 +169,33 @@ bool DictionaryActivity::openDefinition() {
   const unsigned long startedAt = millis();
   const auto ioBefore = session_->sourceIoMetrics();
   definitionFailed_ = false;
+  contextualSourceWarning_ = false;
+  definitionFailure_ = DefinitionFailure::None;
   statusSaved_ = false;
   dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
   const bool contextual = session_ && session_->usesCanonicalIdentity();
+  if (contextual) {
+    if (session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::ATTACHMENTS_INVALID) {
+      definitionFailed_ = true;
+      definitionFailure_ = DefinitionFailure::AttachmentsInvalid;
+      mode_ = Mode::Definition;
+      requestUpdate();
+      return false;
+    }
+    if (session_->definitionSourceCount() == 0) {
+      definitionFailed_ = true;
+      definitionFailure_ = DefinitionFailure::NoCompatibleSources;
+      mode_ = Mode::Definition;
+      requestUpdate();
+      return false;
+    }
+    contextualSourceWarning_ = session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::PARTIAL;
+  }
   if (!shortlist_ || selected_ >= shortlist_->count ||
       (!contextual && !session_->openDefinitionPackage(sessionError))) {
     LOG_ERR("DICT", "Definition package open failed: %s", dictionary::lookup::sessionErrorName(sessionError));
     definitionFailed_ = true;
+    definitionFailure_ = DefinitionFailure::General;
     mode_ = Mode::Definition;
     requestUpdate();
     return false;
@@ -183,6 +220,7 @@ bool DictionaryActivity::openDefinition() {
     LOG_ERR("DICT", "OOM: definition pager/page (%u bytes)",
             static_cast<unsigned>(sizeof(dictionary::definition::Pager) + sizeof(dictionary::definition::Page)));
     definitionFailed_ = true;
+    definitionFailure_ = DefinitionFailure::General;
     mode_ = Mode::Definition;
     requestUpdate();
     return false;
@@ -218,6 +256,13 @@ bool DictionaryActivity::loadContextualIndexes(const uint8_t analysisIndex) {
       !session_->readDefinitionIndexes(canonicalId, contextualIndexes_, contextualIndexCount_, error)) {
     LOG_ERR("DICT", "Contextual index lookup failed: %s", dictionary::lookup::sessionErrorName(error));
     return false;
+  }
+  for (uint8_t sourceIndex = 0; sourceIndex < contextualIndexCount_; ++sourceIndex) {
+    const auto status = contextualIndexes_[sourceIndex].status;
+    if (status == dictionary::lookup::DefinitionIndexStatus::SOURCE_UNAVAILABLE ||
+        status == dictionary::lookup::DefinitionIndexStatus::RECORD_INVALID) {
+      contextualSourceWarning_ = true;
+    }
   }
   contextualIndexAnalysis_ = analysisIndex;
   return true;
@@ -289,6 +334,7 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
       definitionPage_->hasNext = false;
       LOG_ERR("DICT", "Skipping contextual definition source %u: %s", static_cast<unsigned>(sourceIndex),
               dictionary::definition::pagerErrorName(pagerError));
+      contextualSourceWarning_ = true;
       ++cursor.sourceIndex;
       cursor.entry = {};
       definitionPageNext_ = cursor;
@@ -317,6 +363,9 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
 
   definitionPage_->hasNext = definitionPageNext_.analysisIndex < analysisCount;
   definitionFailed_ = definitionPage_->lineCount == 0;
+  definitionFailure_ = definitionFailed_ ? (contextualSourceWarning_ ? DefinitionFailure::SourceCorrupt
+                                                                     : DefinitionFailure::NoDefinition)
+                                         : DefinitionFailure::None;
   definitionPageStart_ = start;
   definitionPageIndex_ = pageIndex;
   requestUpdate();
@@ -559,7 +608,7 @@ void DictionaryActivity::renderDefinition() {
   renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, header, true, EpdFontFamily::BOLD);
 
   if (definitionFailed_) {
-    renderer.drawText(UI_10_FONT_ID, left + kSideMargin, top + kListTop, tr(STR_DICTIONARY_LOOKUP_FAILED));
+    renderer.drawText(UI_10_FONT_ID, left + kSideMargin, top + kListTop, definitionFailureMessage());
   } else if (definitionPage_) {
     int y = top + kListTop;
     const int lineStep = renderer.getLineHeight(UI_10_FONT_ID) + kDefinitionLineGap;
@@ -616,6 +665,9 @@ void DictionaryActivity::renderDefinition() {
   if (statusSaved_) {
     renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
                       tr(STR_WORD_STATUS_SAVED));
+  } else if (contextualSourceWarning_ && !definitionFailed_) {
+    renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
+                      tr(STR_SOME_DEFINITION_SOURCES_UNAVAILABLE));
   }
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);

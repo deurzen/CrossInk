@@ -80,7 +80,7 @@ committed.
 | C27 | Done | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
 | C28 | Done | Render labeled source dividers and existing analysis/meaning separators | de-DE, dict.cc and Kaikki visibly distinct; pagination accounts for divider height without clipping |
 | C29 | Done | Apply status once to the canonical lexical item | Known/Learning/Ignore suppresses the item independent of source availability or order |
-| C30 | Planned | Add translated failure and compatibility UI | Missing canonical/source/corrupt-entry states are actionable and never crash or silently mislabel content |
+| C30 | Done | Add translated failure and compatibility UI | Missing canonical/source/corrupt-entry states are actionable and never crash or silently mislabel content |
 
 ## Phase F — migration and validation
 
@@ -328,7 +328,28 @@ reorder and detach sources, reboot and confirm the item remains suppressed while
 its alternative canonical IDs remain unchanged. The serial state metrics should
 show one WAL/status generation update for the action.
 
+## C30 implementation note
+
+Firmware now retains whether an extracted book artifact uses contextual v4 and
+uses that fact to distinguish a missing canonical lexicon from a missing legacy
+dictionary. Missing and incompatible canonical packages show separate translated
+installation/reinstallation messages before the shortlist opens.
+
+Inside the dictionary activity, corrupt attachment records, zero compatible
+sources, ordinary no-definition results and malformed/unreadable definition
+sources have distinct translated messages. Partial discovery or a failed source
+index/entry leaves valid definitions usable but shows a bounded warning; labels
+are only rendered for the validated descriptor that supplied the entry, so a
+failed source cannot be silently presented under another source's name. These
+states add only enums/booleans and reuse the existing page and message area.
+
+On X3/X4, exercise each state by removing the canonical directory, replacing it
+with a mismatched package, clearing attachments, removing one attached source,
+and truncating one index and one entries file. Each case must show the matching
+action, valid remaining sources must stay readable and correctly labeled, and
+serial logs must identify the rejected source without a crash or second reader.
+
 ## Immediate next work
 
-1. Add translated failure and compatibility UI in C30.
+1. Build the legacy de-DE ID to canonical ID migration map in C31.
 2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
