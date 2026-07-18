@@ -148,6 +148,8 @@ TEST(CanonicalLexiconReader, ReadsDenseIdentityWithoutAllocation) {
   RuntimeFormatError error;
   ASSERT_TRUE(openCanonical(fixture, reader, error)) << dictionary::contextual::runtimeFormatErrorName(error);
   EXPECT_EQ(reader.metadata().lexemeCount, 2U);
+  std::array<uint8_t, 31> scratch{};
+  ASSERT_TRUE(reader.validateLexemes(scratch.data(), scratch.size(), error));
 
   dictionary::contextual::CanonicalLexemeRecord lexeme;
   ASSERT_TRUE(reader.readLexeme(1, lexeme, error));
@@ -183,6 +185,13 @@ TEST(CanonicalLexiconReader, RejectsHeaderAndRecordCorruptionBeforeOutOfRangeRea
   dictionary::contextual::CanonicalLexemeRecord lexeme;
   EXPECT_FALSE(reader.readLexeme(2, lexeme, error));
   EXPECT_EQ(error, RuntimeFormatError::RECORD_ID_OUT_OF_RANGE);
+
+  fixture.lexemes[15] = 0x80U;
+  refreshCanonicalMeta(fixture);
+  ASSERT_TRUE(openCanonical(fixture, reader, error));
+  std::array<uint8_t, 17> scratch{};
+  EXPECT_FALSE(reader.validateLexemes(scratch.data(), scratch.size(), error));
+  EXPECT_EQ(error, RuntimeFormatError::RECORD_INVALID);
 }
 
 TEST(DefinitionSourceReader, ReadsFixedMissingAndPresentIndexRecords) {

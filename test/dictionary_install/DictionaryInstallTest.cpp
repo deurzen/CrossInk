@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "ContextualRuntimeFormat.h"
 #include "Crc32.h"
 #include "DictionaryInstaller.h"
 
@@ -118,6 +119,11 @@ void writeU32(std::vector<uint8_t>& data, const size_t offset, const uint32_t va
   data[offset + 3] = static_cast<uint8_t>(value >> 24U);
 }
 
+void writeU64(std::vector<uint8_t>& data, const size_t offset, const uint64_t value) {
+  writeU32(data, offset, static_cast<uint32_t>(value));
+  writeU32(data, offset + 4, static_cast<uint32_t>(value >> 32U));
+}
+
 struct Fixture {
   std::vector<uint8_t> meta;
   std::vector<uint8_t> lexemes;
@@ -191,11 +197,120 @@ bool preparePackage(void* context, const uint8_t (&bundleUuid)[16], const uint32
   return probe.succeed && std::memcmp(bundleUuid, UUID, sizeof(UUID)) == 0;
 }
 
-Installer openedInstaller(MemoryStorage& storage) {
+Installer openedInstaller(MemoryStorage& storage, const char* root = "/.crosspoint/dictionaries") {
   Installer installer;
   InstallError error;
-  EXPECT_TRUE(installer.open(backend(storage), "/.crosspoint/dictionaries", error));
+  EXPECT_TRUE(installer.open(backend(storage), root, error));
   return installer;
+}
+
+struct CanonicalFixture {
+  std::vector<uint8_t> meta;
+  std::vector<uint8_t> lexemes;
+  std::vector<uint8_t> headwords;
+  std::vector<uint8_t> licenses;
+};
+
+CanonicalFixture canonicalFixture(const uint8_t (&uuid)[16] = UUID) {
+  CanonicalFixture result;
+  result.meta.resize(dictionary::contextual::kCanonicalMetaSize, 0);
+  result.lexemes.resize(dictionary::contextual::kCanonicalLexemeRecordSize, 0);
+  result.headwords = {'H', 'a', 'u', 's'};
+  result.licenses = {'C', 'C', '-', 'B', 'Y', '\n'};
+
+  writeU32(result.lexemes, 0, 0);
+  writeU64(result.lexemes, 4, 0x123456789ABCDEF0ULL);
+  writeU16(result.lexemes, 12, result.headwords.size());
+  result.lexemes[14] = 1;
+
+  std::memcpy(result.meta.data(), "CXCL", 4);
+  writeU16(result.meta, 4, dictionary::contextual::kCanonicalFormatVersion);
+  writeU16(result.meta, 6, dictionary::contextual::kCanonicalMetaSize);
+  std::memcpy(result.meta.data() + 12, uuid, 16);
+  std::memcpy(result.meta.data() + 28, "de", 2);
+  writeU32(result.meta, 36, 1);
+  writeU16(result.meta, 40, dictionary::contextual::kCanonicalLexemeRecordSize);
+  writeU16(result.meta, 42, dictionary::contextual::kCanonicalPosVersion);
+  writeU32(result.meta, 44, result.lexemes.size());
+  writeU32(result.meta, 48, result.headwords.size());
+  writeU32(result.meta, 52, dictionary::updateCrc32(0, result.lexemes.data(), result.lexemes.size()));
+  writeU32(result.meta, 56, dictionary::updateCrc32(0, result.headwords.data(), result.headwords.size()));
+  for (size_t i = 0; i < 32; ++i) result.meta[60 + i] = static_cast<uint8_t>(i + 1);
+  writeU32(result.meta, 108, dictionary::updateCrc32(0, result.meta.data(), 108));
+  return result;
+}
+
+struct DefinitionFixture {
+  std::vector<uint8_t> meta;
+  std::vector<uint8_t> index;
+  std::vector<uint8_t> entries;
+  std::vector<uint8_t> licenses;
+};
+
+DefinitionFixture definitionFixture(const uint8_t (&sourceUuid)[16] = OTHER_UUID,
+                                    const uint8_t (&canonicalUuid)[16] = UUID) {
+  DefinitionFixture result;
+  result.meta.resize(dictionary::contextual::kDefinitionMetaSize, 0);
+  result.index.resize(2 * dictionary::contextual::kDefinitionIndexRecordSize, 0);
+  result.entries = {1, 0, 1, 0, 1, 0, 1, 0, 'x'};
+  result.licenses = {'C', 'C', '-', 'B', 'Y', '\n'};
+
+  writeU32(result.index, 0, 0);
+  writeU32(result.index, 4, result.entries.size());
+  std::memcpy(result.meta.data(), "CXDS", 4);
+  writeU16(result.meta, 4, dictionary::contextual::kDefinitionFormatVersion);
+  writeU16(result.meta, 6, dictionary::contextual::kDefinitionMetaSize);
+  std::memcpy(result.meta.data() + 12, sourceUuid, 16);
+  std::memcpy(result.meta.data() + 28, canonicalUuid, 16);
+  std::memcpy(result.meta.data() + 44, "de", 2);
+  std::memcpy(result.meta.data() + 52, "en", 2);
+  std::memcpy(result.meta.data() + 60, "Fixture", 7);
+  writeU32(result.meta, 92, 2);
+  writeU16(result.meta, 96, dictionary::contextual::kDefinitionIndexRecordSize);
+  writeU16(result.meta, 98, dictionary::contextual::kDefinitionEntryVersion);
+  writeU32(result.meta, 100, result.index.size());
+  writeU32(result.meta, 104, result.entries.size());
+  writeU32(result.meta, 108, dictionary::updateCrc32(0, result.index.data(), result.index.size()));
+  writeU32(result.meta, 112, dictionary::updateCrc32(0, result.entries.data(), result.entries.size()));
+  writeU32(result.meta, 116, 1);
+  writeU32(result.meta, 140, dictionary::updateCrc32(0, result.meta.data(), 140));
+  return result;
+}
+
+void stageCanonical(Installer& installer, MemoryStorage& storage, const CanonicalFixture& data,
+                    const uint8_t (&uuid)[16] = UUID) {
+  InstallError error;
+  ASSERT_TRUE(installer.begin(uuid, error));
+  const struct {
+    RuntimeFile file;
+    const std::vector<uint8_t>* bytes;
+  } files[] = {{RuntimeFile::Meta, &data.meta},
+               {RuntimeFile::Lexemes, &data.lexemes},
+               {RuntimeFile::Headwords, &data.headwords},
+               {RuntimeFile::Licenses, &data.licenses}};
+  for (const auto& item : files) {
+    char path[dictionary::installer::kMaxInstallPath]{};
+    ASSERT_TRUE(installer.stagingFilePath(uuid, item.file, path, sizeof(path), error));
+    storage.files[path] = *item.bytes;
+  }
+}
+
+void stageDefinition(Installer& installer, MemoryStorage& storage, const DefinitionFixture& data,
+                     const uint8_t (&uuid)[16] = OTHER_UUID) {
+  InstallError error;
+  ASSERT_TRUE(installer.begin(uuid, error));
+  const struct {
+    RuntimeFile file;
+    const std::vector<uint8_t>* bytes;
+  } files[] = {{RuntimeFile::Meta, &data.meta},
+               {RuntimeFile::EntryIndex, &data.index},
+               {RuntimeFile::Entries, &data.entries},
+               {RuntimeFile::Licenses, &data.licenses}};
+  for (const auto& item : files) {
+    char path[dictionary::installer::kMaxInstallPath]{};
+    ASSERT_TRUE(installer.stagingFilePath(uuid, item.file, path, sizeof(path), error));
+    storage.files[path] = *item.bytes;
+  }
 }
 
 }  // namespace
@@ -361,4 +476,99 @@ TEST(DictionaryInstaller, RemovalCommitNeverRestoresPartialCleanup) {
   ASSERT_TRUE(installer.recover(UUID, error));
   EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
   EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.removing-") + UUID_HEX));
+}
+
+TEST(DictionaryInstaller, ValidatesAndPublishesCanonicalLexicon) {
+  MemoryStorage storage;
+  Installer installer = openedInstaller(storage, "/.crosspoint/lexicons");
+  stageCanonical(installer, storage, canonicalFixture());
+
+  uint8_t scratch[64]{};
+  dictionary::installer::CanonicalPackageInfo info;
+  InstallError error;
+  ASSERT_TRUE(installer.commitCanonical(UUID, scratch, sizeof(scratch), info, error))
+      << dictionary::installer::installErrorName(error);
+  EXPECT_EQ(info.lexemeCount, 1U);
+  EXPECT_STREQ(info.sourceLanguage, "de");
+  EXPECT_EQ(storage.validateCrcCalls, 2);
+  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/lexicons/") + UUID_HEX));
+
+  const int crcCalls = storage.validateCrcCalls;
+  dictionary::installer::CanonicalPackageInfo inspected;
+  ASSERT_TRUE(installer.inspectInstalledCanonical(UUID, inspected, error));
+  EXPECT_EQ(inspected.lexemeCount, 1U);
+  EXPECT_EQ(storage.validateCrcCalls, crcCalls);
+}
+
+TEST(DictionaryInstaller, CanonicalReplacementRejectsCorruptionAndRecoversRenameFailure) {
+  MemoryStorage storage;
+  Installer installer = openedInstaller(storage, "/.crosspoint/lexicons");
+  uint8_t scratch[64]{};
+  dictionary::installer::CanonicalPackageInfo info;
+  InstallError error;
+  stageCanonical(installer, storage, canonicalFixture());
+  ASSERT_TRUE(installer.commitCanonical(UUID, scratch, sizeof(scratch), info, error));
+  const std::string final = std::string("/.crosspoint/lexicons/") + UUID_HEX;
+  const std::string installedMeta = final + "/meta.bin";
+  const auto originalMeta = storage.files.at(installedMeta);
+
+  CanonicalFixture corrupt = canonicalFixture();
+  corrupt.headwords[0] ^= 1U;
+  stageCanonical(installer, storage, corrupt);
+  EXPECT_FALSE(installer.commitCanonical(UUID, scratch, sizeof(scratch), info, error));
+  EXPECT_EQ(error, InstallError::CRC_MISMATCH);
+  EXPECT_EQ(storage.files.at(installedMeta), originalMeta);
+
+  stageCanonical(installer, storage, canonicalFixture());
+  storage.failRenameCall = storage.renameCalls + 2;
+  EXPECT_FALSE(installer.commitCanonical(UUID, scratch, sizeof(scratch), info, error));
+  EXPECT_EQ(error, InstallError::RENAME_FAILED);
+  EXPECT_TRUE(storage.directories.contains(final));
+  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/lexicons/.backup-") + UUID_HEX));
+}
+
+TEST(DictionaryInstaller, ValidatesDefinitionIdentityIndexAndAtomicRemoval) {
+  MemoryStorage storage;
+  Installer installer = openedInstaller(storage, "/.crosspoint/definition-sources");
+  stageDefinition(installer, storage, definitionFixture());
+
+  uint8_t scratch[64]{};
+  dictionary::installer::DefinitionSourcePackageInfo info;
+  InstallError error;
+  ASSERT_TRUE(installer.commitDefinition(OTHER_UUID, UUID, 2, scratch, sizeof(scratch), info, error))
+      << dictionary::installer::installErrorName(error);
+  EXPECT_EQ(info.canonicalLexemeCount, 2U);
+  EXPECT_EQ(info.coverageCount, 1U);
+  EXPECT_STREQ(info.sourceLabel, "Fixture");
+  EXPECT_EQ(storage.validateCrcCalls, 2);
+
+  const std::string final = "/.crosspoint/definition-sources/100f0e0d0c0b0a090807060504030201";
+  EXPECT_TRUE(storage.directories.contains(final));
+  storage.failRemove = true;
+  ASSERT_TRUE(installer.remove(OTHER_UUID, error));
+  EXPECT_FALSE(storage.directories.contains(final));
+  storage.failRemove = false;
+  ASSERT_TRUE(installer.recover(OTHER_UUID, error));
+  EXPECT_FALSE(storage.directories.contains(final));
+}
+
+TEST(DictionaryInstaller, DefinitionInstallRejectsCanonicalAndIndexMismatchBeforePublish) {
+  MemoryStorage storage;
+  Installer installer = openedInstaller(storage, "/.crosspoint/definition-sources");
+  uint8_t scratch[64]{};
+  dictionary::installer::DefinitionSourcePackageInfo info;
+  InstallError error;
+  stageDefinition(installer, storage, definitionFixture());
+
+  EXPECT_FALSE(installer.commitDefinition(OTHER_UUID, OTHER_UUID, 2, scratch, sizeof(scratch), info, error));
+  EXPECT_EQ(error, InstallError::UUID_MISMATCH);
+
+  DefinitionFixture malformed = definitionFixture();
+  writeU32(malformed.index, 8, 1);
+  writeU32(malformed.meta, 108, dictionary::updateCrc32(0, malformed.index.data(), malformed.index.size()));
+  writeU32(malformed.meta, 140, dictionary::updateCrc32(0, malformed.meta.data(), 140));
+  stageDefinition(installer, storage, malformed);
+  EXPECT_FALSE(installer.commitDefinition(OTHER_UUID, UUID, 2, scratch, sizeof(scratch), info, error));
+  EXPECT_EQ(error, InstallError::PACKAGE_INVALID);
+  EXPECT_FALSE(storage.directories.contains("/.crosspoint/definition-sources/100f0e0d0c0b0a090807060504030201"));
 }

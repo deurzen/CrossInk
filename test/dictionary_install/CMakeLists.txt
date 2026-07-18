@@ -2,6 +2,7 @@ add_executable(DictionaryInstallTest
   DictionaryInstallTest.cpp
   ${REPO_ROOT}/lib/Dictionary/DictionaryInstaller.cpp
   ${REPO_ROOT}/lib/Dictionary/DictionaryPackage.cpp
+  ${REPO_ROOT}/lib/Dictionary/ContextualRuntimeFormat.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
 )
 

@@ -18,6 +18,7 @@ enum class RuntimeFile : uint8_t {
   Headwords,
   Entries,
   Licenses,
+  EntryIndex,
 };
 
 struct StorageBackend {
@@ -37,6 +38,24 @@ struct PackageInfo {
   char sourceLanguage[8]{};
   char targetLanguage[8]{};
   uint32_t lexemeCount = 0;
+  uint64_t runtimeBytes = 0;
+};
+
+struct CanonicalPackageInfo {
+  uint8_t canonicalUuid[16]{};
+  char sourceLanguage[8]{};
+  uint32_t lexemeCount = 0;
+  uint64_t runtimeBytes = 0;
+};
+
+struct DefinitionSourcePackageInfo {
+  uint8_t sourceUuid[16]{};
+  uint8_t canonicalUuid[16]{};
+  char sourceLanguage[8]{};
+  char targetLanguage[8]{};
+  char sourceLabel[32]{};
+  uint32_t canonicalLexemeCount = 0;
+  uint32_t coverageCount = 0;
   uint64_t runtimeBytes = 0;
 };
 
@@ -78,6 +97,22 @@ class Installer {
   bool inspectInstalled(const uint8_t (&bundleUuid)[16], PackageInfo& info, InstallError& error);
   bool commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, size_t scratchSize, PackageInfo& info,
               InstallError& error, PrepareCallback prepare = nullptr, void* prepareContext = nullptr);
+
+  bool validateStagedCanonical(const uint8_t (&canonicalUuid)[16], uint8_t* scratch, size_t scratchSize,
+                               CanonicalPackageInfo& info, InstallError& error);
+  bool inspectInstalledCanonical(const uint8_t (&canonicalUuid)[16], CanonicalPackageInfo& info, InstallError& error);
+  bool commitCanonical(const uint8_t (&canonicalUuid)[16], uint8_t* scratch, size_t scratchSize,
+                       CanonicalPackageInfo& info, InstallError& error);
+
+  bool validateStagedDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
+                                uint32_t expectedCanonicalCount, uint8_t* scratch, size_t scratchSize,
+                                DefinitionSourcePackageInfo& info, InstallError& error);
+  bool inspectInstalledDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
+                                  uint32_t expectedCanonicalCount, DefinitionSourcePackageInfo& info,
+                                  InstallError& error);
+  bool commitDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
+                        uint32_t expectedCanonicalCount, uint8_t* scratch, size_t scratchSize,
+                        DefinitionSourcePackageInfo& info, InstallError& error);
   bool cancel(const uint8_t (&bundleUuid)[16], InstallError& error);
   bool remove(const uint8_t (&bundleUuid)[16], InstallError& error);
   bool recover(const uint8_t (&bundleUuid)[16], InstallError& error);
@@ -105,6 +140,14 @@ class Installer {
                   RandomAccessSource& source, InstallError& error);
   bool validatePackage(const uint8_t (&bundleUuid)[16], const char* prefix, uint8_t* scratch, size_t scratchSize,
                        bool verifyCrc, PackageInfo& info, InstallError& error);
+  bool validateCanonicalPackage(const uint8_t (&canonicalUuid)[16], const char* prefix, uint8_t* scratch,
+                                size_t scratchSize, bool verifyPayload, CanonicalPackageInfo& info,
+                                InstallError& error);
+  bool validateDefinitionPackage(const uint8_t (&sourceUuid)[16], const char* prefix,
+                                 const uint8_t (&expectedCanonicalUuid)[16], uint32_t expectedCanonicalCount,
+                                 uint8_t* scratch, size_t scratchSize, bool verifyPayload,
+                                 DefinitionSourcePackageInfo& info, InstallError& error);
+  bool publishStaged(const uint8_t (&uuid)[16], InstallError& error);
   static bool sourceReadAt(void* context, uint32_t offset, void* output, size_t length);
 };
 

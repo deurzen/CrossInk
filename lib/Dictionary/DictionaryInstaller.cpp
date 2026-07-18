@@ -4,6 +4,8 @@
 #include <cstring>
 #include <limits>
 
+#include "ContextualRuntimeFormat.h"
+
 namespace dictionary::installer {
 namespace {
 
@@ -86,6 +88,8 @@ const char* runtimeFileName(const RuntimeFile file) {
       return "entries.bin";
     case RuntimeFile::Licenses:
       return "licenses.txt";
+    case RuntimeFile::EntryIndex:
+      return "entry-index.bin";
   }
   return nullptr;
 }
@@ -280,6 +284,163 @@ bool Installer::validatePackage(const uint8_t (&bundleUuid)[16], const char* pre
   return true;
 }
 
+bool Installer::validateCanonicalPackage(const uint8_t (&canonicalUuid)[16], const char* prefix, uint8_t* scratch,
+                                         const size_t scratchSize, const bool verifyPayload, CanonicalPackageInfo& info,
+                                         InstallError& error) {
+  info = {};
+  error = InstallError::NONE;
+  if (!open_ || !validUuid(canonicalUuid) || prefix == nullptr ||
+      (verifyPayload && (scratch == nullptr || scratchSize < kMinimumValidationScratch))) {
+    error = InstallError::INVALID_INPUT;
+    return false;
+  }
+  if (!directoryPath(canonicalUuid, prefix, pathScratch_, sizeof(pathScratch_), error)) return false;
+  if (!storage_.exists(storage_.context, pathScratch_)) {
+    error = prefix[0] == '\0' ? InstallError::PACKAGE_MISSING : InstallError::STAGING_MISSING;
+    return false;
+  }
+
+  SourceContext metaContext;
+  SourceContext lexemesContext;
+  SourceContext headwordsContext;
+  RandomAccessSource meta;
+  RandomAccessSource lexemes;
+  RandomAccessSource headwords;
+  if (!makeSource(metaContext, canonicalUuid, prefix, RuntimeFile::Meta, meta, error) ||
+      !makeSource(lexemesContext, canonicalUuid, prefix, RuntimeFile::Lexemes, lexemes, error) ||
+      !makeSource(headwordsContext, canonicalUuid, prefix, RuntimeFile::Headwords, headwords, error)) {
+    return false;
+  }
+  if (!filePath(canonicalUuid, prefix, RuntimeFile::Licenses, pathScratch_, sizeof(pathScratch_), error)) return false;
+  const uint64_t licenseSize = storage_.fileSize(storage_.context, pathScratch_);
+  if (licenseSize == std::numeric_limits<uint64_t>::max()) {
+    error = InstallError::REQUIRED_FILE_MISSING;
+    return false;
+  }
+  if (licenseSize == 0 || licenseSize > kMaxLicenseBytes) {
+    error = InstallError::LICENSE_INVALID;
+    return false;
+  }
+
+  contextual::CanonicalLexiconReader package;
+  contextual::RuntimeFormatError formatError;
+  if (!package.open(meta, lexemes, headwords, formatError)) {
+    error = InstallError::PACKAGE_INVALID;
+    return false;
+  }
+  const contextual::CanonicalMetadata& metadata = package.metadata();
+  if (std::memcmp(metadata.canonicalUuid, canonicalUuid, sizeof(metadata.canonicalUuid)) != 0) {
+    error = InstallError::UUID_MISMATCH;
+    return false;
+  }
+  if (verifyPayload) {
+    const struct {
+      RuntimeFile file;
+      uint32_t crc;
+    } checks[] = {{RuntimeFile::Lexemes, metadata.lexemesCrc32}, {RuntimeFile::Headwords, metadata.headwordsCrc32}};
+    for (const auto& check : checks) {
+      if (!filePath(canonicalUuid, prefix, check.file, pathScratch_, sizeof(pathScratch_), error)) return false;
+      if (!storage_.validateCrc(storage_.context, pathScratch_, check.crc, scratch, scratchSize)) {
+        error = InstallError::CRC_MISMATCH;
+        return false;
+      }
+    }
+    if (!package.validateLexemes(scratch, scratchSize, formatError)) {
+      error = InstallError::PACKAGE_INVALID;
+      return false;
+    }
+  }
+
+  std::memcpy(info.canonicalUuid, metadata.canonicalUuid, sizeof(info.canonicalUuid));
+  std::memcpy(info.sourceLanguage, metadata.sourceLanguage, sizeof(info.sourceLanguage));
+  info.lexemeCount = metadata.lexemeCount;
+  info.runtimeBytes = contextual::kCanonicalMetaSize + static_cast<uint64_t>(metadata.lexemesFileSize) +
+                      metadata.headwordsFileSize + licenseSize;
+  return true;
+}
+
+bool Installer::validateDefinitionPackage(const uint8_t (&sourceUuid)[16], const char* prefix,
+                                          const uint8_t (&expectedCanonicalUuid)[16],
+                                          const uint32_t expectedCanonicalCount, uint8_t* scratch,
+                                          const size_t scratchSize, const bool verifyPayload,
+                                          DefinitionSourcePackageInfo& info, InstallError& error) {
+  info = {};
+  error = InstallError::NONE;
+  if (!open_ || !validUuid(sourceUuid) || !validUuid(expectedCanonicalUuid) || expectedCanonicalCount == 0 ||
+      prefix == nullptr || (verifyPayload && (scratch == nullptr || scratchSize < kMinimumValidationScratch))) {
+    error = InstallError::INVALID_INPUT;
+    return false;
+  }
+  if (!directoryPath(sourceUuid, prefix, pathScratch_, sizeof(pathScratch_), error)) return false;
+  if (!storage_.exists(storage_.context, pathScratch_)) {
+    error = prefix[0] == '\0' ? InstallError::PACKAGE_MISSING : InstallError::STAGING_MISSING;
+    return false;
+  }
+
+  SourceContext metaContext;
+  SourceContext indexContext;
+  SourceContext entriesContext;
+  RandomAccessSource meta;
+  RandomAccessSource index;
+  RandomAccessSource entries;
+  if (!makeSource(metaContext, sourceUuid, prefix, RuntimeFile::Meta, meta, error) ||
+      !makeSource(indexContext, sourceUuid, prefix, RuntimeFile::EntryIndex, index, error) ||
+      !makeSource(entriesContext, sourceUuid, prefix, RuntimeFile::Entries, entries, error)) {
+    return false;
+  }
+  if (!filePath(sourceUuid, prefix, RuntimeFile::Licenses, pathScratch_, sizeof(pathScratch_), error)) return false;
+  const uint64_t licenseSize = storage_.fileSize(storage_.context, pathScratch_);
+  if (licenseSize == std::numeric_limits<uint64_t>::max()) {
+    error = InstallError::REQUIRED_FILE_MISSING;
+    return false;
+  }
+  if (licenseSize == 0 || licenseSize > kMaxLicenseBytes) {
+    error = InstallError::LICENSE_INVALID;
+    return false;
+  }
+
+  contextual::DefinitionSourceReader package;
+  contextual::RuntimeFormatError formatError;
+  if (!package.open(meta, index, entries, expectedCanonicalUuid, expectedCanonicalCount, formatError)) {
+    error = formatError == contextual::RuntimeFormatError::CANONICAL_MISMATCH ? InstallError::UUID_MISMATCH
+                                                                              : InstallError::PACKAGE_INVALID;
+    return false;
+  }
+  const contextual::DefinitionMetadata& metadata = package.metadata();
+  if (std::memcmp(metadata.sourceUuid, sourceUuid, sizeof(metadata.sourceUuid)) != 0) {
+    error = InstallError::UUID_MISMATCH;
+    return false;
+  }
+  if (verifyPayload) {
+    const struct {
+      RuntimeFile file;
+      uint32_t crc;
+    } checks[] = {{RuntimeFile::EntryIndex, metadata.indexCrc32}, {RuntimeFile::Entries, metadata.entriesCrc32}};
+    for (const auto& check : checks) {
+      if (!filePath(sourceUuid, prefix, check.file, pathScratch_, sizeof(pathScratch_), error)) return false;
+      if (!storage_.validateCrc(storage_.context, pathScratch_, check.crc, scratch, scratchSize)) {
+        error = InstallError::CRC_MISMATCH;
+        return false;
+      }
+    }
+    if (!package.validateIndex(scratch, scratchSize, formatError)) {
+      error = InstallError::PACKAGE_INVALID;
+      return false;
+    }
+  }
+
+  std::memcpy(info.sourceUuid, metadata.sourceUuid, sizeof(info.sourceUuid));
+  std::memcpy(info.canonicalUuid, metadata.canonicalUuid, sizeof(info.canonicalUuid));
+  std::memcpy(info.sourceLanguage, metadata.sourceLanguage, sizeof(info.sourceLanguage));
+  std::memcpy(info.targetLanguage, metadata.targetLanguage, sizeof(info.targetLanguage));
+  std::memcpy(info.sourceLabel, metadata.sourceLabel, sizeof(info.sourceLabel));
+  info.canonicalLexemeCount = metadata.canonicalLexemeCount;
+  info.coverageCount = metadata.coverageCount;
+  info.runtimeBytes = contextual::kDefinitionMetaSize + static_cast<uint64_t>(metadata.indexFileSize) +
+                      metadata.entriesFileSize + licenseSize;
+  return true;
+}
+
 bool Installer::validateStaged(const uint8_t (&bundleUuid)[16], uint8_t* scratch, const size_t scratchSize,
                                PackageInfo& info, InstallError& error) {
   return validatePackage(bundleUuid, kStagePrefix, scratch, scratchSize, true, info, error);
@@ -288,6 +449,33 @@ bool Installer::validateStaged(const uint8_t (&bundleUuid)[16], uint8_t* scratch
 bool Installer::inspectInstalled(const uint8_t (&bundleUuid)[16], PackageInfo& info, InstallError& error) {
   if (!recover(bundleUuid, error)) return false;
   return validatePackage(bundleUuid, "", nullptr, 0, false, info, error);
+}
+
+bool Installer::validateStagedCanonical(const uint8_t (&canonicalUuid)[16], uint8_t* scratch, const size_t scratchSize,
+                                        CanonicalPackageInfo& info, InstallError& error) {
+  return validateCanonicalPackage(canonicalUuid, kStagePrefix, scratch, scratchSize, true, info, error);
+}
+
+bool Installer::inspectInstalledCanonical(const uint8_t (&canonicalUuid)[16], CanonicalPackageInfo& info,
+                                          InstallError& error) {
+  if (!recover(canonicalUuid, error)) return false;
+  return validateCanonicalPackage(canonicalUuid, "", nullptr, 0, false, info, error);
+}
+
+bool Installer::validateStagedDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
+                                         const uint32_t expectedCanonicalCount, uint8_t* scratch,
+                                         const size_t scratchSize, DefinitionSourcePackageInfo& info,
+                                         InstallError& error) {
+  return validateDefinitionPackage(sourceUuid, kStagePrefix, expectedCanonicalUuid, expectedCanonicalCount, scratch,
+                                   scratchSize, true, info, error);
+}
+
+bool Installer::inspectInstalledDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
+                                           const uint32_t expectedCanonicalCount, DefinitionSourcePackageInfo& info,
+                                           InstallError& error) {
+  if (!recover(sourceUuid, error)) return false;
+  return validateDefinitionPackage(sourceUuid, "", expectedCanonicalUuid, expectedCanonicalCount, nullptr, 0, false,
+                                   info, error);
 }
 
 bool Installer::recover(const uint8_t (&bundleUuid)[16], InstallError& error) {
@@ -318,16 +506,10 @@ bool Installer::recover(const uint8_t (&bundleUuid)[16], InstallError& error) {
   return true;
 }
 
-bool Installer::commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, const size_t scratchSize, PackageInfo& info,
-                       InstallError& error, const PrepareCallback prepare, void* prepareContext) {
-  if (!validateStaged(bundleUuid, scratch, scratchSize, info, error)) return false;
-  if (prepare && !prepare(prepareContext, bundleUuid, info.lexemeCount)) {
-    error = InstallError::PREPARE_FAILED;
-    return false;
-  }
-  if (!recover(bundleUuid, error) || !directoryPath(bundleUuid, "", pathScratch_, sizeof(pathScratch_), error) ||
-      !directoryPath(bundleUuid, kStagePrefix, pathScratch2_, sizeof(pathScratch2_), error) ||
-      !directoryPath(bundleUuid, kBackupPrefix, pathScratch3_, sizeof(pathScratch3_), error)) {
+bool Installer::publishStaged(const uint8_t (&uuid)[16], InstallError& error) {
+  if (!recover(uuid, error) || !directoryPath(uuid, "", pathScratch_, sizeof(pathScratch_), error) ||
+      !directoryPath(uuid, kStagePrefix, pathScratch2_, sizeof(pathScratch2_), error) ||
+      !directoryPath(uuid, kBackupPrefix, pathScratch3_, sizeof(pathScratch3_), error)) {
     return false;
   }
 
@@ -346,6 +528,32 @@ bool Installer::commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, const 
   if (replacing) storage_.removeTree(storage_.context, pathScratch3_);
   error = InstallError::NONE;
   return true;
+}
+
+bool Installer::commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, const size_t scratchSize, PackageInfo& info,
+                       InstallError& error, const PrepareCallback prepare, void* prepareContext) {
+  if (!validateStaged(bundleUuid, scratch, scratchSize, info, error)) return false;
+  if (prepare && !prepare(prepareContext, bundleUuid, info.lexemeCount)) {
+    error = InstallError::PREPARE_FAILED;
+    return false;
+  }
+  return publishStaged(bundleUuid, error);
+}
+
+bool Installer::commitCanonical(const uint8_t (&canonicalUuid)[16], uint8_t* scratch, const size_t scratchSize,
+                                CanonicalPackageInfo& info, InstallError& error) {
+  if (!validateStagedCanonical(canonicalUuid, scratch, scratchSize, info, error)) return false;
+  return publishStaged(canonicalUuid, error);
+}
+
+bool Installer::commitDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
+                                 const uint32_t expectedCanonicalCount, uint8_t* scratch, const size_t scratchSize,
+                                 DefinitionSourcePackageInfo& info, InstallError& error) {
+  if (!validateStagedDefinition(sourceUuid, expectedCanonicalUuid, expectedCanonicalCount, scratch, scratchSize, info,
+                                error)) {
+    return false;
+  }
+  return publishStaged(sourceUuid, error);
 }
 
 bool Installer::cancel(const uint8_t (&bundleUuid)[16], InstallError& error) {

@@ -8,6 +8,8 @@
 namespace dictionary::storage {
 
 inline constexpr char ROOT_PATH[] = "/.crosspoint/dictionaries";
+inline constexpr char CANONICAL_ROOT_PATH[] = "/.crosspoint/lexicons";
+inline constexpr char DEFINITION_SOURCE_ROOT_PATH[] = "/.crosspoint/definition-sources";
 inline constexpr size_t MAX_INSTALLED_BUNDLES = 64;
 
 installer::StorageBackend backend();

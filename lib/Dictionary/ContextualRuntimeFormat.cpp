@@ -112,6 +112,21 @@ bool rangeFits(const uint32_t offset, const uint32_t length, const uint32_t file
   return static_cast<uint64_t>(offset) + length <= fileSize;
 }
 
+bool decodeCanonicalLexeme(const uint8_t* data, const uint32_t headwordsFileSize, CanonicalLexemeRecord& out) {
+  out.headwordOffset = readU32(data);
+  out.keyHash = readU64(data + 4);
+  out.headwordLength = readU16(data + 12);
+  out.partOfSpeech = data[14];
+  out.flags = data[15];
+  if (out.headwordLength == 0 || out.headwordLength > kMaxCanonicalHeadwordBytes ||
+      !rangeFits(out.headwordOffset, out.headwordLength, headwordsFileSize) || out.keyHash == 0 ||
+      out.partOfSpeech > kMaxPartOfSpeech || (out.flags & ~kKnownLexemeFlags) != 0) {
+    out = {};
+    return false;
+  }
+  return true;
+}
+
 bool validateRuntimeCrc(const RandomAccessSource& source, const uint32_t expectedCrc, uint8_t* scratch,
                         const size_t scratchSize, RuntimeFormatError& error) {
   PackageError packageError;
@@ -244,6 +259,41 @@ bool CanonicalLexiconReader::validatePayloadCrc(uint8_t* scratch, const size_t s
          validateRuntimeCrc(headwords_, metadata_.headwordsCrc32, scratch, scratchSize, error);
 }
 
+bool CanonicalLexiconReader::validateLexemes(uint8_t* scratch, const size_t scratchSize,
+                                             RuntimeFormatError& error) const {
+  error = RuntimeFormatError::NONE;
+  if (!open_) {
+    error = RuntimeFormatError::SOURCE_UNAVAILABLE;
+    return false;
+  }
+  if (scratch == nullptr || scratchSize < kCanonicalLexemeRecordSize) {
+    error = RuntimeFormatError::OUTPUT_BUFFER_TOO_SMALL;
+    return false;
+  }
+
+  const size_t recordsPerRead = scratchSize / kCanonicalLexemeRecordSize;
+  uint32_t canonicalId = 0;
+  while (canonicalId < metadata_.lexemeCount) {
+    const uint32_t remaining = metadata_.lexemeCount - canonicalId;
+    const size_t recordCount = remaining < recordsPerRead ? remaining : recordsPerRead;
+    const size_t byteCount = recordCount * kCanonicalLexemeRecordSize;
+    if (!lexemes_.readAt(lexemes_.context, canonicalId * kCanonicalLexemeRecordSize, scratch, byteCount)) {
+      error = RuntimeFormatError::RECORD_READ_FAILED;
+      return false;
+    }
+    for (size_t recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
+      CanonicalLexemeRecord record;
+      if (!decodeCanonicalLexeme(scratch + recordIndex * kCanonicalLexemeRecordSize, metadata_.headwordsFileSize,
+                                 record)) {
+        error = RuntimeFormatError::RECORD_INVALID;
+        return false;
+      }
+    }
+    canonicalId += recordCount;
+  }
+  return true;
+}
+
 bool CanonicalLexiconReader::readLexeme(const uint32_t canonicalId, CanonicalLexemeRecord& out,
                                         RuntimeFormatError& error) const {
   out = {};
@@ -261,15 +311,7 @@ bool CanonicalLexiconReader::readLexeme(const uint32_t canonicalId, CanonicalLex
     error = RuntimeFormatError::RECORD_READ_FAILED;
     return false;
   }
-  out.headwordOffset = readU32(data);
-  out.keyHash = readU64(data + 4);
-  out.headwordLength = readU16(data + 12);
-  out.partOfSpeech = data[14];
-  out.flags = data[15];
-  if (out.headwordLength == 0 || out.headwordLength > kMaxCanonicalHeadwordBytes ||
-      !rangeFits(out.headwordOffset, out.headwordLength, metadata_.headwordsFileSize) || out.keyHash == 0 ||
-      out.partOfSpeech > kMaxPartOfSpeech || (out.flags & ~kKnownLexemeFlags) != 0) {
-    out = {};
+  if (!decodeCanonicalLexeme(data, metadata_.headwordsFileSize, out)) {
     error = RuntimeFormatError::RECORD_INVALID;
     return false;
   }

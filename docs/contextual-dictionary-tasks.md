@@ -65,7 +65,7 @@ committed.
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
 | C19 | Done | Implement allocation-free canonical and definition-source header/index readers | Host fixtures reject truncation, overflow, bad CRC, UUID and count mismatches before seeking |
-| C20 | Planned | Extend transactional installer for `.cplex` and `.cpdef` runtime files | Interrupted install/replace/remove recovers previous package; one-reader hardware rule preserved |
+| C20 | Done | Extend transactional installer for `.cplex` and `.cpdef` runtime files | Interrupted install/replace/remove recovers previous package; one-reader hardware rule preserved |
 | C21 | Planned | Add atomic attachment record for at most three sources | Order persists; duplicate/mismatched/missing UUIDs rejected or skipped; interrupted write retains old record |
 | C22 | Planned | Extend inventory APIs with canonical/source compatibility | Bounded JSON output reports labels, direction, coverage and attachment order |
 | C23 | Planned | Add WebUI installation and source-order controls | Compiler models stay on desktop; only runtime files upload; source reorder requires no EPUB recompile |
@@ -140,8 +140,24 @@ caller-owned bounded buffer, so the reader classes allocate no heap and retain
 no `HalFile`. The C20 storage adapter remains responsible for opening only one
 SD file at a time.
 
+## C20 implementation note
+
+`DictionaryInstaller` now applies the existing hidden staging, backup and
+removal transaction to canonical and definition-source roots. Commit validates
+required licenses, exact sizes, identity compatibility, payload CRCs, canonical
+records and ordered source indexes before the final directory rename. It reuses
+the caller's validation scratch and the storage backend opens each file
+operation locally, so validation adds no heap allocation and cannot retain a
+second SD reader. Web upload wiring remains C23 work.
+
+On hardware after C23, interrupt canonical/source uploads before commit, during
+same-UUID replacement and immediately after removal. Reboot, retry the
+operation, and verify that only the old or new complete package is visible,
+with no `.backup-*` restoration after removal and no `DIN` open failures in the
+serial log.
+
 ## Immediate next work
 
-1. Extend transactional installation for canonical and definition-source files in C20.
-2. Add the atomic three-source attachment record in C21.
+1. Add the atomic three-source attachment record in C21.
+2. Extend inventory APIs with canonical/source compatibility in C22.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

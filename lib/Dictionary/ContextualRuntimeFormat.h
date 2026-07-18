@@ -97,6 +97,7 @@ class CanonicalLexiconReader {
   bool open(const RandomAccessSource& meta, const RandomAccessSource& lexemes, const RandomAccessSource& headwords,
             RuntimeFormatError& error);
   bool validatePayloadCrc(uint8_t* scratch, size_t scratchSize, RuntimeFormatError& error) const;
+  bool validateLexemes(uint8_t* scratch, size_t scratchSize, RuntimeFormatError& error) const;
   bool readLexeme(uint32_t canonicalId, CanonicalLexemeRecord& out, RuntimeFormatError& error) const;
   bool readHeadword(const CanonicalLexemeRecord& lexeme, char* output, size_t capacity, size_t& outputLength,
                     RuntimeFormatError& error) const;
