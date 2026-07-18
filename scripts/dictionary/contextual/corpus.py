@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from .analysis_policy import CanonicalAnalysis, CanonicalPos
-from .pipeline import AnalysisFuser, ContextAnalyzer, ContextToken, MorphologyAnalyzer
+from .pipeline import (
+    AnalysisFuser,
+    ContextAnalyzer,
+    ContextToken,
+    MorphologyAnalyzer,
+    SentenceCandidateAugmenter,
+)
 
 MAX_CORPUS_CASES = 1024
 MAX_CORPUS_SENTENCE_BYTES = 64 * 1024
@@ -158,6 +164,7 @@ def evaluate_corpus(
     context_analyzer: ContextAnalyzer,
     morphology_analyzer: MorphologyAnalyzer,
     fuser: AnalysisFuser,
+    candidate_augmenter: SentenceCandidateAugmenter | None = None,
 ) -> CorpusEvaluation:
     evaluations = []
     for case in cases:
@@ -166,7 +173,23 @@ def evaluate_corpus(
         if case.target.occurrence >= len(matching):
             raise CorpusError(f"{case.case_id}: contextual tokenizer did not return target")
         token = matching[case.target.occurrence]
-        morphology_candidates = tuple(morphology_analyzer.analyze_surface(token.surface))
+        morphology_rows = tuple(
+            tuple(morphology_analyzer.analyze_surface(item.surface))
+            for item in tokens
+        )
+        if candidate_augmenter is not None:
+            morphology_rows = tuple(
+                tuple(row)
+                for row in candidate_augmenter.augment_sentence(
+                    case.sentence,
+                    tokens,
+                    morphology_rows,
+                )
+            )
+            if len(morphology_rows) != len(tokens):
+                raise CorpusError(f"{case.case_id}: augmentation row count mismatch")
+        token_index = next(index for index, item in enumerate(tokens) if item is token)
+        morphology_candidates = morphology_rows[token_index]
         ranked = tuple(fuser.rank(token, morphology_candidates))
         expected = CanonicalAnalysis(case.target.lemma, case.target.part_of_speech)
         expected_key = _semantic_key(expected)

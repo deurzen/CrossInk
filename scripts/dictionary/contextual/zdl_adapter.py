@@ -110,8 +110,16 @@ class ZdlContextAnalyzer:
                 previous_end = end
                 if bool(getattr(token, "is_space", False)):
                     continue
-                analysis = self._token_analysis(token, token_index)
-                output.append(ContextToken(surface, start, end, analysis))
+                analysis, provider_tag = self._token_analysis(token, token_index)
+                output.append(
+                    ContextToken(
+                        surface,
+                        start,
+                        end,
+                        analysis,
+                        provider_tag=provider_tag,
+                    )
+                )
         except ZdlAdapterError:
             raise
         except Exception as error:
@@ -169,4 +177,4 @@ class ZdlContextAnalyzer:
             if len(value.encode("utf-8")) > self._limits.max_morph_value_bytes:
                 raise ZdlAdapterError(f"token {index} morphology value exceeds byte cap")
             bounded_morph[key] = value
-        return map_zdl_analysis(lemma, upos, tag, bounded_morph)
+        return map_zdl_analysis(lemma, upos, tag, bounded_morph), tag

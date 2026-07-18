@@ -1,7 +1,8 @@
-# German Contextual Analysis Policy v1
+# German Contextual Analysis Policy v2
 
-This document defines policy version 1 used to combine ZDL contextual output
-with DWDSmor morphology. The executable source of truth is
+This document defines analysis policy version 2 used to combine ZDL contextual
+output with bounded morphology sources. Canonical POS layout version remains 1.
+The executable source of truth is
 `scripts/dictionary/contextual/analysis_policy.py`.
 
 ## Canonical lexical classes
@@ -68,6 +69,7 @@ Every DWDSmor candidate is mapped before scoring against the ZDL token:
 | Lemma differs | −100 |
 | Shared feature agrees | +30 each |
 | Shared feature conflicts | −20 each |
+| Lexicon-validated finite separable recombination | +650 |
 
 The asymmetric lemma penalty is deliberate. The contextual model can emit a
 bad lemma while still supplying useful POS evidence; for example, pinned ZDL
@@ -85,10 +87,17 @@ runs.
 C08a unions DWDSmor with the compiler-only de-DE form inventory. Duplicate
 analyses merge provenance rather than creating duplicate candidates. Candidate
 precedence is DWDSmor, exact inventory form, then case-folded inventory form;
-ranking still uses linguistic evidence rather than source IDs. The union fails
-cleanly above 256 unique analyses instead of silently producing an unbounded
-list. Provenance is compiler metadata and does not participate in canonical
-identity.
+ordinary ranking still uses linguistic evidence rather than source IDs. The
+union fails cleanly above 256 unique analyses instead of silently producing an
+unbounded list. Provenance is compiler metadata and does not participate in
+canonical identity.
+
+C08b recognizes ZDL's `PTKVZ` tag, finds the nearest preceding finite verb
+within 64 tokens and the same strong punctuation boundary, then tests each
+particle+base lemma against the morphology inventory. Only an existing verb
+lemma is admitted. The +650 syntactic-evidence bonus makes that lexical lemma
+primary while retaining the unsplit base as an alternative when it remains
+within the 180-point window. Token surfaces and source offsets are unchanged.
 
 For `language.bin`, raw scores are clamped to `[-1000, 1250]` and linearly
 rounded to confidence `0..1000`. Raw scores remain in host pipeline records;
@@ -96,7 +105,9 @@ normalization is an encoding concern and does not change ordering.
 
 ## Versioning
 
-Any change to numeric classes, mappings, normalized feature values, weights,
-alternative cap, or score window increments `POLICY_VERSION`. The policy
-version is recorded in compiler manifests and `language.bin`; changing it does
-not silently reuse an existing compiled-book artifact.
+Any change to mappings, normalized feature values, weights, augmentation rules,
+alternative cap, or score window increments `POLICY_VERSION`. Version 2 adds
+finite separable-verb recombination and its score bonus; canonical POS numeric
+layout remains version 1. Both versions are recorded in compiler manifests and
+`language.bin`; changing either does not silently reuse an existing compiled-book
+artifact.

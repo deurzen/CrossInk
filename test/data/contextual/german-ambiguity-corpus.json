@@ -5,7 +5,7 @@
     {
       "id": "sentence-initial-verb-laden",
       "category": "sentence-initial-verb",
-      "sentence": "Laden wir zuerst die schweren Kisten ein.",
+      "sentence": "Laden wir zuerst die schweren Kisten.",
       "target": {"surface": "Laden", "occurrence": 0, "lemma": "laden", "pos": "verb"}
     },
     {

@@ -9,6 +9,7 @@ from dictionary.contextual.analysis_policy import (  # noqa: E402
     ALTERNATIVE_SCORE_WINDOW,
     DWDSMOR_POS_MAP,
     MAX_ALTERNATIVES,
+    CANONICAL_POS_VERSION,
     POLICY_VERSION,
     CanonicalAnalysis,
     CanonicalFeatures,
@@ -21,7 +22,8 @@ from dictionary.contextual.analysis_policy import (  # noqa: E402
 
 class AnalysisPolicyTest(unittest.TestCase):
     def test_policy_contract_is_versioned_and_bounded(self):
-        self.assertEqual(POLICY_VERSION, 1)
+        self.assertEqual(CANONICAL_POS_VERSION, 1)
+        self.assertEqual(POLICY_VERSION, 2)
         self.assertEqual(MAX_ALTERNATIVES, 8)
         self.assertEqual(ALTERNATIVE_SCORE_WINDOW, 180)
         self.assertEqual(CanonicalPos.NOUN, 1)

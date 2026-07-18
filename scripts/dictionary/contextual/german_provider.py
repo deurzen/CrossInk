@@ -9,6 +9,7 @@ from .pipeline import (
     AnalyzerPipeline,
     ContextAnalyzer,
     MorphologyAnalyzer,
+    SentenceCandidateAugmenter,
 )
 
 
@@ -23,6 +24,7 @@ class GermanLanguageAnalyzer:
         morphology_analyzer: MorphologyAnalyzer,
         fuser: AnalysisFuser,
         limits: AnalyzerLimits = AnalyzerLimits(),
+        candidate_augmenter: SentenceCandidateAugmenter | None = None,
     ):
         self._pipeline = AnalyzerPipeline(
             language=self.LANGUAGE,
@@ -30,6 +32,7 @@ class GermanLanguageAnalyzer:
             morphology_analyzer=morphology_analyzer,
             fuser=fuser,
             limits=limits,
+            candidate_augmenter=candidate_augmenter,
         )
 
     @property

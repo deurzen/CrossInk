@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Mapping
 
-POLICY_VERSION = 1
+CANONICAL_POS_VERSION = 1
+POLICY_VERSION = 2
 MAX_ALTERNATIVES = 8
 ALTERNATIVE_SCORE_WINDOW = 180
 

@@ -43,7 +43,7 @@ committed.
 | C07 | Done | Add ZDL contextual POS/lemma adapter | Sentence offsets round-trip to XHTML tokens; model errors and token mismatches are reported |
 | C08 | Done | Fuse contextual and morphological analyses | Primary plus ≤7 alternatives emitted deterministically; confidence policy has focused unit tests |
 | C08a | Done | Augment missing Open Edition analyses from the de-DE form inventory | Missing common forms gain canonical candidates; source precedence/provenance and ambiguity caps are deterministic |
-| C08b | Planned | Recombine finite separable verbs from sentence context | Particle + finite base can resolve lexical separable lemma without changing unrelated token offsets |
+| C08b | Done | Recombine finite separable verbs from sentence context | Particle + finite base can resolve lexical separable lemma without changing unrelated token offsets |
 | C09 | Done | Build contextual German ambiguity corpus | Gold cases cover sentence-initial verbs, noun/verb homographs, participles, separable verbs, nominalization, compounds and names |
 | C10 | Done | Benchmark static versus transformer ZDL models | Accuracy, wall time and peak host RAM measured on the same corpus; production selector chosen from evidence |
 | C11 | Planned | Build deterministic canonical lexicon and compiler bundle | Dense IDs stable across input order; canonical UUID/fingerprint and model provenance emitted |
@@ -132,6 +132,6 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Complete C08b with finite separable-verb recombination.
-2. Re-run the C09 corpus and record remaining contextual failures.
-3. Begin canonical lexicon C11.
+1. Re-run the C09 corpus and record the remaining contextual failures.
+2. Begin canonical lexicon C11.
+3. Carry both canonical POS version 1 and analysis policy version 2 into compiler metadata.

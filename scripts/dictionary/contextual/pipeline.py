@@ -34,6 +34,7 @@ class ContextToken:
     start: int
     end: int
     analysis: CanonicalAnalysis
+    provider_tag: str = ""
 
 
 class AnalysisProvenance(IntFlag):
@@ -90,6 +91,16 @@ class MorphologyAnalyzer(Protocol):
 
 
 @runtime_checkable
+class SentenceCandidateAugmenter(Protocol):
+    def augment_sentence(
+        self,
+        sentence: str,
+        tokens: tuple[ContextToken, ...],
+        candidates: tuple[tuple[MorphologyCandidate, ...], ...],
+    ) -> Iterable[Iterable[MorphologyCandidate]]: ...
+
+
+@runtime_checkable
 class AnalysisFuser(Protocol):
     def rank(
         self,
@@ -125,6 +136,7 @@ class AnalyzerPipeline:
         morphology_analyzer: MorphologyAnalyzer,
         fuser: AnalysisFuser,
         limits: AnalyzerLimits = AnalyzerLimits(),
+        candidate_augmenter: SentenceCandidateAugmenter | None = None,
     ):
         if not language or not language.isascii():
             raise ValueError("language must be non-empty ASCII")
@@ -133,6 +145,7 @@ class AnalyzerPipeline:
         self._morphology_analyzer = morphology_analyzer
         self._fuser = fuser
         self._limits = limits
+        self._candidate_augmenter = candidate_augmenter
 
     @property
     def language(self) -> str:
@@ -161,7 +174,8 @@ class AnalyzerPipeline:
         except Exception as error:
             raise AnalysisPipelineError("context", str(error)) from error
 
-        output = []
+        tokens = []
+        morphology_rows = []
         previous_end = 0
         for token_index, value in enumerate(raw_tokens):
             if not isinstance(value, ContextToken):
@@ -171,7 +185,10 @@ class AnalyzerPipeline:
                 raise AnalysisPipelineError("context", f"token {token_index} has invalid offsets")
             if sentence[token.start : token.end] != token.surface:
                 raise AnalysisPipelineError("context", f"token {token_index} surface does not match offsets")
+            if not isinstance(token.provider_tag, str):
+                raise AnalysisPipelineError("context", f"token {token_index} has invalid provider tag")
             previous_end = token.end
+            tokens.append(token)
 
             try:
                 candidate_values = _bounded_tuple(
@@ -188,8 +205,47 @@ class AnalyzerPipeline:
                     "morphology",
                     f"token {token_index} has an invalid candidate type",
                 )
-            candidates = tuple(candidate_values)
+            morphology_rows.append(tuple(candidate_values))
 
+        token_tuple = tuple(tokens)
+        candidate_rows = tuple(morphology_rows)
+        if self._candidate_augmenter is not None:
+            try:
+                raw_rows = _bounded_tuple(
+                    self._candidate_augmenter.augment_sentence(
+                        sentence,
+                        token_tuple,
+                        candidate_rows,
+                    ),
+                    self._limits.max_tokens,
+                    "augmentation",
+                )
+                if len(raw_rows) != len(token_tuple):
+                    raise AnalysisPipelineError(
+                        "augmentation",
+                        "result count does not match contextual tokens",
+                    )
+                augmented_rows = []
+                for token_index, row in enumerate(raw_rows):
+                    values = _bounded_tuple(
+                        row,
+                        self._limits.max_morphology_analyses,
+                        "augmentation",
+                    )
+                    if any(not isinstance(candidate, MorphologyCandidate) for candidate in values):
+                        raise AnalysisPipelineError(
+                            "augmentation",
+                            f"token {token_index} has an invalid candidate type",
+                        )
+                    augmented_rows.append(tuple(values))
+                candidate_rows = tuple(augmented_rows)
+            except AnalysisPipelineError:
+                raise
+            except Exception as error:
+                raise AnalysisPipelineError("augmentation", str(error)) from error
+
+        output = []
+        for token_index, (token, candidates) in enumerate(zip(token_tuple, candidate_rows)):
             try:
                 ranked_values = _bounded_tuple(
                     self._fuser.rank(token, candidates),

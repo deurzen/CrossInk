@@ -68,6 +68,7 @@ class ZdlAdapterTest(unittest.TestCase):
         self.assertEqual(result[1].analysis.part_of_speech, CanonicalPos.NOUN)
         self.assertEqual(result[3].analysis.part_of_speech, CanonicalPos.VERB)
         self.assertEqual(result[3].analysis.lemma, "lieben")
+        self.assertEqual(result[3].provider_tag, "VVFIN")
 
     def test_skips_space_tokens_without_collapsing_offsets(self):
         sentence = "eins zwei"

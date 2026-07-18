@@ -15,6 +15,7 @@ from .pipeline import AnalysisProvenance, ContextToken, MorphologyCandidate, Ran
 
 MIN_NORMALIZED_SCORE = -1000
 MAX_NORMALIZED_SCORE = 1250
+SEPARABLE_RECOMBINATION_BONUS = 650
 
 
 @dataclass(frozen=True)
@@ -53,9 +54,18 @@ class GermanAnalysisFuser:
 
         best_by_lexical_key: dict[tuple[bytes, int], _ScoredCandidate] = {}
         for candidate in candidates:
+            evidence = score_analysis(token.analysis, candidate.analysis)
+            if candidate.provenance & AnalysisProvenance.CONTEXT_RECOMBINATION:
+                evidence = AnalysisScore(
+                    total=evidence.total + SEPARABLE_RECOMBINATION_BONUS,
+                    lemma_agrees=evidence.lemma_agrees,
+                    pos_agrees=evidence.pos_agrees,
+                    feature_matches=evidence.feature_matches,
+                    feature_conflicts=evidence.feature_conflicts,
+                )
             scored = _ScoredCandidate(
                 candidate.analysis,
-                score_analysis(token.analysis, candidate.analysis),
+                evidence,
                 candidate.provenance,
             )
             key = _lexical_key(candidate.analysis)

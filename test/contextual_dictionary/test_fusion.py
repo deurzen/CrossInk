@@ -127,6 +127,22 @@ class FusionTest(unittest.TestCase):
             | AnalysisProvenance.EXACT_FORM_INVENTORY,
         )
 
+    def test_context_recombination_outranks_base_but_retains_it_as_alternative(self):
+        context = CanonicalAnalysis("stehen", CanonicalPos.VERB)
+        base = CanonicalAnalysis("stehen", CanonicalPos.VERB)
+        recombined = CanonicalAnalysis("aufstehen", CanonicalPos.VERB)
+        candidates = (
+            MorphologyCandidate(base, AnalysisProvenance.PRIMARY_MORPHOLOGY),
+            MorphologyCandidate(
+                recombined,
+                AnalysisProvenance.EXACT_FORM_INVENTORY
+                | AnalysisProvenance.CONTEXT_RECOMBINATION,
+            ),
+        )
+        result = self.fuser.rank(self.token(context), candidates)
+        self.assertEqual([item.analysis for item in result], [recombined, base])
+        self.assertEqual([item.score for item in result], [1150, 1000])
+
     def test_confidence_normalization_is_rounded_and_saturated(self):
         self.assertEqual(normalize_score(MIN_NORMALIZED_SCORE - 1), 0)
         self.assertEqual(normalize_score(MIN_NORMALIZED_SCORE), 0)

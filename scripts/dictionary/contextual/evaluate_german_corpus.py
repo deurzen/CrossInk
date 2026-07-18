@@ -18,6 +18,7 @@ from dictionary.contextual.form_inventory import (  # noqa: E402
     DeDeFormInventoryAnalyzer,
 )
 from dictionary.contextual.fusion import GermanAnalysisFuser  # noqa: E402
+from dictionary.contextual.separable_verbs import GermanSeparableVerbRecombiner  # noqa: E402
 from dictionary.contextual.zdl_adapter import ZdlContextAnalyzer  # noqa: E402
 
 DEFAULT_CORPUS = ROOT / "test" / "data" / "contextual" / "german-ambiguity-corpus.json"
@@ -52,11 +53,13 @@ def main() -> int:
         ZdlContextAnalyzer.from_pinned_model(),
         morphology,
         GermanAnalysisFuser(),
+        GermanSeparableVerbRecombiner(morphology),
     )
     report = {
         "schemaVersion": 1,
         "providers": {
             "dwdsmor": "0.18.0-open",
+            "analysisPolicy": 2,
             "spacy": "3.8.14",
             "zdl": "de-zdl-lg-4.0.0",
             "formInventory": (

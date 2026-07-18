@@ -45,6 +45,17 @@ class SyntheticMorphology:
         )
 
 
+class SyntheticAugmenter:
+    def __init__(self, rows=None, error=None):
+        self.rows = rows
+        self.error = error
+
+    def augment_sentence(self, sentence, tokens, candidates):
+        if self.error:
+            raise self.error
+        return candidates if self.rows is None else self.rows
+
+
 class SyntheticFuser:
     def __init__(self, override=None):
         self.override = override
@@ -75,6 +86,7 @@ class AnalyzerPipelineTest(unittest.TestCase):
             ),
             fuser=overrides.get("fuser", SyntheticFuser()),
             limits=overrides.get("limits", AnalyzerLimits()),
+            candidate_augmenter=overrides.get("candidate_augmenter"),
         )
 
     def test_composes_synthetic_providers_and_preserves_source_offsets(self):
@@ -129,6 +141,24 @@ class AnalyzerPipelineTest(unittest.TestCase):
         with self.assertRaisesRegex(AnalysisPipelineError, "morphology: result exceeds cap"):
             self.pipeline(
                 limits=AnalyzerLimits(max_morphology_analyses=1),
+            ).analyze_sentence("Wir laden.")
+
+    def test_sentence_augmenter_can_add_bounded_candidates(self):
+        source = AnalysisProvenance.CONTEXT_RECOMBINATION
+        invented = MorphologyCandidate(
+            CanonicalAnalysis("aufladen", CanonicalPos.VERB),
+            source,
+        )
+        result = self.pipeline(
+            candidate_augmenter=SyntheticAugmenter(rows=((invented,),)),
+        ).analyze_sentence("Wir laden.")
+        self.assertEqual(result[0].analyses, (RankedAnalysis(invented.analysis, 1000, source),))
+
+        with self.assertRaisesRegex(AnalysisPipelineError, "result count"):
+            self.pipeline(candidate_augmenter=SyntheticAugmenter(rows=())).analyze_sentence("Wir laden.")
+        with self.assertRaisesRegex(AnalysisPipelineError, "augmentation: augmented failed"):
+            self.pipeline(
+                candidate_augmenter=SyntheticAugmenter(error=RuntimeError("augmented failed"))
             ).analyze_sentence("Wir laden.")
 
     def test_fuser_cannot_invent_or_duplicate_candidates(self):

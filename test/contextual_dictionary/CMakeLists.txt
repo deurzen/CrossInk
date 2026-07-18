@@ -46,6 +46,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.SeparableVerbs
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_separable_verbs.py
+)
+
+add_test(
   NAME ContextualDictionary.AmbiguityCorpus
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_ambiguity_corpus.py
 )
