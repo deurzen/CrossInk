@@ -136,6 +136,17 @@ TEST(GrammarPresentation, KeepsAnalysisAndSourceBoundariesInsideOnePackedLine) {
   EXPECT_EQ(dictionary::definition::contentLineLimit(10, 6, 2, 2), 0U);
 }
 
+TEST(GrammarPresentation, FitsDefinitionTitleWithoutSplittingUtf8) {
+  const std::string title = "knipste · außergewöhnlichlangeslemma";
+  std::array<char, 32> output{};
+  size_t length = 0;
+  ASSERT_TRUE(
+      dictionary::grammar_presentation::fitText(title, {nullptr, byteWidth}, 24, output.data(), output.size(), length));
+  EXPECT_EQ(std::string_view(output.data(), length), "knipste · außergew…");
+  EXPECT_LE(length, 24U);
+  EXPECT_EQ(output[length], '\0');
+}
+
 TEST(GrammarPresentation, TruncatesAlternativeHeadwordWithoutSplittingUtf8) {
   const std::string headword = "ääääääääääääääääääää";
   std::array<char, 64> output{};

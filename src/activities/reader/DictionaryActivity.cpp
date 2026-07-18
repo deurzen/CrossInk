@@ -226,6 +226,49 @@ int DictionaryActivity::measureSmallBoldText(void* context, const std::string_vi
   return activity.renderer.getTextAdvanceX(SMALL_FONT_ID, activity.lineScratch_, EpdFontFamily::BOLD);
 }
 
+int DictionaryActivity::measureTitleText(void* context, const std::string_view text) {
+  auto& activity = *static_cast<DictionaryActivity*>(context);
+  if (text.size() >= sizeof(activity.lineScratch_)) return INT_MAX;
+  std::memcpy(activity.lineScratch_, text.data(), text.size());
+  activity.lineScratch_[text.size()] = '\0';
+  return activity.renderer.getTextAdvanceX(UI_12_FONT_ID, activity.lineScratch_, EpdFontFamily::BOLD);
+}
+
+void DictionaryActivity::prepareDefinitionHeader() {
+  titleLine_[0] = '\0';
+  wordPosition_[0] = '\0';
+  if (!shortlist_ || selected_ >= shortlist_->count) return;
+  std::snprintf(wordPosition_, sizeof(wordPosition_), "%u/%u", static_cast<unsigned>(selected_ + 1),
+                static_cast<unsigned>(shortlist_->count));
+
+  const std::string_view surface = shortlist_->surface(selected_);
+  std::string_view lemma;
+  if (analysisLabels_[0].state == AnalysisLabelState::Ready) {
+    lemma = std::string_view(analysisLabels_[0].label.headword, analysisLabels_[0].label.headwordLength);
+  }
+  size_t rawLength = 0;
+  std::memcpy(lineScratch_, surface.data(), surface.size());
+  rawLength = surface.size();
+  if (!lemma.empty() && lemma != surface) {
+    constexpr char separator[] = " \xC2\xB7 ";
+    std::memcpy(lineScratch_ + rawLength, separator, sizeof(separator) - 1U);
+    rawLength += sizeof(separator) - 1U;
+    std::memcpy(lineScratch_ + rawLength, lemma.data(), lemma.size());
+    rawLength += lemma.size();
+  }
+  lineScratch_[rawLength] = '\0';
+
+  const int positionWidth = renderer.getTextAdvanceX(SMALL_FONT_ID, wordPosition_, EpdFontFamily::BOLD);
+  const int titleWidth = std::max(1, definitionContentWidth() - positionWidth - 8);
+  const dictionary::grammar_presentation::TextMeasurer measurer{this, measureTitleText};
+  size_t fittedLength = 0;
+  if (!dictionary::grammar_presentation::fitText(std::string_view(lineScratch_, rawLength), measurer, titleWidth,
+                                                 titleLine_, sizeof(titleLine_), fittedLength)) {
+    titleLine_[0] = '\0';
+    LOG_ERR("DICT", "Definition title presentation failed");
+  }
+}
+
 void DictionaryActivity::preparePrimaryGrammarLine() {
   grammarLine_[0] = '\0';
   if (!shortlist_ || selected_ >= shortlist_->count || analysisLabels_[0].state != AnalysisLabelState::Ready) return;
@@ -240,9 +283,7 @@ void DictionaryActivity::preparePrimaryGrammarLine() {
   }
 }
 
-void DictionaryActivity::resetAnalysisLabels() {
-  for (auto& cached : analysisLabels_) cached = {};
-}
+void DictionaryActivity::resetAnalysisLabels() { analysisLabels_.fill({}); }
 
 bool DictionaryActivity::loadAnalysisLabel(const uint8_t analysisIndex) {
   if (!shortlist_ || selected_ >= shortlist_->count || analysisIndex >= shortlist_->items[selected_].analysisCount ||
@@ -272,7 +313,6 @@ bool DictionaryActivity::openDefinition() {
   contextualSourceWarning_ = false;
   definitionFailure_ = DefinitionFailure::None;
   statusSaved_ = false;
-  headword_[0] = '\0';
   resetAnalysisLabels();
   if (!session_ || !shortlist_ || selected_ >= shortlist_->count) {
     LOG_ERR("DICT", "Definition selection is invalid");
@@ -291,11 +331,8 @@ bool DictionaryActivity::openDefinition() {
   if (definitionPage_) *definitionPage_ = {};
 
   const auto ioBefore = session_->sourceIoMetrics();
-  const std::string_view surface = shortlist_->surface(selected_);
-  const size_t headwordLength = std::min(surface.size(), sizeof(headword_) - 1);
-  std::memcpy(headword_, surface.data(), headwordLength);
-  headword_[headwordLength] = '\0';
   loadAnalysisLabel(0);
+  prepareDefinitionHeader();
   preparePrimaryGrammarLine();
 
   if (session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::ATTACHMENTS_INVALID) {
@@ -726,14 +763,10 @@ void DictionaryActivity::renderDefinition() {
   int bottom = 0;
   int left = 0;
   contentMargins(top, right, bottom, left);
-  char header[200]{};
-  const auto& primaryLabel = analysisLabels_[0];
-  if (primaryLabel.state == AnalysisLabelState::Ready && std::strcmp(headword_, primaryLabel.label.headword) != 0) {
-    std::snprintf(header, sizeof(header), "%s · %s", headword_, primaryLabel.label.headword);
-  } else {
-    std::snprintf(header, sizeof(header), "%s", headword_);
-  }
-  renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, header, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, titleLine_, true, EpdFontFamily::BOLD);
+  const int positionWidth = renderer.getTextAdvanceX(SMALL_FONT_ID, wordPosition_, EpdFontFamily::BOLD);
+  renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - right - kSideMargin - positionWidth, top + kHeaderY,
+                    wordPosition_, true, EpdFontFamily::BOLD);
   if (grammarLine_[0] != '\0') {
     renderer.drawText(SMALL_FONT_ID, left + kSideMargin, top + kGrammarY, grammarLine_, true, EpdFontFamily::REGULAR);
   }
@@ -821,7 +854,8 @@ void DictionaryActivity::renderDefinition() {
     renderer.drawText(SMALL_FONT_ID, left + kSideMargin, renderer.getScreenHeight() - bottom - kBottomReserved,
                       tr(STR_SOME_DEFINITION_SOURCES_UNAVAILABLE));
   }
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_DISPLAY_STATUS), tr(STR_DICTIONARY_PREVIOUS_PAGE),
+                                            tr(STR_DICTIONARY_NEXT_PAGE));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4, true);
 }
 

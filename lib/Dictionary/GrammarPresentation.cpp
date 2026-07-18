@@ -221,6 +221,13 @@ bool formatGrammarLine(const uint8_t canonicalPos, const uint32_t descriptor, co
   return pos && fitSingleLabel(pos, measurer, maxWidth, output, capacity, outputLength);
 }
 
+bool fitText(const std::string_view text, const TextMeasurer& measurer, const int maxWidth, char* output,
+             const size_t capacity, size_t& outputLength) {
+  outputLength = 0;
+  return !text.empty() && measurer.measure && maxWidth > 0 && output && capacity > 0 &&
+         fitSingleLabel(text, measurer, maxWidth, output, capacity, outputLength);
+}
+
 bool formatAnalysisLabel(const std::string_view headword, const uint8_t canonicalPos, const LabelProvider& labels,
                          const TextMeasurer& measurer, const int maxWidth, char* output, const size_t capacity,
                          size_t& outputLength) {

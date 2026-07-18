@@ -213,7 +213,7 @@ and primary-ranking errors rather than adding guesses.
 | U11 | Done | Add bounded canonical analysis-label loading | Labels use the switching reader, lazy fixed cache and no render-time I/O or second handle |
 | U12 | Done | Render primary grammar and labeled alternatives | Primary line and every alternative boundary are translated, pagination-safe and orientation-safe |
 | U13 | Done | Add direct previous/next word navigation | Side buttons switch sorted words, reuse buffers, reset cursors, handle saved-status filtering and work from failures |
-| U14 | Planned | Update button hints and position feedback | Front hints remain accurate; current/total feedback fits bezel-safe bounds in all orientations |
+| U14 | Done | Update button hints and position feedback | Front hints remain accurate; current/total feedback fits bezel-safe bounds in all orientations |
 
 U09 cuts firmware acceptance directly from v4 to v5. The allocation-free reader
 adds one `u32` to its reusable candidate, validates all 2,113 legal payloads
@@ -250,6 +250,13 @@ page, session and shortlist; reset labels, indexes, warnings and cursors; wrap
 from failures; and avoid I/O for a one-item list. A one-byte pending flag applies
 the U03 predecessor/successor rule after a saved status removes the current
 item, including empty-list finish and explicit filter failure.
+
+U14 gives front Left/Right compact translated previous/next-page hints and adds
+a right-aligned one-based `current/total` word counter. The title is prepared in
+a fixed 192-byte UTF-8-safe buffer against bezel-safe width minus the measured
+counter and an eight-pixel gap. Removing the superseded 97-byte surface buffer
+keeps net retained activity growth through U14 at 622 bytes, below 768; the
+existing bottom definition-page indicator remains independent.
 
 ## Phase D — tests, cutover and qualification
 

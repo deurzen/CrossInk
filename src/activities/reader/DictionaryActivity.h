@@ -61,8 +61,9 @@ class DictionaryActivity final : public Activity {
   uint16_t selected_ = 0;
   uint32_t definitionPageIndex_ = 0;
   uint8_t statusSelection_ = 0;
-  char headword_[dictionary::contextual::kMaxCanonicalHeadwordBytes + 1]{};
+  char titleLine_[192]{};
   char grammarLine_[192]{};
+  char wordPosition_[16]{};
   // The activity is heap-owned. Eight fixed cache slots retain labels only for
   // the selected word; loading uses the session's single switching SD reader.
   std::array<AnalysisLabelCacheEntry, dictionary::page_shortlist::kMaxAnalysesPerItem> analysisLabels_{};
@@ -91,6 +92,8 @@ class DictionaryActivity final : public Activity {
   static int measureDefinitionText(void* context, std::string_view text);
   static int measureSmallText(void* context, std::string_view text);
   static int measureSmallBoldText(void* context, std::string_view text);
+  static int measureTitleText(void* context, std::string_view text);
+  void prepareDefinitionHeader();
   void preparePrimaryGrammarLine();
   const char* definitionFailureMessage() const;
 

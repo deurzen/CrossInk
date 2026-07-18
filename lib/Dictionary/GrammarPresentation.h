@@ -71,6 +71,10 @@ struct TextMeasurer {
 bool formatGrammarLine(uint8_t canonicalPos, uint32_t descriptor, const LabelProvider& labels,
                        const TextMeasurer& measurer, int maxWidth, char* output, size_t capacity, size_t& outputLength);
 
+// Fits arbitrary visible text with UTF-8-safe ellipsis into byte/pixel bounds.
+bool fitText(std::string_view text, const TextMeasurer& measurer, int maxWidth, char* output, size_t capacity,
+             size_t& outputLength);
+
 // Formats "headword · POS", truncating only the headword at UTF-8 boundaries.
 bool formatAnalysisLabel(std::string_view headword, uint8_t canonicalPos, const LabelProvider& labels,
                          const TextMeasurer& measurer, int maxWidth, char* output, size_t capacity,
