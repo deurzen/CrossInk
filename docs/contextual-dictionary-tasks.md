@@ -38,7 +38,7 @@ committed.
 
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
-| C05 | Planned | Add a generic host `LanguageAnalyzer` interface and German provider shell | Generic orchestration has no German constants; synthetic provider tests pass |
+| C05 | Done | Add a generic host `LanguageAnalyzer` interface and German provider shell | Generic orchestration has no German constants; synthetic provider tests pass |
 | C06 | Planned | Add bounded DWDSmor sentence/token analysis adapter | All analyzer output is parsed with explicit caps; malformed/oversized output fails cleanly |
 | C07 | Planned | Add ZDL contextual POS/lemma adapter | Sentence offsets round-trip to XHTML tokens; model errors and token mismatches are reported |
 | C08 | Planned | Fuse contextual and morphological analyses | Primary plus ≤7 alternatives emitted deterministically; confidence policy has focused unit tests |

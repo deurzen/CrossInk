@@ -16,6 +16,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.AnalyzerPipeline
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_analyzer_pipeline.py
+)
+
+add_test(
   NAME ContextualDictionary.Formats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_contextual_formats.py
 )
