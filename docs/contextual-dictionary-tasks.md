@@ -79,7 +79,7 @@ committed.
 | C26 | Done | Read canonical entry-index records through the switching SD reader | One 8-byte index read per source/lemma; no simultaneous file handles; I/O metrics covered |
 | C27 | Done | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
 | C28 | Done | Render labeled source dividers and existing analysis/meaning separators | de-DE, dict.cc and Kaikki visibly distinct; pagination accounts for divider height without clipping |
-| C29 | Planned | Apply status once to the canonical lexical item | Known/Learning/Ignore suppresses the item independent of source availability or order |
+| C29 | Done | Apply status once to the canonical lexical item | Known/Learning/Ignore suppresses the item independent of source availability or order |
 | C30 | Planned | Add translated failure and compatibility UI | Missing canonical/source/corrupt-entry states are actionable and never crash or silently mislabel content |
 
 ## Phase F — migration and validation
@@ -310,7 +310,25 @@ meaning separators remain distinct, and the final line stays above button hints.
 Page forward/backward across a source boundary and verify identical divider
 placement with no partial-refresh clipping.
 
+## C29 implementation note
+
+For contextual v4 artifacts, the primary canonical analysis is now the sole
+learning identity for a shortlist item. Saving Known, Learning or Ignore writes
+one WAL update and increments state generation once, regardless of how many
+alternative analyses or attached definition sources are displayed. Shortlist
+filtering reads that same primary status and suppresses the whole contextual
+item when appropriate; changing source availability or order cannot reintroduce
+it.
+
+Legacy v3 behavior remains isolated: its retained analyses continue to receive
+and consult explicit bundle-keyed statuses as before. The identity-count policy
+is allocation-free and shared by filtering and status updates, preventing the
+two paths from drifting. On X3/X4, mark an ambiguous contextual item Known,
+reorder and detach sources, reboot and confirm the item remains suppressed while
+its alternative canonical IDs remain unchanged. The serial state metrics should
+show one WAL/status generation update for the action.
+
 ## Immediate next work
 
-1. Apply status once to the canonical lexical item in C29.
+1. Add translated failure and compatibility UI in C30.
 2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

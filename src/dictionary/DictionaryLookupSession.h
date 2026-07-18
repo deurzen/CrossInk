@@ -74,6 +74,7 @@ class Session {
   bool contextualEntryReader(uint8_t sourceIndex, definition::EntryReader& output, SessionError& error);
 
   bool globalLexemeId(uint16_t localLemmaId, uint32_t& globalLexemeId) const;
+  bool setItemStatus(const page_shortlist::Item& item, lexeme_state::Status status, SessionError& error);
   bool setStatus(uint16_t localLemmaId, lexeme_state::Status status, SessionError& error);
   void closeSourceFile() { sourceReader_.close(); }
 

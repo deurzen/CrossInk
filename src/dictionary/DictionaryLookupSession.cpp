@@ -313,11 +313,12 @@ bool Session::filterShortlist(page_shortlist::Shortlist& shortlist, SessionError
   size_t referenceCount = 0;
   for (uint16_t itemIndex = 0; itemIndex < shortlist.count; ++itemIndex) {
     const auto& item = shortlist.items[itemIndex];
-    if (item.analysisCount == 0 || item.analysisCount > page_shortlist::kMaxAnalysesPerItem) {
+    const uint8_t identityCount = page_shortlist::learningIdentityCount(item, contextualIdentity_);
+    if (identityCount == 0) {
       error = SessionError::BOOK_ARTIFACT_INVALID;
       return false;
     }
-    for (uint8_t analysis = 0; analysis < item.analysisCount; ++analysis) {
+    for (uint8_t analysis = 0; analysis < identityCount; ++analysis) {
       const size_t flatIndex = static_cast<size_t>(itemIndex) * page_shortlist::kMaxAnalysesPerItem + analysis;
       if (!globalLexemeId(item.localLemmaIds[analysis], shortlistGlobalIds_[flatIndex])) {
         error = SessionError::BOOK_ARTIFACT_INVALID;
@@ -465,6 +466,18 @@ bool Session::globalLexemeId(const uint16_t localLemmaId, uint32_t& globalLexeme
   book_language::ReaderError error = book_language::ReaderError::NONE;
   return readersOpen_ && book_.readGlobalLexemeId(localLemmaId, globalLexemeId, error) &&
          globalLexemeId < runtimeLexemeCount_;
+}
+
+bool Session::setItemStatus(const page_shortlist::Item& item, const lexeme_state::Status status, SessionError& error) {
+  const uint8_t identityCount = page_shortlist::learningIdentityCount(item, contextualIdentity_);
+  if (identityCount == 0) {
+    error = SessionError::BOOK_ARTIFACT_INVALID;
+    return false;
+  }
+  for (uint8_t analysis = 0; analysis < identityCount; ++analysis) {
+    if (!setStatus(item.localLemmaIds[analysis], status, error)) return false;
+  }
+  return true;
 }
 
 bool Session::setStatus(const uint16_t localLemmaId, const lexeme_state::Status status, SessionError& error) {

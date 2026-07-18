@@ -269,6 +269,11 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
   return true;
 }
 
+uint8_t learningIdentityCount(const Item& item, const bool canonicalIdentity) {
+  if (item.analysisCount == 0 || item.analysisCount > kMaxAnalysesPerItem) return 0;
+  return canonicalIdentity ? 1 : item.analysisCount;
+}
+
 void sortForDisplay(Shortlist& shortlist) {
   std::sort(shortlist.items, shortlist.items + shortlist.count, [](const Item& left, const Item& right) {
     if (left.difficulty != right.difficulty) return left.difficulty > right.difficulty;

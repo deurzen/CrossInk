@@ -19,6 +19,7 @@
 - Contextual definition lookup now reads one fixed 8-byte entry-index record per attached source through a single switching SD handle, classifying source misses and corruption independently.
 - Contextual definitions now stream across every retained analysis and attached source through the existing single page buffer, with bounded forward cursors and replay-based backward navigation.
 - Contextual definition pages now identify each source with a centered labeled divider while preserving separate analysis and meaning spacing without clipping the content area.
+- Contextual Known, Learning, and Ignore actions now update the primary canonical lexical item once, keeping suppression independent of alternative analyses and definition-source order.
 
 ### Fixed
 

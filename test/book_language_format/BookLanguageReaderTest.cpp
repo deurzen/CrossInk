@@ -213,6 +213,18 @@ TEST(PageShortlist, IntersectsInlineCandidatesAndRetainsAmbiguity) {
   EXPECT_EQ(shortlist.items[0].localLemmaIds[1], 1);
 }
 
+TEST(PageShortlist, UsesOnlyPrimaryCanonicalAnalysisForLearningIdentity) {
+  dictionary::page_shortlist::Item item;
+  item.analysisCount = 3;
+  item.localLemmaIds[0] = 4;
+  item.localLemmaIds[1] = 7;
+  item.localLemmaIds[2] = 9;
+  EXPECT_EQ(dictionary::page_shortlist::learningIdentityCount(item, true), 1);
+  EXPECT_EQ(dictionary::page_shortlist::learningIdentityCount(item, false), 3);
+  item.analysisCount = 0;
+  EXPECT_EQ(dictionary::page_shortlist::learningIdentityCount(item, true), 0);
+}
+
 TEST(PageShortlist, SortsHardestFirstWithStablePageOrderTies) {
   dictionary::page_shortlist::Shortlist shortlist;
   shortlist.count = 3;

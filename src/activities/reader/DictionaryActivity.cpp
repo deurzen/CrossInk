@@ -418,15 +418,13 @@ void DictionaryActivity::changeDefinitionPage(const int delta) {
 void DictionaryActivity::saveSelectedStatus() {
   dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
   const auto& item = shortlist_->items[selected_];
-  for (uint8_t analysis = 0; analysis < item.analysisCount; ++analysis) {
-    if (!session_->setStatus(item.localLemmaIds[analysis], statusValue(statusSelection_), error)) {
-      LOG_ERR("DICT", "Status update failed: %s", dictionary::lookup::sessionErrorName(error));
-      statusSaved_ = false;
-      mode_ = Mode::Definition;
-      definitionFailed_ = true;
-      requestUpdate();
-      return;
-    }
+  if (!session_->setItemStatus(item, statusValue(statusSelection_), error)) {
+    LOG_ERR("DICT", "Status update failed: %s", dictionary::lookup::sessionErrorName(error));
+    statusSaved_ = false;
+    mode_ = Mode::Definition;
+    definitionFailed_ = true;
+    requestUpdate();
+    return;
   }
   statusSaved_ = true;
   mode_ = Mode::Definition;
