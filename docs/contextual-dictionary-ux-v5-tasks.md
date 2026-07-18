@@ -137,10 +137,16 @@ divider slot before loading content so labels cannot clip the final line.
 
 | ID | Status | Work item | Completion gate |
 | --- | --- | --- | --- |
-| U00 | Planned | Freeze grammatical descriptor semantics and merge policy | Bit layout, allowed values, conflict-to-unavailable behavior and examples are documented |
+| U00 | Done | Freeze [grammatical descriptor semantics and merge policy](contextual-grammar-descriptor-v1.md) | Bit layout, allowed values, conflict-to-unavailable behavior and examples are documented |
 | U01 | Planned | Specify contextual `language.bin` v5 | Header/version, 20-byte candidate header, record alignment, CRC coverage and strict rejection order are frozen |
 | U02 | Planned | Define translated presentation policy | POS/feature labels, ordering, omission rules, width fallback and UTF-8 truncation are specified |
 | U03 | Planned | Freeze definition-mode input behavior | All three modes, wrap/filter behavior, failure-state navigation and orientation-aware logical buttons have test cases |
+
+U00 deliberately uses contextual ZDL features rather than form-only morphology.
+It freezes a 17-bit payload inside a 32-bit word, strict structural validation,
+POS compatibility, and conservative within-shard/page conflict handling. This
+keeps grammatical display truthful when a surface has multiple occurrences or a
+separable lemma is recombined.
 
 ## Phase B — host grammatical pipeline
 
