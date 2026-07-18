@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "canonical header truncated",
+      "file": "canonical-meta.bin",
+      "operation": "truncate",
+      "size": 111,
+      "expected": "META_TRUNCATED"
+    },
+    {
+      "name": "canonical bad magic",
+      "file": "canonical-meta.bin",
+      "operation": "xor-u8",
+      "offset": 0,
+      "value": 255,
+      "expected": "BAD_MAGIC"
+    },
+    {
+      "name": "canonical unsupported version",
+      "file": "canonical-meta.bin",
+      "operation": "write-u16",
+      "offset": 4,
+      "value": 99,
+      "expected": "UNSUPPORTED_VERSION"
+    },
+    {
+      "name": "canonical lexeme count over cap",
+      "file": "canonical-meta.bin",
+      "operation": "write-u32",
+      "offset": 36,
+      "value": 500001,
+      "recomputeHeaderCrc": true,
+      "expected": "COUNT_OUT_OF_RANGE"
+    },
+    {
+      "name": "canonical payload corrupt",
+      "file": "canonical-lexemes.bin",
+      "operation": "xor-u8",
+      "offset": 14,
+      "value": 255,
+      "expected": "BAD_FILE_CRC"
+    },
+    {
+      "name": "definition canonical UUID missing",
+      "file": "definition-meta.bin",
+      "operation": "zero",
+      "offset": 28,
+      "length": 16,
+      "recomputeHeaderCrc": true,
+      "expected": "INVALID_CANONICAL_UUID"
+    },
+    {
+      "name": "definition index size mismatch",
+      "file": "definition-meta.bin",
+      "operation": "write-u32",
+      "offset": 100,
+      "value": 16,
+      "recomputeHeaderCrc": true,
+      "expected": "FILE_SIZE_MISMATCH"
+    },
+    {
+      "name": "definition missing entry has nonzero offset",
+      "file": "definition-index.bin",
+      "operation": "write-u32",
+      "offset": 8,
+      "value": 1,
+      "expected": "BAD_FILE_CRC"
+    },
+    {
+      "name": "attachment source count over cap",
+      "file": "attachments.bin",
+      "operation": "write-u8",
+      "offset": 32,
+      "value": 4,
+      "recomputeHeaderCrc": true,
+      "expected": "COUNT_OUT_OF_RANGE"
+    },
+    {
+      "name": "attachment duplicate source UUID",
+      "file": "attachments.bin",
+      "operation": "copy",
+      "offset": 52,
+      "sourceOffset": 36,
+      "length": 16,
+      "secondaryWrite": {"operation": "write-u8", "offset": 32, "value": 2},
+      "recomputeHeaderCrc": true,
+      "expected": "DUPLICATE_SOURCE_UUID"
+    },
+    {
+      "name": "language v4 unsupported flags",
+      "file": "language-v4.bin",
+      "operation": "write-u32",
+      "offset": 8,
+      "value": 1,
+      "recomputeHeaderCrc": true,
+      "expected": "UNSUPPORTED_FLAGS"
+    },
+    {
+      "name": "language v4 canonical UUID missing",
+      "file": "language-v4.bin",
+      "operation": "zero",
+      "offset": 16,
+      "length": 16,
+      "recomputeHeaderCrc": true,
+      "expected": "INVALID_CANONICAL_UUID"
+    },
+    {
+      "name": "language v4 payload corrupt",
+      "file": "language-v4.bin",
+      "operation": "xor-u8",
+      "offset": 136,
+      "value": 128,
+      "expected": "BAD_PAYLOAD_CRC"
+    }
+  ]
+}

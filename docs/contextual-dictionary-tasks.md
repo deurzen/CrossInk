@@ -32,7 +32,7 @@ committed.
 | C01 | Blocked on private access | Obtain and fingerprint the complete DWDSmor DWDS-edition analyzer | Provenance and terms recorded locally; automaton version/SHA-256 reproducible; sample analyses run |
 | C02 | Done | Pin the ZDL static German spaCy model and compiler environment | Locked Python/model versions and hashes; clean environment reproduces reference inference |
 | C03 | Done | Define canonical POS/features mapping and scoring policy | Versioned DWDSmor/ZDL→canonical mapping; unsupported tags and low-confidence behavior documented |
-| C04 | Planned | Specify canonical, definition-source, attachment and next `language.bin` formats | Endianness, CRCs, caps, UUID/fingerprint rules and corruption fixtures documented before readers are written |
+| C04 | Done | Specify canonical, definition-source, attachment and next `language.bin` formats | Endianness, CRCs, caps, UUID/fingerprint rules and corruption fixtures documented before readers are written |
 
 ## Phase B — host linguistic pipeline
 

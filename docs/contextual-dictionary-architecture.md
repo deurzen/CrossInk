@@ -18,7 +18,9 @@ performs bounded ID lookup and sequential SD reads.
 
 This architecture intentionally supersedes the earlier idea that the current
 de-DE package must be the primary identity. Morphology, learning identity, and
-definition content have different lifecycles and are separated.
+definition content have different lifecycles and are separated. The concrete
+binary contracts are frozen in
+[`contextual-dictionary-formats.md`](contextual-dictionary-formats.md).
 
 ## Why the current pipeline misclassifies words
 
