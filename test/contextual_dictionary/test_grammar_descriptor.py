@@ -15,7 +15,9 @@ from dictionary.contextual.analysis_policy import (  # noqa: E402
 from dictionary.contextual.grammar_descriptor import (  # noqa: E402
     GRAMMAR_DESCRIPTOR_VERSION,
     GrammarDescriptorError,
+    GrammarDescriptorStatus,
     GrammarEvidence,
+    contextual_grammar,
     decode_features,
     encode_contextual_grammar,
     encode_features,
@@ -150,19 +152,22 @@ class GrammarDescriptorTest(unittest.TestCase):
         adjective_primary = CanonicalAnalysis("knipsend", CanonicalPos.ADJECTIVE)
         self.assertEqual(encode_contextual_grammar(context, adjective_primary), 0)
         self.assertEqual(
+            contextual_grammar(context, adjective_primary).status,
+            GrammarDescriptorStatus.POS_MISMATCH,
+        )
+        self.assertEqual(
             encode_contextual_grammar(
                 CanonicalAnalysis("x", CanonicalPos.UNKNOWN, CanonicalFeatures(number="singular")),
                 CanonicalAnalysis("x", CanonicalPos.UNKNOWN),
             ),
             0,
         )
-        self.assertEqual(
-            encode_contextual_grammar(
-                CanonicalAnalysis("x", CanonicalPos.VERB),
-                CanonicalAnalysis("x", CanonicalPos.VERB),
-            ),
-            0,
+        empty = contextual_grammar(
+            CanonicalAnalysis("x", CanonicalPos.VERB),
+            CanonicalAnalysis("x", CanonicalPos.VERB),
         )
+        self.assertEqual(empty.descriptor, 0)
+        self.assertEqual(empty.status, GrammarDescriptorStatus.NO_CONTEXTUAL_FEATURES)
 
     def test_analyzer_contract_drift_is_not_hidden_by_pos_mismatch(self):
         invalid_context = CanonicalAnalysis(

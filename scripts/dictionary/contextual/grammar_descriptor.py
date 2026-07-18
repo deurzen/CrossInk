@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 from .analysis_policy import CanonicalAnalysis, CanonicalFeatures, CanonicalPos
 
@@ -43,6 +44,18 @@ _FIELD_MASKS = (
 
 class GrammarDescriptorError(ValueError):
     pass
+
+
+class GrammarDescriptorStatus(Enum):
+    AVAILABLE = "available"
+    NO_CONTEXTUAL_FEATURES = "noContextualFeatures"
+    POS_MISMATCH = "posMismatch"
+
+
+@dataclass(frozen=True)
+class ContextualGrammarResult:
+    descriptor: int
+    status: GrammarDescriptorStatus
 
 
 @dataclass(frozen=True)
@@ -159,17 +172,27 @@ def merge_grammar_evidence(evidence: GrammarEvidence, descriptor: int) -> Gramma
     return GrammarEvidence(merged)
 
 
-def encode_contextual_grammar(context: CanonicalAnalysis, primary: CanonicalAnalysis) -> int:
+def contextual_grammar(
+    context: CanonicalAnalysis,
+    primary: CanonicalAnalysis,
+) -> ContextualGrammarResult:
     if not isinstance(context, CanonicalAnalysis) or not isinstance(primary, CanonicalAnalysis):
         raise GrammarDescriptorError("context and primary must be canonical analyses")
 
     # Validate the versioned contextual contract even when POS later suppresses
     # presentation; analyzer drift must not hide behind an ordinary mismatch.
     descriptor = encode_features(context.features)
-    if descriptor == 0 or context.part_of_speech in (CanonicalPos.UNKNOWN, CanonicalPos.OTHER):
-        return 0
-    if context.part_of_speech == primary.part_of_speech:
-        return descriptor
-    if {context.part_of_speech, primary.part_of_speech} == {CanonicalPos.NOUN, CanonicalPos.PROPER_NOUN}:
-        return descriptor
-    return 0
+    if descriptor == 0:
+        return ContextualGrammarResult(0, GrammarDescriptorStatus.NO_CONTEXTUAL_FEATURES)
+    if context.part_of_speech in (CanonicalPos.UNKNOWN, CanonicalPos.OTHER):
+        return ContextualGrammarResult(0, GrammarDescriptorStatus.POS_MISMATCH)
+    if context.part_of_speech == primary.part_of_speech or {
+        context.part_of_speech,
+        primary.part_of_speech,
+    } == {CanonicalPos.NOUN, CanonicalPos.PROPER_NOUN}:
+        return ContextualGrammarResult(descriptor, GrammarDescriptorStatus.AVAILABLE)
+    return ContextualGrammarResult(0, GrammarDescriptorStatus.POS_MISMATCH)
+
+
+def encode_contextual_grammar(context: CanonicalAnalysis, primary: CanonicalAnalysis) -> int:
+    return contextual_grammar(context, primary).descriptor

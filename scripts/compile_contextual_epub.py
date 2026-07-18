@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile an EPUB with pinned German contextual analysis and language.bin v4."""
+"""Compile an EPUB with pinned German contextual analysis and language.bin v5."""
 
 from __future__ import annotations
 
@@ -87,6 +87,14 @@ def main() -> int:
         f"Wrote {args.output} with {len(compiled.xhtml_spines)} spine(s), "
         f"{len(compiled.language_artifact)} language bytes, and "
         f"{compiled.missing_canonical_analyses} unmapped analysis candidate(s)"
+    )
+    grammar = compiled.grammar_diagnostics
+    print(
+        "Grammar: "
+        f"{grammar.available_occurrences} available occurrence(s), "
+        f"{grammar.no_feature_occurrences} without contextual features, "
+        f"{grammar.pos_mismatch_occurrences} POS mismatch(es), "
+        f"{grammar.within_shard_conflicts} within-shard conflict(s)"
     )
     return 0
 

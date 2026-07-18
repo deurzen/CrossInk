@@ -25,8 +25,10 @@ from dictionary.contextual.epub_compiler import (  # noqa: E402
     ContextualEpubError,
     FLAG_AMBIGUOUS,
     FLAG_CONTEXTUAL,
+    GrammarDiagnostics,
     LANGUAGE_PATH,
     _EncodedCandidate,
+    _encode_candidate_record,
     _finalize_surface,
     _merge_surface,
     compile_contextual_book,
@@ -68,7 +70,17 @@ class SyntheticAnalyzer:
                     (("laden", CanonicalPos.VERB, 1000, PRIMARY),),
                 ),
                 "steht": (
-                    CanonicalAnalysis("stehen", CanonicalPos.VERB),
+                    CanonicalAnalysis(
+                        "stehen",
+                        CanonicalPos.VERB,
+                        CanonicalFeatures(
+                            mood="indicative",
+                            number="singular",
+                            person="third",
+                            tense="present",
+                            verb_form="finite",
+                        ),
+                    ),
                     (
                         ("aufstehen", CanonicalPos.VERB, 1150, EXACT | RECOMBINED),
                         ("stehen", CanonicalPos.VERB, 1000, PRIMARY),
@@ -133,17 +145,19 @@ def decoded_surfaces(data):
         cursor = header["recordsOffset"] + blob_offset
         end = cursor + blob_length
         for _ in range(count):
-            _, record_size, length, analysis_count, flags, difficulty, confidence = struct.unpack_from(
-                "<QHBBBBH", data, cursor
+            _, record_size, length, analysis_count, flags, difficulty, confidence, grammar = struct.unpack_from(
+                "<QHBBBBHI", data, cursor
             )
-            local_ids = struct.unpack_from(f"<{analysis_count}H", data, cursor + 16)
-            text_offset = cursor + 16 + analysis_count * 2
+            local_ids = struct.unpack_from(f"<{analysis_count}H", data, cursor + 20)
+            text_offset = cursor + 20 + analysis_count * 2
             surface = data[text_offset : text_offset + length].decode("utf-8")
             surfaces[surface] = {
                 "ids": tuple(global_ids[value] for value in local_ids),
+                "recordSize": record_size,
                 "flags": flags,
                 "difficulty": difficulty,
                 "confidence": confidence,
+                "grammar": grammar,
             }
             cursor += record_size
         assert cursor == end
@@ -172,12 +186,12 @@ class ContextualEpubCompilerTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def test_compiles_v4_contextual_candidates_markers_and_metadata(self):
+    def test_compiles_v5_contextual_candidates_markers_grammar_and_metadata(self):
         xhtml = "<html><body><p>Wir <em>laden</em>. Er steht auf. Goethe.</p></body></html>"
         compiled = compile_contextual_book([xhtml], SyntheticAnalyzer(), self.canonical)
         self.assertIn('data-crossink-lang-shard="0"', compiled.xhtml_spines[0])
         header = artifact_header(compiled.language_artifact)
-        self.assertEqual(header["version"], 4)
+        self.assertEqual(header["version"], 5)
         self.assertEqual(header["uuid"], self.canonical.canonical_uuid.bytes)
         self.assertEqual(header["target"], b"und")
         self.assertEqual(header["fileSize"], len(compiled.language_artifact))
@@ -196,7 +210,26 @@ class ContextualEpubCompilerTest(unittest.TestCase):
         )
         self.assertTrue(surfaces["steht"]["flags"] & FLAG_CONTEXTUAL)
         self.assertTrue(surfaces["steht"]["flags"] & FLAG_AMBIGUOUS)
+        self.assertEqual(
+            surfaces["steht"]["grammar"],
+            encode_features(
+                CanonicalFeatures(
+                    mood="indicative",
+                    number="singular",
+                    person="third",
+                    tense="present",
+                    verb_form="finite",
+                )
+            ),
+        )
         self.assertEqual(compiled.missing_canonical_analyses, 0)
+        self.assertEqual(
+            compiled.grammar_diagnostics,
+            GrammarDiagnostics(1, 2, 0, 0),
+        )
+        for surface, record in surfaces.items():
+            expected_size = 20 + len(record["ids"]) * 2 + len(surface.encode("utf-8"))
+            self.assertEqual(record["recordSize"], (expected_size + 3) & ~3)
 
         offset = header["metadataOffset"]
         self.assertEqual(compiled.language_artifact[offset : offset + 4], b"CXLM")
@@ -205,6 +238,17 @@ class ContextualEpubCompilerTest(unittest.TestCase):
         self.assertEqual(metadata["canonicalUuid"], str(self.canonical.canonical_uuid))
         self.assertEqual(metadata["analysisPolicyVersion"], 2)
         self.assertEqual(metadata["canonicalPosVersion"], 1)
+        self.assertEqual(metadata["compilerVersion"], 2)
+        self.assertEqual(metadata["grammarDescriptorVersion"], 1)
+        self.assertEqual(
+            metadata["grammarDiagnostics"],
+            {
+                "availableOccurrences": 1,
+                "noContextualFeatureOccurrences": 2,
+                "posMismatchOccurrences": 0,
+                "withinShardConflicts": 0,
+            },
+        )
 
     def test_surface_aggregation_keeps_grammar_with_occurrence_primary_only(self):
         singular = encode_features(CanonicalFeatures(number="singular"))
@@ -239,6 +283,26 @@ class ContextualEpubCompilerTest(unittest.TestCase):
             finalized = _finalize_surface("Sie", evidence)
             self.assertEqual(finalized.grammar_descriptor, 0)
             self.assertTrue(finalized.grammar_conflict)
+
+    def test_candidate_encoder_rejects_malformed_grammar_before_packing(self):
+        base = _EncodedCandidate("Sie", (10,), 1000, 7, FLAG_CONTEXTUAL, 0)
+        self.assertTrue(_encode_candidate_record(base, {10: 0}))
+        for descriptor, message in (
+            (1 << 17, "reserved bits"),
+            (1 << 32, "fit uint32"),
+            (0x00010001, "infinitive descriptor"),
+        ):
+            candidate = _EncodedCandidate(
+                base.surface,
+                base.global_ids,
+                base.confidence,
+                base.difficulty,
+                base.flags,
+                descriptor,
+            )
+            with self.subTest(descriptor=descriptor):
+                with self.assertRaisesRegex(ContextualEpubError, message):
+                    _encode_candidate_record(candidate, {10: 0})
 
     def test_shards_by_rendered_word_tokens_and_is_deterministic(self):
         xhtml = "<p>" + " ".join(["laden"] * 65) + "</p>"
@@ -322,7 +386,7 @@ class ContextualEpubCompilerTest(unittest.TestCase):
             self.assertEqual(archive.read("OPS/package.opf"), opf)
             self.assertEqual(archive.read("OPS/asset.bin"), b"unchanged")
             self.assertEqual(archive.namelist().count(LANGUAGE_PATH), 1)
-            self.assertEqual(artifact_header(archive.read(LANGUAGE_PATH))["version"], 4)
+            self.assertEqual(artifact_header(archive.read(LANGUAGE_PATH))["version"], 5)
             self.assertIn(b"data-crossink-lang-shard", archive.read("OPS/chapter.xhtml"))
 
         protected = Path(self.temporary.name) / "protected.epub"

@@ -1,4 +1,4 @@
-"""Contextual XHTML and full-EPUB compiler for language.bin version 4."""
+"""Contextual XHTML and full-EPUB compiler for language.bin version 5."""
 
 from __future__ import annotations
 
@@ -35,17 +35,20 @@ from .analysis_policy import CanonicalPos
 from .canonical_lexicon import CanonicalLexiconIndex
 from .fusion import normalize_score
 from .grammar_descriptor import (
+    GRAMMAR_DESCRIPTOR_VERSION,
     GrammarDescriptorError,
+    GrammarDescriptorStatus,
     GrammarEvidence,
-    encode_contextual_grammar,
+    contextual_grammar,
     merge_grammar_evidence,
+    validate_descriptor,
 )
 from .pipeline import AnalysisProvenance, AnalyzedToken, LanguageAnalyzer
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 TOKENIZER_VERSION = 1
 ANALYZER_VERSION = 1
-COMPILER_VERSION = 1
+COMPILER_VERSION = 2
 MAX_SPINES = 4096
 MAX_SENTENCE_BYTES = 64 * 1024
 MAX_LANGUAGE_BYTES = 64 * 1024 * 1024
@@ -66,10 +69,26 @@ class ContextualEpubError(ValueError):
 
 
 @dataclass(frozen=True)
+class GrammarDiagnostics:
+    available_occurrences: int
+    no_feature_occurrences: int
+    pos_mismatch_occurrences: int
+    within_shard_conflicts: int
+
+
+@dataclass(frozen=True)
 class CompiledContextualBook:
     xhtml_spines: tuple[str, ...]
     language_artifact: bytes
     missing_canonical_analyses: int
+    grammar_diagnostics: GrammarDiagnostics
+
+
+@dataclass
+class _GrammarOccurrenceCounts:
+    available: int = 0
+    no_features: int = 0
+    pos_mismatches: int = 0
 
 
 @dataclass
@@ -149,7 +168,7 @@ def _analyze_spine(
     analyzer: LanguageAnalyzer,
     canonical: CanonicalLexiconIndex,
     frequency_provider: FrequencyProvider | None,
-) -> tuple[list[Token], dict[int, _EncodedCandidate], int]:
+) -> tuple[list[Token], dict[int, _EncodedCandidate], int, _GrammarOccurrenceCounts]:
     if "data-crossink-lang-shard" in xhtml:
         raise ContextualEpubError("XHTML spine already contains CrossInk language markers")
     visible = extract_visible_text(xhtml)
@@ -189,6 +208,7 @@ def _analyze_spine(
         }
     candidates = {}
     missing = 0
+    grammar_counts = _GrammarOccurrenceCounts()
     for word_index, word in enumerate(words):
         if word.surface.casefold() in GERMAN_STOPWORDS:
             continue
@@ -232,7 +252,7 @@ def _analyze_spine(
         if analyzed.context.part_of_speech == CanonicalPos.PROPER_NOUN:
             flags |= FLAG_PROPER_NOUN
         try:
-            grammar_descriptor = encode_contextual_grammar(
+            grammar = contextual_grammar(
                 analyzed.context,
                 analyses_by_id[primary_id],
             )
@@ -240,15 +260,21 @@ def _analyze_spine(
             raise ContextualEpubError(
                 f"invalid contextual grammar for {word.surface!r}: {error}"
             ) from error
+        if grammar.status == GrammarDescriptorStatus.AVAILABLE:
+            grammar_counts.available += 1
+        elif grammar.status == GrammarDescriptorStatus.NO_CONTEXTUAL_FEATURES:
+            grammar_counts.no_features += 1
+        else:
+            grammar_counts.pos_mismatches += 1
         candidates[word_index] = _EncodedCandidate(
             surface=word.surface,
             global_ids=tuple(ordered),
             confidence=normalize_score(scores[primary_id]),
             difficulty=_difficulty(word.surface, analyzed, frequency_provider),
             flags=flags,
-            grammar_descriptor=grammar_descriptor,
+            grammar_descriptor=grammar.descriptor,
         )
-    return words, candidates, missing
+    return words, candidates, missing, grammar_counts
 
 
 def _merge_surface(
@@ -319,6 +345,39 @@ def _finalize_surface(surface: str, evidence: _SurfaceEvidence) -> _EncodedCandi
     )
 
 
+def _encode_candidate_record(
+    candidate: _EncodedCandidate,
+    local_by_global: dict[int, int],
+) -> bytes:
+    try:
+        validate_descriptor(candidate.grammar_descriptor)
+    except GrammarDescriptorError as error:
+        raise ContextualEpubError(
+            f"candidate {candidate.surface!r} has invalid grammar descriptor: {error}"
+        ) from error
+
+    encoded = candidate.surface.encode("utf-8")
+    local_ids = [local_by_global[item] for item in candidate.global_ids]
+    record = bytearray(
+        struct.pack(
+            "<QHBBBBHI",
+            _fnv1a64(encoded),
+            0,
+            len(encoded),
+            len(local_ids),
+            candidate.flags,
+            candidate.difficulty,
+            candidate.confidence,
+            candidate.grammar_descriptor,
+        )
+    )
+    record.extend(struct.pack(f"<{len(local_ids)}H", *local_ids))
+    record.extend(encoded)
+    _align4(record)
+    struct.pack_into("<H", record, 8, len(record))
+    return bytes(record)
+
+
 def compile_contextual_book(
     xhtml_spines: list[str],
     analyzer: LanguageAnalyzer,
@@ -335,14 +394,20 @@ def compile_contextual_book(
     shard_candidates: list[list[_EncodedCandidate]] = []
     source_token_base = 0
     missing = 0
+    grammar_available = 0
+    grammar_no_features = 0
+    grammar_pos_mismatches = 0
     for xhtml in xhtml_spines:
-        words, candidates_by_index, spine_missing = _analyze_spine(
+        words, candidates_by_index, spine_missing, spine_grammar = _analyze_spine(
             xhtml,
             analyzer,
             canonical,
             frequency_provider,
         )
         missing += spine_missing
+        grammar_available += spine_grammar.available
+        grammar_no_features += spine_grammar.no_features
+        grammar_pos_mismatches += spine_grammar.pos_mismatches
         first_shard = len(shard_candidates)
         shard_count = (len(words) + SHARD_TOKEN_COUNT - 1) // SHARD_TOKEN_COUNT
         output = xhtml
@@ -386,6 +451,11 @@ def compile_contextual_book(
     if len(shard_candidates) > MAX_SHARDS:
         raise ContextualEpubError(f"book exceeds {MAX_SHARDS} source shards")
     record_count = sum(len(items) for items in shard_candidates)
+    grammar_conflicts = sum(
+        candidate.grammar_conflict
+        for shard in shard_candidates
+        for candidate in shard
+    )
     if record_count > MAX_RECORDS:
         raise ContextualEpubError(f"book exceeds {MAX_RECORDS} shard candidates")
     global_ids = {
@@ -413,25 +483,7 @@ def compile_contextual_book(
             candidates = shard_candidates[first_shard + local_shard]
             blob = bytearray()
             for candidate in candidates:
-                encoded = candidate.surface.encode("utf-8")
-                local_ids = [local_by_global[item] for item in candidate.global_ids]
-                record_start = len(blob)
-                blob.extend(
-                    struct.pack(
-                        "<QHBBBBH",
-                        _fnv1a64(encoded),
-                        0,
-                        len(encoded),
-                        len(local_ids),
-                        candidate.flags,
-                        candidate.difficulty,
-                        candidate.confidence,
-                    )
-                )
-                blob.extend(struct.pack(f"<{len(local_ids)}H", *local_ids))
-                blob.extend(encoded)
-                _align4(blob)
-                struct.pack_into("<H", blob, record_start + 8, len(blob) - record_start)
+                blob.extend(_encode_candidate_record(candidate, local_by_global))
             if len(blob) > MAX_SHARD_BLOB_BYTES:
                 raise ContextualEpubError(
                     f"shard blob exceeds {MAX_SHARD_BLOB_BYTES} bytes"
@@ -467,6 +519,13 @@ def compile_contextual_book(
                 "version": dwdsmor_package["version"],
             },
             "frequency": {"provider": frequency_id, "version": frequency_id},
+            "grammarDescriptorVersion": GRAMMAR_DESCRIPTOR_VERSION,
+            "grammarDiagnostics": {
+                "availableOccurrences": grammar_available,
+                "noContextualFeatureOccurrences": grammar_no_features,
+                "posMismatchOccurrences": grammar_pos_mismatches,
+                "withinShardConflicts": grammar_conflicts,
+            },
             "shardTokenCount": SHARD_TOKEN_COUNT,
             "spacyVersion": canonical.zdl_manifest["spacyVersion"],
             "tokenizerVersion": TOKENIZER_VERSION,
@@ -529,7 +588,17 @@ def compile_contextual_book(
     )
     struct.pack_into("<I", artifact, 100, _crc32(artifact[LANGUAGE_HEADER_SIZE:]))
     struct.pack_into("<I", artifact, 104, _crc32(artifact[:104]))
-    return CompiledContextualBook(tuple(transformed), bytes(artifact), missing)
+    return CompiledContextualBook(
+        tuple(transformed),
+        bytes(artifact),
+        missing,
+        GrammarDiagnostics(
+            grammar_available,
+            grammar_no_features,
+            grammar_pos_mismatches,
+            grammar_conflicts,
+        ),
+    )
 
 
 def _local_name(tag: str) -> str:

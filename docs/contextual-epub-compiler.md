@@ -39,19 +39,23 @@ shards, keeping marker placement compatible with firmware's rendered-word
 lookup. Decomposed visible Unicode is normalized for analysis and aligned back
 to original XHTML offsets; the publisher text itself is not rewritten.
 
-`language.bin` version 4 records:
+`language.bin` version 5 records:
 
 - canonical UUID `c6246d63-38eb-5df8-9d83-ab0d812503f9` for the current seed;
 - primary and at most seven alternate canonical IDs;
 - normalized contextual confidence and optional `wordfreq` difficulty;
+- one validated layout-1 contextual grammar descriptor for the primary ID;
 - contextual, folded, fallback, ambiguity, truncation, and proper-noun flags;
 - DWDSmor, ZDL, spaCy, canonical POS, analysis-policy, tokenizer, frequency, and
   compiler provenance.
 
 Repeated surfaces are merged only inside their 64-token source shard. Candidate
 IDs are ordered by evidence then canonical ID, so output does not depend on
-provider iteration order. Analyses absent from the canonical lexicon are counted
-and omitted rather than assigned an unstable book-local identity.
+provider iteration order. Primary grammar unions field by field; a repeated
+value or structural conflict produces descriptor zero. Analyses absent from the
+canonical lexicon are counted and omitted rather than assigned an unstable
+book-local identity. The command also reports available occurrence grammar,
+missing contextual features, POS mismatches and within-shard conflicts.
 
 A production-provider fixture containing sentence-initial `Laden`, finite
 `steht … auf`, participial `geschrieben`, and `Goethe` compiled with zero
@@ -65,8 +69,10 @@ O(1) mapping and retains one spine's analyzed records while constructing the
 bounded artifact. These desktop allocations avoid repeated binary searches and
 have no device cost. The emitted EPUB contains no morphology or model files.
 
-Current firmware has not yet cut over to v4. Hardware validation follows C19–C27:
-upload the compiled EPUB and matching canonical runtime files, clear the book's
-`.crosspoint/epub_<hash>/` cache, then confirm the expected shortlist,
-`aufstehen` primary ordering, CRC logs, one-reader behavior, and stable heap on
-X3/X4.
+During the staged v5 implementation, compiler output is intentionally newer
+than firmware acceptance until U09 performs the v5-only parser cutover. Do not
+replace production reading EPUBs before U17. Hardware validation follows
+U18–U19: upload the compiled EPUB and matching canonical runtime files, clear
+the book's `.crosspoint/epub_<hash>/` cache, then confirm grammar, alternative
+labels, direct word navigation, CRC logs, one-reader behavior, and stable heap
+on X3/X4.

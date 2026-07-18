@@ -180,7 +180,7 @@ class ContextualCompilerDifferentialTest(unittest.TestCase):
             data = compiled.language_artifact
             values = struct.unpack_from(HEADER_FORMAT, data, 0)
             expected_header = fixture["expected"]["header"]
-            self.assertEqual(values[0:6], (b"CXLG", 4, 108, 0, 1, 1))
+            self.assertEqual(values[0:6], (b"CXLG", 5, 108, 0, 1, 1))
             self.assertEqual(values[6], canonical.canonical_uuid.bytes)
             self.assertEqual(
                 {"spines": values[9], "shards": values[11], "records": values[12], "lemmas": values[13]},
@@ -222,13 +222,14 @@ class ContextualCompilerDifferentialTest(unittest.TestCase):
                 previous_key = None
                 for _ in range(record_count):
                     record_start = cursor
-                    surface_hash, record_size, surface_length, analysis_count, flags, difficulty, confidence = (
-                        struct.unpack_from("<QHBBBBH", data, cursor)
+                    surface_hash, record_size, surface_length, analysis_count, flags, difficulty, confidence, grammar = (
+                        struct.unpack_from("<QHBBBBHI", data, cursor)
                     )
                     self.assertEqual(record_size % 4, 0)
-                    self.assertGreaterEqual(record_size, 16 + analysis_count * 2 + surface_length)
-                    local_ids = struct.unpack_from(f"<{analysis_count}H", data, cursor + 16)
-                    text_start = cursor + 16 + analysis_count * 2
+                    self.assertGreaterEqual(record_size, 20 + analysis_count * 2 + surface_length)
+                    self.assertEqual(grammar, 0)
+                    local_ids = struct.unpack_from(f"<{analysis_count}H", data, cursor + 20)
+                    text_start = cursor + 20 + analysis_count * 2
                     surface_bytes = data[text_start : text_start + surface_length]
                     surface = surface_bytes.decode("utf-8")
                     self.assertEqual(surface_hash, fnv1a64(surface_bytes))

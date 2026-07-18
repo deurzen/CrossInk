@@ -169,7 +169,7 @@ reuse of the existing pager/page/session.
 | --- | --- | --- | --- |
 | U04 | Done | Add deterministic grammar descriptor encoder | Every supported DWDSmor/ZDL canonical feature maps to a validated packed value; malformed combinations fail |
 | U05 | Done | Preserve primary grammar through surface aggregation | Identical evidence survives; conflicting repeated-surface evidence emits unavailable deterministically |
-| U06 | Planned | Emit only v5 contextual records | Compiler writes the descriptor, bumps compiler metadata and rejects out-of-range/reserved values |
+| U06 | Done | Emit only v5 contextual records | Compiler writes the descriptor, bumps compiler metadata and rejects out-of-range/reserved values |
 | U07 | Planned | Add v5 differential and corruption fixtures | Token offsets, markers, IDs, grammar words, record bytes, CRCs and complete artifact SHA agree independently |
 | U08 | Planned | Re-evaluate production corpora | German ambiguity baseline remains stable; v5 grammar accuracy is manually checked for verbs, nouns, adjectives and ambiguous forms |
 
@@ -184,6 +184,12 @@ occurrence. Per-field unavailable values union conservatively, equal evidence
 survives, and value or structural conflicts are sticky and finalize as zero.
 Permutation tests prove aggregation order cannot recover conflicted evidence or
 allow an alternative analysis to contaminate the selected primary.
+
+U06 makes host output v5-only with a 20-byte fixed candidate header and compiler
+metadata version 2. Every descriptor is validated again at the serializer
+boundary; diagnostics count available occurrences, missing features, POS
+mismatches and within-shard conflicts in metadata and CLI output. Existing
+records grow by exactly four aligned bytes.
 
 ## Phase C — bounded firmware support
 
