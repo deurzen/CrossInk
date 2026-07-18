@@ -140,7 +140,7 @@ divider slot before loading content so labels cannot clip the final line.
 | U00 | Done | Freeze [grammatical descriptor semantics and merge policy](contextual-grammar-descriptor-v1.md) | Bit layout, allowed values, conflict-to-unavailable behavior and examples are documented |
 | U01 | Done | Specify [contextual `language.bin` v5](contextual-language-v5-format.md) | Header/version, 20-byte candidate header, record alignment, CRC coverage and strict rejection order are frozen |
 | U02 | Done | Define [translated grammar presentation policy](contextual-grammar-presentation.md) | POS/feature labels, ordering, omission rules, width fallback and UTF-8 truncation are specified |
-| U03 | Planned | Freeze definition-mode input behavior | All three modes, wrap/filter behavior, failure-state navigation and orientation-aware logical buttons have test cases |
+| U03 | Done | Freeze [definition-mode input behavior](contextual-dictionary-input-contract.md) | All three modes, wrap/filter behavior, failure-state navigation and orientation-aware logical buttons have test cases |
 
 U00 deliberately uses contextual ZDL features rather than form-only morphology.
 It freezes a 17-bit payload inside a 32-bit word, strict structural validation,
@@ -157,6 +157,11 @@ U02 freezes POS-aware field order, full English/German terminology,
 person+number translation units, fixed-buffer width fallback and 22-pixel
 labeled alternative dividers. Formatting is performed before rendering with no
 dynamic string or render-time SD I/O.
+
+U03 separates logical front Left/Right definition paging from side Up/Down word
+movement. It freezes event priority, sorted wrap behavior, page-zero resets,
+failed-definition escape, post-status filtering destinations and zero-allocation
+reuse of the existing pager/page/session.
 
 ## Phase B — host grammatical pipeline
 
