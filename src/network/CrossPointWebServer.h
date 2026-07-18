@@ -21,6 +21,12 @@ struct FileInfo {
   bool isDirectory;
 };
 
+enum class DictionaryPackageKind : uint8_t {
+  Legacy = 0,
+  Canonical,
+  Definition,
+};
+
 class CrossPointWebServer {
  public:
   struct WsUploadStatus {
@@ -132,6 +138,7 @@ class CrossPointWebServer {
   void handleDictionaryRemove();
   void handleDictionaryLearningList();
   void handleDictionaryLearningStatus();
+  void handleContextualAttachments();
   bool flushDictionaryUpload();
   void abortDictionaryUpload();
 
@@ -166,6 +173,7 @@ class CrossPointWebServer {
     HalFile file;
     uint8_t bundleUuid[16]{};
     dictionary::installer::RuntimeFile runtimeFile = dictionary::installer::RuntimeFile::Meta;
+    DictionaryPackageKind packageKind = DictionaryPackageKind::Legacy;
     char filePath[dictionary::installer::kMaxInstallPath]{};
     bool valid = false;
     size_t baseOffset = 0;
@@ -184,6 +192,9 @@ class CrossPointWebServer {
   dictionary::contextual::AttachmentStore contextualAttachmentStore;
   bool dictionaryStorageReady = false;
   bool contextualStorageReady = false;
+
+  bool openInstallerForKind(DictionaryPackageKind kind, dictionary::installer::InstallError& error);
+  dictionary::installer::Installer& installerForKind(DictionaryPackageKind kind);
 
   // OPDS server handlers
   void handleGetOpdsServers() const;

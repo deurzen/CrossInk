@@ -4,6 +4,7 @@
 #ifdef SIMULATOR
 #include <ArduinoJsonStringCompat.h>
 #endif
+#include <ContextualRuntimeFormat.h>
 #include <Epub.h>
 #include <FsHelpers.h>
 #include <HalGPIO.h>
@@ -68,6 +69,20 @@ bool inventoryContainsCanonical(const CanonicalInventoryIdentity* identities, co
   return false;
 }
 
+struct AttachmentCompatibilityContext {
+  dictionary::installer::Installer* installer = nullptr;
+  uint32_t canonicalLexemeCount = 0;
+};
+
+bool attachmentSourceCompatible(void* rawContext, const uint8_t (&sourceUuid)[16], const uint8_t (&canonicalUuid)[16]) {
+  auto& context = *static_cast<AttachmentCompatibilityContext*>(rawContext);
+  if (context.installer == nullptr || context.canonicalLexemeCount == 0) return false;
+  dictionary::installer::DefinitionSourcePackageInfo info;
+  dictionary::installer::InstallError error;
+  return context.installer->inspectInstalledDefinition(sourceUuid, canonicalUuid, context.canonicalLexemeCount, info,
+                                                       error);
+}
+
 bool escapeJsonText(const char* input, char* output, const size_t capacity) {
   if (input == nullptr || output == nullptr || capacity == 0) return false;
   static constexpr char HEX_DIGITS[] = "0123456789abcdef";
@@ -130,18 +145,38 @@ bool dictionaryUuidArg(WebServer& server, uint8_t (&uuid)[16]) {
   return server.hasArg("uuid") && dictionary::storage::parseUuid(server.arg("uuid").c_str(), uuid);
 }
 
-bool dictionaryRuntimeFile(const String& name, dictionary::installer::RuntimeFile& file) {
+bool namedUuidArg(WebServer& server, const char* name, uint8_t (&uuid)[16]) {
+  return server.hasArg(name) && dictionary::storage::parseUuid(server.arg(name).c_str(), uuid);
+}
+
+bool dictionaryPackageKindArg(WebServer& server, DictionaryPackageKind& kind) {
+  if (!server.hasArg("kind") || server.arg("kind") == "legacy") {
+    kind = DictionaryPackageKind::Legacy;
+  } else if (server.arg("kind") == "canonical") {
+    kind = DictionaryPackageKind::Canonical;
+  } else if (server.arg("kind") == "definition") {
+    kind = DictionaryPackageKind::Definition;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+bool dictionaryRuntimeFile(const String& name, const DictionaryPackageKind kind,
+                           dictionary::installer::RuntimeFile& file) {
   using dictionary::installer::RuntimeFile;
   if (name == "meta.bin") {
     file = RuntimeFile::Meta;
-  } else if (name == "lexemes.bin") {
-    file = RuntimeFile::Lexemes;
-  } else if (name == "headwords.bin") {
-    file = RuntimeFile::Headwords;
-  } else if (name == "entries.bin") {
-    file = RuntimeFile::Entries;
   } else if (name == "licenses.txt") {
     file = RuntimeFile::Licenses;
+  } else if (name == "lexemes.bin" && kind != DictionaryPackageKind::Definition) {
+    file = RuntimeFile::Lexemes;
+  } else if (name == "headwords.bin" && kind != DictionaryPackageKind::Definition) {
+    file = RuntimeFile::Headwords;
+  } else if (name == "entries.bin" && kind != DictionaryPackageKind::Canonical) {
+    file = RuntimeFile::Entries;
+  } else if (name == "entry-index.bin" && kind == DictionaryPackageKind::Definition) {
+    file = RuntimeFile::EntryIndex;
   } else {
     return false;
   }
@@ -163,19 +198,28 @@ bool unsignedArg(WebServer& server, const char* name, const uint32_t maximum, ui
   return true;
 }
 
-uint64_t dictionaryRuntimeFileLimit(const dictionary::installer::RuntimeFile file) {
+uint64_t dictionaryRuntimeFileLimit(const DictionaryPackageKind kind, const dictionary::installer::RuntimeFile file) {
   using dictionary::installer::RuntimeFile;
   switch (file) {
     case RuntimeFile::Meta:
+      if (kind == DictionaryPackageKind::Canonical) return dictionary::contextual::kCanonicalMetaSize;
+      if (kind == DictionaryPackageKind::Definition) return dictionary::contextual::kDefinitionMetaSize;
       return dictionary::kDictionaryMetaSize;
     case RuntimeFile::Lexemes:
-      return static_cast<uint64_t>(dictionary::kMaxLexemeCount) * dictionary::kLexemeRecordSize;
+      return kind == DictionaryPackageKind::Canonical
+                 ? static_cast<uint64_t>(dictionary::contextual::kMaxCanonicalLexemes) *
+                       dictionary::contextual::kCanonicalLexemeRecordSize
+                 : static_cast<uint64_t>(dictionary::kMaxLexemeCount) * dictionary::kLexemeRecordSize;
     case RuntimeFile::Headwords:
-      return dictionary::kMaxHeadwordsFileSize;
+      return kind == DictionaryPackageKind::Canonical ? dictionary::contextual::kMaxCanonicalHeadwordsSize
+                                                      : dictionary::kMaxHeadwordsFileSize;
     case RuntimeFile::Entries:
-      return dictionary::kMaxEntriesFileSize;
+      return kind == DictionaryPackageKind::Definition ? dictionary::contextual::kMaxDefinitionEntriesSize
+                                                       : dictionary::kMaxEntriesFileSize;
     case RuntimeFile::Licenses:
       return dictionary::installer::kMaxLicenseBytes;
+    case RuntimeFile::EntryIndex:
+      return dictionary::contextual::kMaxDefinitionIndexSize;
   }
   return 0;
 }
@@ -552,6 +596,7 @@ void CrossPointWebServer::begin() {
   // are selected by firmware, never accepted as arbitrary client paths.
   server->on("/api/dictionaries", HTTP_GET, [this] { handleDictionaryList(); });
   server->on("/api/dictionaries/contextual", HTTP_GET, [this] { handleContextualDictionaryList(); });
+  server->on("/api/dictionaries/contextual/attachments", HTTP_POST, [this] { handleContextualAttachments(); });
   server->on("/api/dictionaries/install/start", HTTP_POST, [this] { handleDictionaryInstallStart(); });
   server->on(
       "/api/dictionaries/install/file", HTTP_POST, [this] { handleDictionaryInstallUpload(); },
@@ -2345,6 +2390,18 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
 
 // --- Dictionary management handlers ---
 
+dictionary::installer::Installer& CrossPointWebServer::installerForKind(const DictionaryPackageKind kind) {
+  return kind == DictionaryPackageKind::Legacy ? dictionaryInstaller : contextualInstaller;
+}
+
+bool CrossPointWebServer::openInstallerForKind(const DictionaryPackageKind kind,
+                                               dictionary::installer::InstallError& error) {
+  if (kind == DictionaryPackageKind::Legacy) return dictionaryStorageReady;
+  const char* root = kind == DictionaryPackageKind::Canonical ? dictionary::storage::CANONICAL_ROOT_PATH
+                                                              : dictionary::storage::DEFINITION_SOURCE_ROOT_PATH;
+  return contextualStorageReady && contextualInstaller.open(dictionary::storage::backend(), root, error);
+}
+
 void CrossPointWebServer::handleDictionaryList() {
   if (!dictionaryStorageReady) {
     server->send(503, "application/json", "{\"error\":\"Dictionary storage unavailable\"}");
@@ -2541,13 +2598,15 @@ void CrossPointWebServer::handleContextualDictionaryList() {
 
 void CrossPointWebServer::handleDictionaryInstallStart() {
   uint8_t uuid[16]{};
-  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
-    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+  DictionaryPackageKind kind;
+  dictionary::installer::InstallError error;
+  if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
+      !openInstallerForKind(kind, error)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary install request\"}");
     return;
   }
   if (dictionaryUpload.file) abortDictionaryUpload();
-  dictionary::installer::InstallError error;
-  if (!dictionaryInstaller.begin(uuid, error)) {
+  if (!installerForKind(kind).begin(uuid, error)) {
     LOG_ERR("WEB", "Dictionary install start failed: %s", dictionary::installer::installErrorName(error));
     server->send(500, "application/json", "{\"error\":\"Could not start dictionary installation\"}");
     return;
@@ -2598,17 +2657,21 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
       }
       std::memset(dictionaryUpload.bundleUuid, 0, sizeof(dictionaryUpload.bundleUuid));
       dictionaryUpload.runtimeFile = RuntimeFile::Meta;
+      dictionaryUpload.packageKind = DictionaryPackageKind::Legacy;
       dictionaryUpload.filePath[0] = '\0';
       dictionaryUpload.valid = false;
       dictionaryUpload.baseOffset = 0;
       dictionaryUpload.bytesWritten = 0;
       dictionaryUpload.bufferPos = 0;
-      if (!dictionaryStorageReady || !dictionaryUuidArg(*server, dictionaryUpload.bundleUuid) ||
-          !server->hasArg("name") || !dictionaryRuntimeFile(server->arg("name"), dictionaryUpload.runtimeFile)) {
+      InstallError error;
+      if (!dictionaryUuidArg(*server, dictionaryUpload.bundleUuid) ||
+          !dictionaryPackageKindArg(*server, dictionaryUpload.packageKind) ||
+          !openInstallerForKind(dictionaryUpload.packageKind, error) || !server->hasArg("name") ||
+          !dictionaryRuntimeFile(server->arg("name"), dictionaryUpload.packageKind, dictionaryUpload.runtimeFile)) {
         LOG_ERR("WEB", "Rejected invalid dictionary file upload request");
         return;
       }
-      const uint64_t fileLimit = dictionaryRuntimeFileLimit(dictionaryUpload.runtimeFile);
+      const uint64_t fileLimit = dictionaryRuntimeFileLimit(dictionaryUpload.packageKind, dictionaryUpload.runtimeFile);
       uint32_t requestedOffset = 0;
       if ((server->hasArg("offset") &&
            !unsignedArg(*server, "offset", static_cast<uint32_t>(fileLimit), requestedOffset)) ||
@@ -2618,9 +2681,9 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
       }
       dictionaryUpload.baseOffset = requestedOffset;
 
-      InstallError error;
-      if (!dictionaryInstaller.stagingFilePath(dictionaryUpload.bundleUuid, dictionaryUpload.runtimeFile,
-                                               dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), error)) {
+      if (!installerForKind(dictionaryUpload.packageKind)
+               .stagingFilePath(dictionaryUpload.bundleUuid, dictionaryUpload.runtimeFile, dictionaryUpload.filePath,
+                                sizeof(dictionaryUpload.filePath), error)) {
         LOG_ERR("WEB", "Could not build staged dictionary path: %s", dictionary::installer::installErrorName(error));
         dictionaryUpload.filePath[0] = '\0';
         return;
@@ -2647,7 +2710,7 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
       if (!dictionaryUpload.valid) return;
       const uint64_t pending = static_cast<uint64_t>(dictionaryUpload.baseOffset) + dictionaryUpload.bytesWritten +
                                dictionaryUpload.bufferPos + upload.currentSize;
-      if (pending > dictionaryRuntimeFileLimit(dictionaryUpload.runtimeFile)) {
+      if (pending > dictionaryRuntimeFileLimit(dictionaryUpload.packageKind, dictionaryUpload.runtimeFile)) {
         LOG_ERR("WEB", "Dictionary runtime file exceeds cap");
         abortDictionaryUpload();
         return;
@@ -2705,22 +2768,24 @@ void CrossPointWebServer::handleDictionaryInstallUpload() {
 
 void CrossPointWebServer::handleDictionaryInstallProgress() {
   uint8_t uuid[16]{};
+  DictionaryPackageKind kind;
   dictionary::installer::RuntimeFile runtimeFile;
-  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid) || !server->hasArg("name") ||
-      !dictionaryRuntimeFile(server->arg("name"), runtimeFile)) {
+  dictionary::installer::InstallError error;
+  if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
+      !openInstallerForKind(kind, error) || !server->hasArg("name") ||
+      !dictionaryRuntimeFile(server->arg("name"), kind, runtimeFile)) {
     server->send(400, "application/json", "{\"error\":\"Invalid dictionary progress request\"}");
     return;
   }
   char path[dictionary::installer::kMaxInstallPath]{};
-  dictionary::installer::InstallError error;
-  if (!dictionaryInstaller.stagingFilePath(uuid, runtimeFile, path, sizeof(path), error)) {
+  if (!installerForKind(kind).stagingFilePath(uuid, runtimeFile, path, sizeof(path), error)) {
     server->send(400, "application/json", "{\"error\":\"Invalid dictionary path\"}");
     return;
   }
   uint64_t bytes = 0;
   HalFile file;
   if (Storage.openFileForRead("DIN", path, file)) bytes = file.fileSize64();
-  if (bytes > dictionaryRuntimeFileLimit(runtimeFile)) {
+  if (bytes > dictionaryRuntimeFileLimit(kind, runtimeFile)) {
     LOG_ERR("WEB", "Staged dictionary file exceeds runtime cap");
     server->send(400, "application/json", "{\"error\":\"Invalid staged file\"}");
     return;
@@ -2732,41 +2797,80 @@ void CrossPointWebServer::handleDictionaryInstallProgress() {
 
 void CrossPointWebServer::handleDictionaryInstallCommit() {
   uint8_t uuid[16]{};
-  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
-    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+  DictionaryPackageKind kind;
+  dictionary::installer::InstallError error;
+  if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
+      !openInstallerForKind(kind, error)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary commit request\"}");
     return;
   }
   if (dictionaryUpload.file) {
     server->send(409, "application/json", "{\"error\":\"Dictionary upload still active\"}");
     return;
   }
-  dictionary::installer::PackageInfo info;
-  dictionary::installer::InstallError error;
+
+  uint32_t lexemeCount = 0;
+  uint32_t coverageCount = 0;
+  uint64_t runtimeBytes = 0;
+  bool committed = false;
   // Reuse the network-only upload buffer for full-file CRC streaming. This
   // avoids a second allocation and keeps validation reads at 2 KB per chunk.
-  if (!dictionaryInstaller.commit(uuid, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), info, error,
-                                  prepareDictionaryLearningState, nullptr)) {
+  if (kind == DictionaryPackageKind::Legacy) {
+    dictionary::installer::PackageInfo info;
+    committed = dictionaryInstaller.commit(uuid, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), info,
+                                           error, prepareDictionaryLearningState, nullptr);
+    lexemeCount = info.lexemeCount;
+    runtimeBytes = info.runtimeBytes;
+  } else if (kind == DictionaryPackageKind::Canonical) {
+    dictionary::installer::CanonicalPackageInfo info;
+    committed = contextualInstaller.commitCanonical(uuid, dictionaryUpload.buffer.data(),
+                                                    dictionaryUpload.buffer.size(), info, error);
+    lexemeCount = info.lexemeCount;
+    runtimeBytes = info.runtimeBytes;
+  } else {
+    uint8_t canonicalUuid[16]{};
+    dictionary::installer::CanonicalPackageInfo canonical;
+    if (!namedUuidArg(*server, "canonicalUuid", canonicalUuid) ||
+        !contextualInstaller.open(dictionary::storage::backend(), dictionary::storage::CANONICAL_ROOT_PATH, error) ||
+        !contextualInstaller.inspectInstalledCanonical(canonicalUuid, canonical, error) ||
+        !contextualInstaller.open(dictionary::storage::backend(), dictionary::storage::DEFINITION_SOURCE_ROOT_PATH,
+                                  error)) {
+      server->send(400, "application/json", "{\"error\":\"Compatible canonical lexicon is not installed\"}");
+      return;
+    }
+    dictionary::installer::DefinitionSourcePackageInfo info;
+    committed =
+        contextualInstaller.commitDefinition(uuid, canonicalUuid, canonical.lexemeCount, dictionaryUpload.buffer.data(),
+                                             dictionaryUpload.buffer.size(), info, error);
+    lexemeCount = info.canonicalLexemeCount;
+    coverageCount = info.coverageCount;
+    runtimeBytes = info.runtimeBytes;
+  }
+  if (!committed) {
     LOG_ERR("WEB", "Dictionary commit failed: %s", dictionary::installer::installErrorName(error));
-    char response[96]{};
-    std::snprintf(response, sizeof(response), "{\"error\":\"%s\"}", dictionary::installer::installErrorName(error));
-    server->send(400, "application/json", response);
+    std::snprintf(dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), "{\"error\":\"%s\"}",
+                  dictionary::installer::installErrorName(error));
+    server->send(400, "application/json", dictionaryUpload.filePath);
     return;
   }
-  char response[160]{};
-  std::snprintf(response, sizeof(response), "{\"ok\":true,\"lexemeCount\":%lu,\"runtimeBytes\":%llu}",
-                static_cast<unsigned long>(info.lexemeCount), static_cast<unsigned long long>(info.runtimeBytes));
-  server->send(200, "application/json", response);
+  std::snprintf(dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath),
+                "{\"ok\":true,\"lexemeCount\":%lu,\"coverageCount\":%lu,\"runtimeBytes\":%llu}",
+                static_cast<unsigned long>(lexemeCount), static_cast<unsigned long>(coverageCount),
+                static_cast<unsigned long long>(runtimeBytes));
+  server->send(200, "application/json", dictionaryUpload.filePath);
 }
 
 void CrossPointWebServer::handleDictionaryInstallCancel() {
   uint8_t uuid[16]{};
-  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
-    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+  DictionaryPackageKind kind;
+  dictionary::installer::InstallError error;
+  if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
+      !openInstallerForKind(kind, error)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary cancel request\"}");
     return;
   }
   if (dictionaryUpload.file) abortDictionaryUpload();
-  dictionary::installer::InstallError error;
-  if (!dictionaryInstaller.cancel(uuid, error)) {
+  if (!installerForKind(kind).cancel(uuid, error)) {
     LOG_ERR("WEB", "Dictionary install cancellation failed: %s", dictionary::installer::installErrorName(error));
     server->send(500, "application/json", "{\"error\":\"Could not cancel installation\"}");
     return;
@@ -2776,21 +2880,82 @@ void CrossPointWebServer::handleDictionaryInstallCancel() {
 
 void CrossPointWebServer::handleDictionaryRemove() {
   uint8_t uuid[16]{};
-  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid)) {
-    server->send(400, "application/json", "{\"error\":\"Invalid dictionary UUID\"}");
+  DictionaryPackageKind kind;
+  dictionary::installer::InstallError error;
+  if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
+      !openInstallerForKind(kind, error)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid dictionary removal request\"}");
     return;
   }
   if (dictionaryUpload.file) {
     server->send(409, "application/json", "{\"error\":\"Dictionary upload still active\"}");
     return;
   }
-  dictionary::installer::InstallError error;
-  if (!dictionaryInstaller.remove(uuid, error)) {
+  if (!installerForKind(kind).remove(uuid, error)) {
     LOG_ERR("WEB", "Dictionary removal failed: %s", dictionary::installer::installErrorName(error));
     server->send(500, "application/json", "{\"error\":\"Dictionary removal failed\"}");
     return;
   }
   server->send(200, "application/json", "{\"ok\":true}");
+}
+
+void CrossPointWebServer::handleContextualAttachments() {
+  if (!contextualStorageReady || dictionaryUpload.file) {
+    server->send(409, "application/json", "{\"error\":\"Contextual dictionary storage is busy\"}");
+    return;
+  }
+  uint8_t canonicalUuid[16]{};
+  uint32_t generation = 0;
+  uint32_t sourceCount = 0;
+  dictionary::installer::InstallError installError;
+  if (!namedUuidArg(*server, "canonicalUuid", canonicalUuid) ||
+      !unsignedArg(*server, "generation", UINT32_MAX, generation) ||
+      !unsignedArg(*server, "count", dictionary::contextual::kMaxAttachedSources, sourceCount) ||
+      !contextualInstaller.open(dictionary::storage::backend(), dictionary::storage::CANONICAL_ROOT_PATH,
+                                installError)) {
+    server->send(400, "application/json", "{\"error\":\"Invalid attachment request\"}");
+    return;
+  }
+  dictionary::installer::CanonicalPackageInfo canonical;
+  if (!contextualInstaller.inspectInstalledCanonical(canonicalUuid, canonical, installError) ||
+      !contextualInstaller.installedDirectoryPath(canonicalUuid, dictionaryUpload.filePath,
+                                                  sizeof(dictionaryUpload.filePath), installError)) {
+    server->send(400, "application/json", "{\"error\":\"Canonical lexicon is not installed\"}");
+    return;
+  }
+
+  uint8_t* sourceUuids = dictionaryUpload.buffer.data();
+  for (uint32_t index = 0; index < sourceCount; ++index) {
+    char argument[12]{};
+    std::snprintf(argument, sizeof(argument), "source%lu", static_cast<unsigned long>(index));
+    auto& sourceUuid = *reinterpret_cast<uint8_t (*)[16]>(sourceUuids + index * 16);
+    if (!namedUuidArg(*server, argument, sourceUuid)) {
+      server->send(400, "application/json", "{\"error\":\"Invalid attached source UUID\"}");
+      return;
+    }
+  }
+
+  dictionary::contextual::AttachmentError attachmentError;
+  if (!contextualAttachmentStore.open(dictionary::attachment_storage::backend(), dictionaryUpload.filePath,
+                                      canonicalUuid, attachmentError) ||
+      !contextualInstaller.open(dictionary::storage::backend(), dictionary::storage::DEFINITION_SOURCE_ROOT_PATH,
+                                installError)) {
+    server->send(500, "application/json", "{\"error\":\"Attachment storage unavailable\"}");
+    return;
+  }
+  AttachmentCompatibilityContext compatibility{&contextualInstaller, canonical.lexemeCount};
+  dictionary::contextual::AttachmentRecord updated;
+  const auto callback = sourceCount == 0 ? nullptr : attachmentSourceCompatible;
+  if (!contextualAttachmentStore.replace(sourceUuids, static_cast<uint8_t>(sourceCount), generation, callback,
+                                         &compatibility, updated, attachmentError)) {
+    std::snprintf(dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), "{\"error\":\"%s\"}",
+                  dictionary::contextual::attachmentErrorName(attachmentError));
+    server->send(400, "application/json", dictionaryUpload.filePath);
+    return;
+  }
+  std::snprintf(dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), "{\"ok\":true,\"generation\":%lu}",
+                static_cast<unsigned long>(updated.generation));
+  server->send(200, "application/json", dictionaryUpload.filePath);
 }
 
 void CrossPointWebServer::handleDictionaryLearningList() {

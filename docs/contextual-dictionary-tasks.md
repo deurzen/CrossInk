@@ -68,7 +68,7 @@ committed.
 | C20 | Done | Extend transactional installer for `.cplex` and `.cpdef` runtime files | Interrupted install/replace/remove recovers previous package; one-reader hardware rule preserved |
 | C21 | Done | Add atomic attachment record for at most three sources | Order persists; duplicate/mismatched/missing UUIDs rejected or skipped; interrupted write retains old record |
 | C22 | Done | Extend inventory APIs with canonical/source compatibility | Bounded JSON output reports labels, direction, coverage and attachment order |
-| C23 | Planned | Add WebUI installation and source-order controls | Compiler models stay on desktop; only runtime files upload; source reorder requires no EPUB recompile |
+| C23 | Done | Add WebUI installation and source-order controls | Compiler models stay on desktop; only runtime files upload; source reorder requires no EPUB recompile |
 
 ## Phase E — firmware lookup and UI
 
@@ -187,8 +187,25 @@ metadata present, request `/api/dictionaries/contextual`, and verify valid JSON,
 correct compatibility/order, no `DIN` handle failures and full heap recovery
 after leaving network mode.
 
+## C23 implementation note
+
+The Dictionaries page now recognizes `.cplex` and `.cpdef` manifests, enforces
+fixed runtime paths and size caps, verifies declared SHA-256 when Web Crypto is
+available, and sends only runtime files through the existing resumable 256 KB
+requests and reusable 2 KB firmware buffer. Firmware selects roots and allowed
+filenames from an explicit package kind, validates an installed canonical
+UUID/count before publishing a definition source, and never accepts a client SD
+path. Attachment controls use optimistic generation updates and require all
+ordered sources to be installed and compatible; reordering does not touch EPUBs.
+
+On X3/X4, install the production canonical package and all three sources over a
+throttled or interrupted connection, confirm resume offsets and coverage, then
+attach/reorder/detach sources and reboot. Expected behavior is stable ordering,
+no uploaded `compiler/` files, no simultaneous `DIN` open failures, and full
+network-mode heap recovery after returning to the reader.
+
 ## Immediate next work
 
-1. Add WebUI installation and source-order controls in C23.
-2. Switch learning state and book artifacts to canonical UUID identity in C24.
+1. Switch learning state and book artifacts to canonical UUID identity in C24.
+2. Discover and retain at most three bounded definition descriptors in C25.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

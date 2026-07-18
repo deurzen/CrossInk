@@ -414,7 +414,8 @@ never loads a source index or definition payload.
 
 ### Transactional installation
 
-Installation is a five-file sequence followed by an explicit commit:
+Installation is a fixed-file sequence followed by an explicit commit. Omitting
+`kind` (or using `kind=legacy`) retains the five-file `.cpdict` API:
 
 ```bash
 UUID=01020304-0506-0708-090a-0b0c0d0e0f10
@@ -437,9 +438,24 @@ payload once through the same buffer, validates `meta.bin`, exact sizes, UUID,
 and CRCs, then publishes the package with a directory rename. Failed validation
 leaves an existing same-UUID package untouched.
 
+Contextual packages use the same start/file/progress/commit/cancel endpoints
+with `kind=canonical` or `kind=definition`. Canonical uploads accept only
+`meta.bin`, `lexemes.bin`, `headwords.bin`, and `licenses.txt`; definition
+uploads accept only `meta.bin`, `entry-index.bin`, `entries.bin`, and
+`licenses.txt`. A definition commit also supplies `canonicalUuid`; firmware
+requires that exact canonical UUID and lexeme count to be installed before
+publishing the source. Browser compiler/model files in `.cplex` and `.cpdef`
+archives are never uploaded.
+
+`POST /api/dictionaries/contextual/attachments` takes `canonicalUuid`, the
+current `generation`, `count=0..3`, and ordered `source0` through `source2`
+UUIDs. It rejects stale generations, duplicates, missing packages, and sources
+for another canonical identity before atomically replacing `attachments.bin`.
+
 `POST /api/dictionaries/install/cancel?uuid=<uuid>` removes an incomplete
-staging directory. `POST /api/dictionaries/remove?uuid=<uuid>` atomically
-removes an installed package; learning state is deliberately retained under
+staging directory. Include the same `kind` used at start. `POST
+/api/dictionaries/remove?uuid=<uuid>&kind=<kind>` atomically removes an installed
+package; learning state is deliberately retained under
 `/.crosspoint/language-state/`.
 
 ### Learning-state review

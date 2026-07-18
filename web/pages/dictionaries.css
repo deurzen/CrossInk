@@ -1,4 +1,5 @@
 h2 { color: var(--title-color); margin: 0 0 8px; font-size: 1.15em; }
+h3 { color: var(--title-color); margin: 18px 0 6px; font-size: 1em; }
 .hint { color: var(--label-color); margin: 4px 0 14px; line-height: 1.45; }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .dictionary-row { border-bottom: 1px solid var(--border-color); padding: 15px 0; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
@@ -12,6 +13,14 @@ h2 { color: var(--title-color); margin: 0 0 8px; font-size: 1.15em; }
 .badge-warn { color: #a16207; border-color: rgba(202, 138, 4, 0.35); background: rgba(202, 138, 4, 0.08); }
 .badge-error { color: #b91c1c; border-color: rgba(220, 38, 38, 0.35); background: rgba(220, 38, 38, 0.08); }
 .install-row, .review-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.contextual-block { border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+.contextual-block:last-child { border-bottom: none; }
+.compact-row { border-bottom: none; padding-bottom: 8px; }
+.source-order { margin: 0 0 8px 12px; padding: 10px 12px; border-left: 2px solid var(--border-color); }
+.source-order-row, .source-add-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; }
+.inline-actions { display: flex; align-items: center; gap: 5px; }
+.btn-small { padding: 5px 9px; }
+.compact-empty { text-align: left; padding: 8px 0; }
 #reviewDictionary { padding: 8px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg); color: var(--font-color); max-width: 280px; }
 .learning-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border-color); }
 .learning-row:last-child { border-bottom: none; }
@@ -39,5 +48,6 @@ code { font-size: 0.9em; }
   .install-row { align-items: stretch; flex-direction: column; }
   .install-row input { min-width: 0; }
   .learning-row { grid-template-columns: 1fr; }
+  .source-order-row, .source-add-row { align-items: stretch; flex-direction: column; }
   #reviewDictionary { max-width: none; }
 }

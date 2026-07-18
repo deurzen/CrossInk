@@ -1,8 +1,8 @@
 <div class="card">
   <div class="section-heading">
     <div>
-      <h2>Installed Dictionaries</h2>
-      <p class="hint">Runtime definitions stored on the reader. Learning state is retained when a dictionary is removed.</p>
+      <h2>Legacy Dictionaries</h2>
+      <p class="hint">Exact-form <code>.cpdict</code> runtime bundles. Learning state is retained when a dictionary is removed.</p>
     </div>
     <button class="btn btn-secondary" type="button" onclick="loadDictionaries()">Refresh</button>
   </div>
@@ -10,7 +10,30 @@
 </div>
 
 <div class="card">
-  <h2>Install Dictionary Bundle</h2>
+  <div class="section-heading">
+    <div>
+      <h2>Contextual Dictionaries</h2>
+      <p class="hint">Canonical learning identity with independently installed and ordered definition sources.</p>
+    </div>
+    <button class="btn btn-secondary" type="button" onclick="loadContextualInventory()">Refresh</button>
+  </div>
+  <h3>Canonical lexicons</h3>
+  <div id="canonicalList"><p class="empty">Loading…</p></div>
+  <h3>Definition sources</h3>
+  <div id="definitionSourceList"><p class="empty">Loading…</p></div>
+</div>
+
+<div class="card">
+  <h2>Install Contextual Package</h2>
+  <p class="hint">Select a <code>.cplex</code> canonical lexicon or <code>.cpdef</code> definition source. Only runtime files are uploaded; morphology models and compiler metadata stay on this computer.</p>
+  <div class="install-row">
+    <input type="file" id="contextualBundleInput" accept=".cplex,.cpdef,application/zip" />
+    <button class="btn btn-primary" id="contextualInstallBtn" type="button" onclick="installContextualBundle()">Install contextual package</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Install Legacy Dictionary Bundle</h2>
   <p class="hint">Select a <code>.cpdict</code> bundle. Runtime files are installed on the reader; compiler forms stay only in this browser for EPUB optimization.</p>
   <div class="install-row">
     <input type="file" id="bundleInput" accept=".cpdict,application/zip" />
