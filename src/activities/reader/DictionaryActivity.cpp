@@ -282,6 +282,14 @@ bool DictionaryActivity::openDefinition() {
     requestUpdate();
     return false;
   }
+  definitionPageStart_ = {};
+  definitionPageNext_ = {};
+  contextualIndexes_ = {};
+  contextualIndexCount_ = 0;
+  contextualIndexAnalysis_ = UINT8_MAX;
+  definitionPageIndex_ = 0;
+  if (definitionPage_) *definitionPage_ = {};
+
   const auto ioBefore = session_->sourceIoMetrics();
   const std::string_view surface = shortlist_->surface(selected_);
   const size_t headwordLength = std::min(surface.size(), sizeof(headword_) - 1);
@@ -326,12 +334,6 @@ bool DictionaryActivity::openDefinition() {
     return false;
   }
 
-  definitionPageStart_ = {};
-  definitionPageNext_ = {};
-  contextualIndexes_ = {};
-  contextualIndexCount_ = 0;
-  contextualIndexAnalysis_ = UINT8_MAX;
-  definitionPageIndex_ = 0;
   mode_ = Mode::Definition;
   const bool loaded = loadDefinitionPage(definitionPageStart_, 0);
   const auto io = dictionary::io_metrics::difference(session_->sourceIoMetrics(), ioBefore);
@@ -522,6 +524,41 @@ void DictionaryActivity::changeDefinitionPage(const int delta) {
   }
 }
 
+void DictionaryActivity::changeSelectedWord(const int delta) {
+  if (delta == 0 || !session_ || !shortlist_ || selected_ >= shortlist_->count) return;
+  const uint16_t oldIndex = selected_;
+  if (statusFilterPending_) {
+    dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
+    if (!session_->filterShortlist(*shortlist_, error)) {
+      LOG_ERR("DICT", "Post-status shortlist filter failed: %s", dictionary::lookup::sessionErrorName(error));
+      statusSaved_ = false;
+      definitionFailed_ = true;
+      definitionFailure_ = DefinitionFailure::General;
+      requestUpdate();
+      return;
+    }
+    statusFilterPending_ = false;
+    statusSaved_ = false;
+    if (shortlist_->count == 0) {
+      finish();
+      return;
+    }
+    if (delta > 0) {
+      selected_ = oldIndex < shortlist_->count ? oldIndex : 0;
+    } else {
+      selected_ = oldIndex == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : oldIndex - 1;
+    }
+  } else {
+    if (shortlist_->count <= 1) return;
+    if (delta > 0) {
+      selected_ = static_cast<uint16_t>((selected_ + 1) % shortlist_->count);
+    } else {
+      selected_ = selected_ == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : selected_ - 1;
+    }
+  }
+  openDefinition();
+}
+
 void DictionaryActivity::saveSelectedStatus() {
   dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
   const auto& item = shortlist_->items[selected_];
@@ -530,6 +567,7 @@ void DictionaryActivity::saveSelectedStatus() {
     statusSaved_ = false;
     mode_ = Mode::Definition;
     definitionFailed_ = true;
+    definitionFailure_ = DefinitionFailure::General;
     requestUpdate();
     return;
   }
@@ -538,6 +576,7 @@ void DictionaryActivity::saveSelectedStatus() {
           ESP.getFreeHeap(), ESP.getMaxAllocHeap(),
           static_cast<unsigned long>(dictionary::io_metrics::currentTaskStackHighWaterBytes()));
   statusSaved_ = true;
+  statusFilterPending_ = true;
   mode_ = Mode::Definition;
   requestUpdate();
 }
@@ -547,6 +586,8 @@ void DictionaryActivity::returnToShortlist() {
   if (!session_->filterShortlist(*shortlist_, error)) {
     LOG_ERR("DICT", "Shortlist status filter failed: %s", dictionary::lookup::sessionErrorName(error));
   }
+  statusFilterPending_ = false;
+  statusSaved_ = false;
   if (shortlist_->count == 0) {
     finish();
     return;
@@ -577,14 +618,20 @@ void DictionaryActivity::loop() {
     if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
       selected_ = selected_ == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : selected_ - 1;
       requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
       selected_ = static_cast<uint16_t>((selected_ + 1) % shortlist_->count);
       requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
       const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
       selected_ = selected_ > rows ? static_cast<uint16_t>(selected_ - rows) : 0;
       requestUpdate();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
       const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
       selected_ = static_cast<uint16_t>(std::min<size_t>(shortlist_->count - 1, selected_ + rows));
       requestUpdate();
@@ -595,37 +642,51 @@ void DictionaryActivity::loop() {
   if (mode_ == Mode::Status) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       saveSelectedStatus();
-    } else {
-      const bool previous = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
-                            mappedInput.wasReleased(MappedInputManager::Button::Left);
-      const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
-                        mappedInput.wasReleased(MappedInputManager::Button::Right);
-      if (previous) {
-        statusSelection_ = statusSelection_ == 0 ? 2 : statusSelection_ - 1;
-        requestUpdate();
-      } else if (next) {
-        statusSelection_ = static_cast<uint8_t>((statusSelection_ + 1) % 3);
-        requestUpdate();
-      }
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+      statusSelection_ = statusSelection_ == 0 ? 2 : statusSelection_ - 1;
+      requestUpdate();
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+      statusSelection_ = static_cast<uint8_t>((statusSelection_ + 1) % 3);
+      requestUpdate();
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+      statusSelection_ = statusSelection_ == 0 ? 2 : statusSelection_ - 1;
+      requestUpdate();
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+      statusSelection_ = static_cast<uint8_t>((statusSelection_ + 1) % 3);
+      requestUpdate();
     }
     return;
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) && !definitionFailed_) {
-    mode_ = Mode::Status;
-    statusSelection_ = 0;
-    requestUpdate();
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    if (!definitionFailed_) {
+      mode_ = Mode::Status;
+      statusSelection_ = 0;
+      requestUpdate();
+    }
     return;
   }
-  const bool previous = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
-                        mappedInput.wasReleased(MappedInputManager::Button::Left);
-  const bool next = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
-                    mappedInput.wasReleased(MappedInputManager::Button::Right);
-  if (previous) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
     changeDefinitionPage(-1);
-  } else if (next) {
-    changeDefinitionPage(1);
+    return;
   }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+    changeDefinitionPage(1);
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+    changeSelectedWord(-1);
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Down)) changeSelectedWord(1);
 }
 
 void DictionaryActivity::renderShortlist() {

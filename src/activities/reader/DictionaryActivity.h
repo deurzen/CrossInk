@@ -71,6 +71,7 @@ class DictionaryActivity final : public Activity {
   bool definitionFailed_ = false;
   bool contextualSourceWarning_ = false;
   bool statusSaved_ = false;
+  bool statusFilterPending_ = false;
   DefinitionFailure definitionFailure_ = DefinitionFailure::None;
 
   bool openDefinition();
@@ -81,6 +82,7 @@ class DictionaryActivity final : public Activity {
   bool loadAnalysisLabel(uint8_t analysisIndex);
   void resetAnalysisLabels();
   void changeDefinitionPage(int delta);
+  void changeSelectedWord(int delta);
   void saveSelectedStatus();
   void returnToShortlist();
   int shortlistRowsPerPage() const;

@@ -212,7 +212,7 @@ and primary-ranking errors rather than adding guesses.
 | U10 | Done | Carry primary grammar into the shortlist | Fixed item growth stays within the 4 KiB shortlist and 192-byte incremental budget |
 | U11 | Done | Add bounded canonical analysis-label loading | Labels use the switching reader, lazy fixed cache and no render-time I/O or second handle |
 | U12 | Done | Render primary grammar and labeled alternatives | Primary line and every alternative boundary are translated, pagination-safe and orientation-safe |
-| U13 | Planned | Add direct previous/next word navigation | Side buttons switch sorted words, reuse buffers, reset cursors, handle saved-status filtering and work from failures |
+| U13 | Done | Add direct previous/next word navigation | Side buttons switch sorted words, reuse buffers, reset cursors, handle saved-status filtering and work from failures |
 | U14 | Planned | Update button hints and position feedback | Front hints remain accurate; current/total feedback fits bezel-safe bounds in all orientations |
 
 U09 cuts firmware acceptance directly from v4 to v5. The allocation-free reader
@@ -243,6 +243,13 @@ buffer formatter with POS-aware order and deterministic width omission, and a
 stores the 3-bit analysis index without growing the 6-byte line or definition
 page; the cursor carries label state so page-start and reverse replay labels are
 stable. Retained activity growth through U12 is 511 bytes, below 768.
+
+U13 separates front Left/Right definition paging from side Up/Down sorted-word
+navigation with strict one-action event priority. Word changes reuse the pager,
+page, session and shortlist; reset labels, indexes, warnings and cursors; wrap
+from failures; and avoid I/O for a one-item list. A one-byte pending flag applies
+the U03 predecessor/successor rule after a saved status removes the current
+item, including empty-list finish and explicit filter failure.
 
 ## Phase D — tests, cutover and qualification
 
