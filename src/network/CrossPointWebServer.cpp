@@ -28,6 +28,7 @@
 #include "SettingsList.h"
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
+#include "dictionary/AttachmentStorage.h"
 #include "dictionary/DictionaryReviewSession.h"
 #include "dictionary/DictionaryStorage.h"
 #include "dictionary/LanguageStateStorage.h"
@@ -51,6 +52,48 @@ namespace {
 constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
 constexpr uint16_t UDP_PORTS[] = {54982, 48123, 39001, 44044, 59678};
 constexpr uint16_t LOCAL_UDP_PORT = 8134;
+
+struct CanonicalInventoryIdentity {
+  uint8_t uuid[16]{};
+  uint32_t lexemeCount = 0;
+};
+
+bool inventoryContainsCanonical(const CanonicalInventoryIdentity* identities, const size_t count,
+                                const uint8_t (&uuid)[16], const uint32_t lexemeCount) {
+  for (size_t index = 0; index < count; ++index) {
+    if (identities[index].lexemeCount == lexemeCount && std::memcmp(identities[index].uuid, uuid, 16) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool escapeJsonText(const char* input, char* output, const size_t capacity) {
+  if (input == nullptr || output == nullptr || capacity == 0) return false;
+  static constexpr char HEX_DIGITS[] = "0123456789abcdef";
+  size_t written = 0;
+  for (size_t index = 0; input[index] != '\0'; ++index) {
+    const uint8_t value = static_cast<uint8_t>(input[index]);
+    if (value == '"' || value == '\\') {
+      if (written + 2 >= capacity) return false;
+      output[written++] = '\\';
+      output[written++] = static_cast<char>(value);
+    } else if (value < 0x20U) {
+      if (written + 6 >= capacity) return false;
+      output[written++] = '\\';
+      output[written++] = 'u';
+      output[written++] = '0';
+      output[written++] = '0';
+      output[written++] = HEX_DIGITS[value >> 4U];
+      output[written++] = HEX_DIGITS[value & 0x0FU];
+    } else {
+      if (written + 1 >= capacity) return false;
+      output[written++] = static_cast<char>(value);
+    }
+  }
+  output[written] = '\0';
+  return true;
+}
 
 bool prewarmUploadedDictionaryEpub(const String& filePath, String& error) {
   String lower = filePath;
@@ -492,6 +535,10 @@ void CrossPointWebServer::begin() {
   if (!dictionaryStorageReady) {
     LOG_ERR("WEB", "Dictionary storage unavailable: %s", dictionary::installer::installErrorName(dictionaryError));
   }
+  contextualStorageReady = contextualInstaller.open(dictionary::storage::backend(),
+                                                    dictionary::storage::CANONICAL_ROOT_PATH, dictionaryError) &&
+                           Storage.ensureDirectoryExists(dictionary::storage::DEFINITION_SOURCE_ROOT_PATH);
+  if (!contextualStorageReady) LOG_ERR("WEB", "Contextual dictionary storage unavailable");
 
   // Word Inbox endpoints
   server->on("/api/word-inbox/books", HTTP_GET, [this] { handleWordInboxBooks(); });
@@ -504,6 +551,7 @@ void CrossPointWebServer::begin() {
   // Dictionary management endpoints. Runtime filenames and destination paths
   // are selected by firmware, never accepted as arbitrary client paths.
   server->on("/api/dictionaries", HTTP_GET, [this] { handleDictionaryList(); });
+  server->on("/api/dictionaries/contextual", HTTP_GET, [this] { handleContextualDictionaryList(); });
   server->on("/api/dictionaries/install/start", HTTP_POST, [this] { handleDictionaryInstallStart(); });
   server->on(
       "/api/dictionaries/install/file", HTTP_POST, [this] { handleDictionaryInstallUpload(); },
@@ -2352,6 +2400,142 @@ void CrossPointWebServer::handleDictionaryList() {
     esp_task_wdt_reset();
   }
   server->sendContent("]");
+  server->sendContent("");
+}
+
+void CrossPointWebServer::handleContextualDictionaryList() {
+  if (!contextualStorageReady) {
+    server->send(503, "application/json", "{\"error\":\"Contextual dictionary storage unavailable\"}");
+    return;
+  }
+
+  constexpr size_t uuidBytes = dictionary::storage::MAX_INSTALLED_BUNDLES * 16;
+  constexpr size_t identityBytes = dictionary::storage::MAX_INSTALLED_BUNDLES * sizeof(CanonicalInventoryIdentity);
+  constexpr size_t outputBytes = 512;
+  // This cold WebUI path needs two bounded UUID inventories plus compatibility
+  // identities. Keeping 3840 bytes in one fallible allocation avoids a large
+  // web-task stack frame and repeated heap churn while streaming the response.
+  auto memory = makeUniqueNoThrow<uint8_t[]>(uuidBytes * 2 + identityBytes + outputBytes);
+  if (!memory) {
+    LOG_ERR("WEB", "OOM allocating contextual dictionary inventory");
+    server->send(503, "application/json", "{\"error\":\"Insufficient memory\"}");
+    return;
+  }
+  uint8_t* canonicalUuids = memory.get();
+  uint8_t* sourceUuids = canonicalUuids + uuidBytes;
+  auto* identities = reinterpret_cast<CanonicalInventoryIdentity*>(sourceUuids + uuidBytes);
+  char* output = reinterpret_cast<char*>(identities + dictionary::storage::MAX_INSTALLED_BUNDLES);
+  size_t canonicalCount = 0;
+  size_t sourceCount = 0;
+  if (!dictionary::storage::collectPackageUuids(dictionary::storage::CANONICAL_ROOT_PATH, canonicalUuids,
+                                                dictionary::storage::MAX_INSTALLED_BUNDLES, canonicalCount) ||
+      !dictionary::storage::collectPackageUuids(dictionary::storage::DEFINITION_SOURCE_ROOT_PATH, sourceUuids,
+                                                dictionary::storage::MAX_INSTALLED_BUNDLES, sourceCount)) {
+    LOG_ERR("WEB", "Failed to scan contextual dictionary directories");
+    server->send(500, "application/json", "{\"error\":\"Contextual dictionary scan failed\"}");
+    return;
+  }
+
+  dictionary::installer::InstallError installError;
+  if (!contextualInstaller.open(dictionary::storage::backend(), dictionary::storage::CANONICAL_ROOT_PATH,
+                                installError)) {
+    server->send(500, "application/json", "{\"error\":\"Canonical inventory unavailable\"}");
+    return;
+  }
+
+  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server->send(200, "application/json", "");
+  server->sendContent("{\"canonicalLexicons\":[");
+  bool first = true;
+  size_t identityCount = 0;
+  for (size_t index = 0; index < canonicalCount; ++index) {
+    uint8_t uuid[16]{};
+    std::memcpy(uuid, canonicalUuids + index * 16, sizeof(uuid));
+    dictionary::installer::CanonicalPackageInfo info;
+    const bool valid = contextualInstaller.inspectInstalledCanonical(uuid, info, installError);
+    if (!valid && installError == dictionary::installer::InstallError::PACKAGE_MISSING) continue;
+    char uuidText[37]{};
+    dictionary::storage::formatUuid(uuid, uuidText);
+    if (!valid) {
+      std::snprintf(output, outputBytes, "%s{\"uuid\":\"%s\",\"valid\":false,\"error\":\"%s\"}", first ? "" : ",",
+                    uuidText, dictionary::installer::installErrorName(installError));
+      server->sendContent(output);
+      first = false;
+      continue;
+    }
+
+    std::memcpy(identities[identityCount].uuid, info.canonicalUuid, 16);
+    identities[identityCount].lexemeCount = info.lexemeCount;
+    ++identityCount;
+    dictionary::contextual::AttachmentRecord attachments;
+    dictionary::contextual::AttachmentError attachmentError;
+    const bool attachmentValid =
+        contextualInstaller.installedDirectoryPath(uuid, output, outputBytes, installError) &&
+        contextualAttachmentStore.open(dictionary::attachment_storage::backend(), output, uuid, attachmentError) &&
+        contextualAttachmentStore.load(attachments, attachmentError);
+    std::snprintf(output, outputBytes,
+                  "%s{\"uuid\":\"%s\",\"valid\":true,\"sourceLanguage\":\"%s\","
+                  "\"lexemeCount\":%lu,\"runtimeBytes\":%llu,\"attachmentsValid\":%s,"
+                  "\"attachmentGeneration\":%lu,\"attachedSourceUuids\":[",
+                  first ? "" : ",", uuidText, info.sourceLanguage, static_cast<unsigned long>(info.lexemeCount),
+                  static_cast<unsigned long long>(info.runtimeBytes), attachmentValid ? "true" : "false",
+                  static_cast<unsigned long>(attachmentValid ? attachments.generation : 0));
+    server->sendContent(output);
+    if (attachmentValid) {
+      for (size_t source = 0; source < attachments.sourceCount; ++source) {
+        char sourceUuidText[37]{};
+        dictionary::storage::formatUuid(attachments.sourceUuids[source], sourceUuidText);
+        std::snprintf(output, outputBytes, "%s\"%s\"", source == 0 ? "" : ",", sourceUuidText);
+        server->sendContent(output);
+      }
+    }
+    server->sendContent("]}");
+    first = false;
+    esp_task_wdt_reset();
+  }
+
+  if (!contextualInstaller.open(dictionary::storage::backend(), dictionary::storage::DEFINITION_SOURCE_ROOT_PATH,
+                                installError)) {
+    server->sendContent("],\"definitionSources\":[],\"sourceScanError\":true}");
+    server->sendContent("");
+    return;
+  }
+  server->sendContent("],\"definitionSources\":[");
+  first = true;
+  for (size_t index = 0; index < sourceCount; ++index) {
+    uint8_t uuid[16]{};
+    std::memcpy(uuid, sourceUuids + index * 16, sizeof(uuid));
+    dictionary::installer::DefinitionSourcePackageInfo info;
+    const bool valid = contextualInstaller.inspectInstalledDefinitionMetadata(uuid, info, installError);
+    if (!valid && installError == dictionary::installer::InstallError::PACKAGE_MISSING) continue;
+    char uuidText[37]{};
+    dictionary::storage::formatUuid(uuid, uuidText);
+    if (!valid) {
+      std::snprintf(output, outputBytes, "%s{\"uuid\":\"%s\",\"valid\":false,\"error\":\"%s\"}", first ? "" : ",",
+                    uuidText, dictionary::installer::installErrorName(installError));
+      server->sendContent(output);
+      first = false;
+      continue;
+    }
+    char canonicalUuidText[37]{};
+    char escapedLabel[96]{};
+    dictionary::storage::formatUuid(info.canonicalUuid, canonicalUuidText);
+    if (!escapeJsonText(info.sourceLabel, escapedLabel, sizeof(escapedLabel))) std::strcpy(escapedLabel, "?");
+    const bool compatible =
+        inventoryContainsCanonical(identities, identityCount, info.canonicalUuid, info.canonicalLexemeCount);
+    std::snprintf(output, outputBytes,
+                  "%s{\"uuid\":\"%s\",\"valid\":true,\"canonicalUuid\":\"%s\","
+                  "\"compatible\":%s,\"sourceLanguage\":\"%s\",\"targetLanguage\":\"%s\","
+                  "\"label\":\"%s\",\"canonicalLexemeCount\":%lu,\"coverageCount\":%lu,"
+                  "\"runtimeBytes\":%llu}",
+                  first ? "" : ",", uuidText, canonicalUuidText, compatible ? "true" : "false", info.sourceLanguage,
+                  info.targetLanguage, escapedLabel, static_cast<unsigned long>(info.canonicalLexemeCount),
+                  static_cast<unsigned long>(info.coverageCount), static_cast<unsigned long long>(info.runtimeBytes));
+    server->sendContent(output);
+    first = false;
+    esp_task_wdt_reset();
+  }
+  server->sendContent("]}");
   server->sendContent("");
 }
 

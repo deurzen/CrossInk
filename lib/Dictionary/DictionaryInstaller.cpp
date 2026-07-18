@@ -35,6 +35,11 @@ bool backendValid(const StorageBackend& storage) {
          storage.validateCrc != nullptr;
 }
 
+uint32_t readU32(const uint8_t* data) {
+  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8U) |
+         (static_cast<uint32_t>(data[2]) << 16U) | (static_cast<uint32_t>(data[3]) << 24U);
+}
+
 int hexValue(const char value) {
   if (value >= '0' && value <= '9') return value - '0';
   if (value >= 'a' && value <= 'f') return value - 'a' + 10;
@@ -476,6 +481,31 @@ bool Installer::inspectInstalledDefinition(const uint8_t (&sourceUuid)[16], cons
   if (!recover(sourceUuid, error)) return false;
   return validateDefinitionPackage(sourceUuid, "", expectedCanonicalUuid, expectedCanonicalCount, nullptr, 0, false,
                                    info, error);
+}
+
+bool Installer::inspectInstalledDefinitionMetadata(const uint8_t (&sourceUuid)[16], DefinitionSourcePackageInfo& info,
+                                                   InstallError& error) {
+  if (!recover(sourceUuid, error)) return false;
+  SourceContext metaContext;
+  RandomAccessSource meta;
+  if (!makeSource(metaContext, sourceUuid, "", RuntimeFile::Meta, meta, error)) return false;
+  if (meta.size != contextual::kDefinitionMetaSize) {
+    error = InstallError::PACKAGE_INVALID;
+    return false;
+  }
+  uint8_t header[contextual::kDefinitionMetaSize]{};
+  if (!meta.readAt(meta.context, 0, header, sizeof(header))) {
+    error = InstallError::PACKAGE_INVALID;
+    return false;
+  }
+  uint8_t canonicalUuid[16]{};
+  std::memcpy(canonicalUuid, header + 28, sizeof(canonicalUuid));
+  const uint32_t canonicalCount = readU32(header + 92);
+  if (!validUuid(canonicalUuid) || canonicalCount == 0) {
+    error = InstallError::PACKAGE_INVALID;
+    return false;
+  }
+  return validateDefinitionPackage(sourceUuid, "", canonicalUuid, canonicalCount, nullptr, 0, false, info, error);
 }
 
 bool Installer::recover(const uint8_t (&bundleUuid)[16], InstallError& error) {

@@ -541,6 +541,10 @@ TEST(DictionaryInstaller, ValidatesDefinitionIdentityIndexAndAtomicRemoval) {
   EXPECT_EQ(info.coverageCount, 1U);
   EXPECT_STREQ(info.sourceLabel, "Fixture");
   EXPECT_EQ(storage.validateCrcCalls, 2);
+  dictionary::installer::DefinitionSourcePackageInfo inspected;
+  ASSERT_TRUE(installer.inspectInstalledDefinitionMetadata(OTHER_UUID, inspected, error));
+  EXPECT_EQ(std::memcmp(inspected.canonicalUuid, UUID, 16), 0);
+  EXPECT_EQ(inspected.canonicalLexemeCount, 2U);
 
   const std::string final = "/.crosspoint/definition-sources/100f0e0d0c0b0a090807060504030201";
   EXPECT_TRUE(storage.directories.contains(final));

@@ -395,6 +395,23 @@ that no longer passes this lightweight inspection is returned with
 [{"uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","valid":true,"sourceLanguage":"de","targetLanguage":"en","lexemeCount":200000,"runtimeBytes":48123456}]
 ```
 
+### `GET /api/dictionaries/contextual`
+
+Streams bounded canonical and definition-source inventories without reading
+large payloads. Canonical records include attachment generation and ordered
+source UUIDs. Definition sources report label, language direction, coverage,
+required canonical identity and whether that exact UUID/count is installed.
+Invalid packages remain visible with an error code so the WebUI can offer
+repair or removal.
+
+```json
+{"canonicalLexicons":[{"uuid":"c6246d63-38eb-5df8-9d83-ab0d812503f9","valid":true,"sourceLanguage":"de","lexemeCount":181609,"runtimeBytes":12345678,"attachmentsValid":true,"attachmentGeneration":3,"attachedSourceUuids":["01020304-0506-0708-090a-0b0c0d0e0f10"]}],"definitionSources":[{"uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","valid":true,"canonicalUuid":"c6246d63-38eb-5df8-9d83-ab0d812503f9","compatible":true,"sourceLanguage":"de","targetLanguage":"en","label":"dict.cc","canonicalLexemeCount":181609,"coverageCount":105036,"runtimeBytes":23456789}]}
+```
+
+The response uses one bounded 3,840-byte cold-path allocation and streams
+512-byte-or-smaller JSON chunks. It caps each package class at 64 records and
+never loads a source index or definition payload.
+
 ### Transactional installation
 
 Installation is a five-file sequence followed by an explicit commit:

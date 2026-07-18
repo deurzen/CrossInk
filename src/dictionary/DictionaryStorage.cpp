@@ -70,10 +70,12 @@ bool parseUuid(const char* text, uint8_t (&uuid)[16]) { return installer::parseB
 
 void formatUuid(const uint8_t (&uuid)[16], char (&output)[37]) { installer::formatBundleUuid(uuid, output); }
 
-bool collectBundleUuids(uint8_t* output, const size_t capacity, size_t& count) {
+bool collectPackageUuids(const char* rootPath, uint8_t* output, const size_t capacity, size_t& count) {
   count = 0;
-  if (output == nullptr || capacity == 0 || !Storage.ensureDirectoryExists(ROOT_PATH)) return false;
-  HalFile root = Storage.open(ROOT_PATH);
+  if (rootPath == nullptr || output == nullptr || capacity == 0 || !Storage.ensureDirectoryExists(rootPath)) {
+    return false;
+  }
+  HalFile root = Storage.open(rootPath);
   if (!root || !root.isDirectory()) return false;
 
   char name[64]{};
@@ -95,6 +97,10 @@ bool collectBundleUuids(uint8_t* output, const size_t capacity, size_t& count) {
     }
   }
   return true;
+}
+
+bool collectBundleUuids(uint8_t* output, const size_t capacity, size_t& count) {
+  return collectPackageUuids(ROOT_PATH, output, capacity, count);
 }
 
 }  // namespace dictionary::storage

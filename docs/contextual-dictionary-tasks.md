@@ -67,7 +67,7 @@ committed.
 | C19 | Done | Implement allocation-free canonical and definition-source header/index readers | Host fixtures reject truncation, overflow, bad CRC, UUID and count mismatches before seeking |
 | C20 | Done | Extend transactional installer for `.cplex` and `.cpdef` runtime files | Interrupted install/replace/remove recovers previous package; one-reader hardware rule preserved |
 | C21 | Done | Add atomic attachment record for at most three sources | Order persists; duplicate/mismatched/missing UUIDs rejected or skipped; interrupted write retains old record |
-| C22 | Planned | Extend inventory APIs with canonical/source compatibility | Bounded JSON output reports labels, direction, coverage and attachment order |
+| C22 | Done | Extend inventory APIs with canonical/source compatibility | Bounded JSON output reports labels, direction, coverage and attachment order |
 | C23 | Planned | Add WebUI installation and source-order controls | Compiler models stay on desktop; only runtime files upload; source reorder requires no EPUB recompile |
 
 ## Phase E — firmware lookup and UI
@@ -171,8 +171,24 @@ order and generation persist. Then cut power once after temp sync and once
 during replacement; reboot must expose either the complete previous order or
 the complete new order, never duplicate UUIDs or a partial record.
 
+## C22 implementation note
+
+`GET /api/dictionaries/contextual` now streams separate canonical and definition
+source inventories. It reports validity, UUID/count compatibility, labels,
+language direction, coverage, runtime bytes, attachment generation and source
+order. Enumeration is capped at 64 packages per class. The cold endpoint uses
+one fallible 3,840-byte work allocation and at most 512-byte JSON chunks; it
+never reads source indexes or entries. Roughly 1 KB of fixed installer/path
+state lives only inside the network server allocation and is released on exit,
+so reader-session RAM is unchanged.
+
+On hardware, open the Dictionaries page with valid, mismatched and corrupted
+metadata present, request `/api/dictionaries/contextual`, and verify valid JSON,
+correct compatibility/order, no `DIN` handle failures and full heap recovery
+after leaving network mode.
+
 ## Immediate next work
 
-1. Extend inventory APIs with canonical/source compatibility in C22.
-2. Add WebUI installation and source-order controls in C23.
+1. Add WebUI installation and source-order controls in C23.
+2. Switch learning state and book artifacts to canonical UUID identity in C24.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

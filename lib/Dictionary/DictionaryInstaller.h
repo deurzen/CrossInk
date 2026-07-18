@@ -110,6 +110,8 @@ class Installer {
   bool inspectInstalledDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
                                   uint32_t expectedCanonicalCount, DefinitionSourcePackageInfo& info,
                                   InstallError& error);
+  bool inspectInstalledDefinitionMetadata(const uint8_t (&sourceUuid)[16], DefinitionSourcePackageInfo& info,
+                                          InstallError& error);
   bool commitDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
                         uint32_t expectedCanonicalCount, uint8_t* scratch, size_t scratchSize,
                         DefinitionSourcePackageInfo& info, InstallError& error);

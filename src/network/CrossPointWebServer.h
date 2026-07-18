@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "../../lib/Dictionary/ContextualAttachments.h"
 #include "../../lib/Dictionary/DictionaryInstaller.h"
 
 // Structure to hold file information
@@ -121,6 +122,7 @@ class CrossPointWebServer {
 
   // Dictionary management handlers
   void handleDictionaryList();
+  void handleContextualDictionaryList();
   void handleDictionaryInstallStart();
   void handleDictionaryInstallUpload();
   void handleDictionaryInstallUploadData();
@@ -175,7 +177,13 @@ class CrossPointWebServer {
   } dictionaryUpload;
 
   dictionary::installer::Installer dictionaryInstaller;
+  // About 1 KB of fixed, reusable state in the already network-only server
+  // allocation. This avoids oversized request-handler stack objects, is freed
+  // when network mode exits, and never contributes to reader-session RAM.
+  dictionary::installer::Installer contextualInstaller;
+  dictionary::contextual::AttachmentStore contextualAttachmentStore;
   bool dictionaryStorageReady = false;
+  bool contextualStorageReady = false;
 
   // OPDS server handlers
   void handleGetOpdsServers() const;
