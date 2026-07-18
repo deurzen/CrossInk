@@ -1,0 +1,673 @@
+{
+  "canonicalLexemeCount": 181609,
+  "canonicalUuid": "c6246d63-38eb-5df8-9d83-ab0d812503f9",
+  "schemaVersion": 1,
+  "sources": {
+    "de-de": {
+      "byPartOfSpeech": {
+        "abbreviation": {
+          "covered": 4945,
+          "percent": 100.0,
+          "total": 4945
+        },
+        "adjective": {
+          "covered": 17614,
+          "percent": 100.0,
+          "total": 17614
+        },
+        "adposition": {
+          "covered": 155,
+          "percent": 100.0,
+          "total": 155
+        },
+        "adverb": {
+          "covered": 1561,
+          "percent": 100.0,
+          "total": 1561
+        },
+        "conjunction": {
+          "covered": 99,
+          "percent": 100.0,
+          "total": 99
+        },
+        "determiner": {
+          "covered": 22,
+          "percent": 100.0,
+          "total": 22
+        },
+        "interjection": {
+          "covered": 271,
+          "percent": 100.0,
+          "total": 271
+        },
+        "noun": {
+          "covered": 119466,
+          "percent": 100.0,
+          "total": 119466
+        },
+        "numeral": {
+          "covered": 389,
+          "percent": 100.0,
+          "total": 389
+        },
+        "other": {
+          "covered": 989,
+          "percent": 100.0,
+          "total": 989
+        },
+        "particle": {
+          "covered": 86,
+          "percent": 100.0,
+          "total": 86
+        },
+        "phrase": {
+          "covered": 5481,
+          "percent": 100.0,
+          "total": 5481
+        },
+        "pronoun": {
+          "covered": 144,
+          "percent": 100.0,
+          "total": 144
+        },
+        "proper-noun": {
+          "covered": 15653,
+          "percent": 100.0,
+          "total": 15653
+        },
+        "verb": {
+          "covered": 14734,
+          "percent": 100.0,
+          "total": 14734
+        }
+      },
+      "coverage": 181609,
+      "coveragePercent": 100.0,
+      "direction": "de→de",
+      "entryBytes": 16238298,
+      "entrySizeBytes": {
+        "max": 1728,
+        "p50": 70,
+        "p95": 218,
+        "p99": 353
+      },
+      "largestEntries": [
+        {
+          "bytes": 1728,
+          "canonicalId": 116822,
+          "headword": "Stift",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1692,
+          "canonicalId": 5459,
+          "headword": "Alter Markt",
+          "partOfSpeech": "phrase"
+        },
+        {
+          "bytes": 1667,
+          "canonicalId": 39731,
+          "headword": "Franke",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1419,
+          "canonicalId": 85251,
+          "headword": "Neumarkt",
+          "partOfSpeech": "proper-noun"
+        },
+        {
+          "bytes": 1334,
+          "canonicalId": 40542,
+          "headword": "Frisbee",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1236,
+          "canonicalId": 9217,
+          "headword": "Assoziation",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1150,
+          "canonicalId": 135301,
+          "headword": "Winterstraße",
+          "partOfSpeech": "proper-noun"
+        },
+        {
+          "bytes": 1123,
+          "canonicalId": 109322,
+          "headword": "Scooter",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1121,
+          "canonicalId": 50950,
+          "headword": "Haschisch",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1111,
+          "canonicalId": 100866,
+          "headword": "Ried",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1097,
+          "canonicalId": 75845,
+          "headword": "Mahr",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1077,
+          "canonicalId": 165934,
+          "headword": "phänomenologisch",
+          "partOfSpeech": "adjective"
+        },
+        {
+          "bytes": 1072,
+          "canonicalId": 109519,
+          "headword": "Seekuh",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1070,
+          "canonicalId": 169608,
+          "headword": "sein",
+          "partOfSpeech": "pronoun"
+        },
+        {
+          "bytes": 1058,
+          "canonicalId": 50942,
+          "headword": "Hasch",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1041,
+          "canonicalId": 64353,
+          "headword": "Kleptokratie",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1037,
+          "canonicalId": 112000,
+          "headword": "Skooter",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1036,
+          "canonicalId": 64540,
+          "headword": "Klippe",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1034,
+          "canonicalId": 96412,
+          "headword": "Punktesystem",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 999,
+          "canonicalId": 168595,
+          "headword": "scheren",
+          "partOfSpeech": "verb"
+        }
+      ],
+      "posConflictInputCount": 0,
+      "sourceLabel": "Deutsch (Wiktionary)",
+      "sourceUuid": "8bccd788-22d0-5306-a00d-f8d96b8d8652",
+      "truncatedFieldCount": 0,
+      "unalignedInputCount": 0,
+      "unmatchedCount": 0
+    },
+    "dictcc": {
+      "byPartOfSpeech": {
+        "abbreviation": {
+          "covered": 17,
+          "percent": 0.343782,
+          "total": 4945
+        },
+        "adjective": {
+          "covered": 13195,
+          "percent": 74.912002,
+          "total": 17614
+        },
+        "adposition": {
+          "covered": 124,
+          "percent": 80.0,
+          "total": 155
+        },
+        "adverb": {
+          "covered": 1144,
+          "percent": 73.286355,
+          "total": 1561
+        },
+        "conjunction": {
+          "covered": 69,
+          "percent": 69.69697,
+          "total": 99
+        },
+        "determiner": {
+          "covered": 3,
+          "percent": 13.636364,
+          "total": 22
+        },
+        "interjection": {
+          "covered": 19,
+          "percent": 7.01107,
+          "total": 271
+        },
+        "noun": {
+          "covered": 81487,
+          "percent": 68.209365,
+          "total": 119466
+        },
+        "numeral": {
+          "covered": 183,
+          "percent": 47.043702,
+          "total": 389
+        },
+        "other": {
+          "covered": 98,
+          "percent": 9.908999,
+          "total": 989
+        },
+        "particle": {
+          "covered": 8,
+          "percent": 9.302326,
+          "total": 86
+        },
+        "phrase": {
+          "covered": 117,
+          "percent": 2.134647,
+          "total": 5481
+        },
+        "pronoun": {
+          "covered": 95,
+          "percent": 65.972222,
+          "total": 144
+        },
+        "proper-noun": {
+          "covered": 114,
+          "percent": 0.728295,
+          "total": 15653
+        },
+        "verb": {
+          "covered": 8363,
+          "percent": 56.759875,
+          "total": 14734
+        }
+      },
+      "coverage": 105036,
+      "coveragePercent": 57.836341,
+      "direction": "de→en",
+      "entryBytes": 8574927,
+      "entrySizeBytes": {
+        "max": 2219,
+        "p50": 58,
+        "p95": 211,
+        "p99": 381
+      },
+      "largestEntries": [
+        {
+          "bytes": 2219,
+          "canonicalId": 116789,
+          "headword": "Stiefmütterchen",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 2058,
+          "canonicalId": 49331,
+          "headword": "Götterbaum",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1989,
+          "canonicalId": 124462,
+          "headword": "Trottel",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1983,
+          "canonicalId": 20614,
+          "headword": "Buchsbaum",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1926,
+          "canonicalId": 96483,
+          "headword": "Purpurschnecke",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1885,
+          "canonicalId": 20613,
+          "headword": "Buchs",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1659,
+          "canonicalId": 28585,
+          "headword": "Dummkopf",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1658,
+          "canonicalId": 103972,
+          "headword": "Sandglöckchen",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1653,
+          "canonicalId": 3300,
+          "headword": "Ackerwinde",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1599,
+          "canonicalId": 61595,
+          "headword": "Kardamom",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1573,
+          "canonicalId": 175603,
+          "headword": "verrückt",
+          "partOfSpeech": "adjective"
+        },
+        {
+          "bytes": 1568,
+          "canonicalId": 101381,
+          "headword": "Rispen-Fuchsschwanz",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1524,
+          "canonicalId": 56650,
+          "headword": "Idiot",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1516,
+          "canonicalId": 75843,
+          "headword": "Mahonie",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1498,
+          "canonicalId": 8765,
+          "headword": "Arschloch",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1480,
+          "canonicalId": 54939,
+          "headword": "Hornklee",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1437,
+          "canonicalId": 27730,
+          "headword": "Drachenfrucht",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1393,
+          "canonicalId": 102097,
+          "headword": "Rotkardinal",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1361,
+          "canonicalId": 106118,
+          "headword": "Schlag",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 1348,
+          "canonicalId": 136780,
+          "headword": "Wüterich",
+          "partOfSpeech": "noun"
+        }
+      ],
+      "posConflictInputCount": 20621,
+      "sourceLabel": "dict.cc",
+      "sourceUuid": "122f8887-ab1b-574b-9026-ced568335fc0",
+      "truncatedFieldCount": 0,
+      "unalignedInputCount": 1005127,
+      "unmatchedCount": 0
+    },
+    "kaikki": {
+      "byPartOfSpeech": {
+        "abbreviation": {
+          "covered": 34,
+          "percent": 0.687563,
+          "total": 4945
+        },
+        "adjective": {
+          "covered": 10803,
+          "percent": 61.331895,
+          "total": 17614
+        },
+        "adposition": {
+          "covered": 109,
+          "percent": 70.322581,
+          "total": 155
+        },
+        "adverb": {
+          "covered": 898,
+          "percent": 57.527226,
+          "total": 1561
+        },
+        "conjunction": {
+          "covered": 72,
+          "percent": 72.727273,
+          "total": 99
+        },
+        "determiner": {
+          "covered": 9,
+          "percent": 40.909091,
+          "total": 22
+        },
+        "interjection": {
+          "covered": 110,
+          "percent": 40.590406,
+          "total": 271
+        },
+        "noun": {
+          "covered": 37911,
+          "percent": 31.733715,
+          "total": 119466
+        },
+        "numeral": {
+          "covered": 169,
+          "percent": 43.44473,
+          "total": 389
+        },
+        "other": {
+          "covered": 365,
+          "percent": 36.905966,
+          "total": 989
+        },
+        "particle": {
+          "covered": 9,
+          "percent": 10.465116,
+          "total": 86
+        },
+        "phrase": {
+          "covered": 273,
+          "percent": 4.980843,
+          "total": 5481
+        },
+        "pronoun": {
+          "covered": 95,
+          "percent": 65.972222,
+          "total": 144
+        },
+        "proper-noun": {
+          "covered": 3661,
+          "percent": 23.388488,
+          "total": 15653
+        },
+        "verb": {
+          "covered": 8192,
+          "percent": 55.599294,
+          "total": 14734
+        }
+      },
+      "coverage": 62710,
+      "coveragePercent": 34.530227,
+      "direction": "de→en",
+      "entryBytes": 12081310,
+      "entrySizeBytes": {
+        "max": 6954,
+        "p50": 100,
+        "p95": 651,
+        "p99": 1265
+      },
+      "largestEntries": [
+        {
+          "bytes": 6954,
+          "canonicalId": 164733,
+          "headword": "nudeln",
+          "partOfSpeech": "verb"
+        },
+        {
+          "bytes": 6437,
+          "canonicalId": 83359,
+          "headword": "Nachgebühr",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 5521,
+          "canonicalId": 34012,
+          "headword": "Erzherzog",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 5207,
+          "canonicalId": 56305,
+          "headword": "Hühnergott",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 5151,
+          "canonicalId": 161161,
+          "headword": "können",
+          "partOfSpeech": "verb"
+        },
+        {
+          "bytes": 4687,
+          "canonicalId": 77653,
+          "headword": "Maus",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 4654,
+          "canonicalId": 162135,
+          "headword": "machen",
+          "partOfSpeech": "verb"
+        },
+        {
+          "bytes": 4650,
+          "canonicalId": 173021,
+          "headword": "umlügen",
+          "partOfSpeech": "verb"
+        },
+        {
+          "bytes": 4546,
+          "canonicalId": 126776,
+          "headword": "Unterstand",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 4427,
+          "canonicalId": 75,
+          "headword": "-e",
+          "partOfSpeech": "other"
+        },
+        {
+          "bytes": 4370,
+          "canonicalId": 154029,
+          "headword": "gehen",
+          "partOfSpeech": "verb"
+        },
+        {
+          "bytes": 4340,
+          "canonicalId": 115102,
+          "headword": "Staatsanwalt",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 4236,
+          "canonicalId": 121476,
+          "headword": "Terz",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 4157,
+          "canonicalId": 8074,
+          "headword": "Arbeit",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 4125,
+          "canonicalId": 106819,
+          "headword": "Schmiergeld",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 4106,
+          "canonicalId": 160368,
+          "headword": "kommen",
+          "partOfSpeech": "verb"
+        },
+        {
+          "bytes": 3980,
+          "canonicalId": 155567,
+          "headword": "halten",
+          "partOfSpeech": "verb"
+        },
+        {
+          "bytes": 3872,
+          "canonicalId": 18547,
+          "headword": "Bocher",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 3762,
+          "canonicalId": 106238,
+          "headword": "Schlappe",
+          "partOfSpeech": "noun"
+        },
+        {
+          "bytes": 3629,
+          "canonicalId": 152400,
+          "headword": "faustdick",
+          "partOfSpeech": "adjective"
+        }
+      ],
+      "posConflictInputCount": 5488,
+      "sourceLabel": "Kaikki (en-Wiktionary)",
+      "sourceUuid": "84546eba-7af7-53e3-8f0c-a9e79414cc9c",
+      "truncatedFieldCount": 0,
+      "unalignedInputCount": 303557,
+      "unmatchedCount": 0
+    }
+  },
+  "union": {
+    "allSources": 52491,
+    "covered": 181609,
+    "intersections": {
+      "de-de&dictcc": 105036,
+      "de-de&kaikki": 62710,
+      "dictcc&kaikki": 52491
+    },
+    "percent": 100.0,
+    "sourceOnly": {
+      "de-de": 66354,
+      "dictcc": 0,
+      "kaikki": 0
+    }
+  }
+}

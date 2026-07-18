@@ -127,6 +127,10 @@ scripts/build_kaikki_definition_source.py \
   --output tmp.local/kaikki-de-en.cpdef
 ```
 
+Validate and compare up to three compiled sources with
+`scripts/report_definition_coverage.py`; the production aggregate is documented
+in [`docs/definition-source-coverage.md`](../../../docs/definition-source-coverage.md).
+
 ## Transformer benchmark environment
 
 `de-zdl-dist` is pinned only to reproduce C10. Install

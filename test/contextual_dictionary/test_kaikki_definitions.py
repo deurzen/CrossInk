@@ -83,17 +83,19 @@ class KaikkiDefinitionsTest(unittest.TestCase):
                 "senses": [{"raw_glosses": ["(transitive) to load"]}],
             },
             {"word": "missing", "lang_code": "de", "pos": "noun", "senses": [{"glosses": ["x"]}]},
+            {"word": "Laden", "lang_code": "de", "pos": "verb", "senses": [{"glosses": ["to load"]}]},
             {"word": "bad", "lang_code": "fr", "pos": "noun", "senses": [{"glosses": ["x"]}]},
             b"{not-json",
         )
         compiled, stats = compile_kaikki_definition_source(self.source(records), self.canonical)
         self.assertEqual(compiled.coverage_count, 3)
-        self.assertEqual(stats.records, 6)
+        self.assertEqual(stats.records, 7)
         self.assertEqual(stats.aligned_records, 3)
-        self.assertEqual(stats.unaligned_records, 1)
+        self.assertEqual(stats.unaligned_records, 2)
+        self.assertEqual(stats.pos_conflict_records, 1)
         self.assertEqual(stats.malformed_records, 2)
-        self.assertEqual(stats.senses, 4)
-        self.assertEqual(stats.glosses, 4)
+        self.assertEqual(stats.senses, 5)
+        self.assertEqual(stats.glosses, 5)
         self.assertEqual(stats.examples, 1)
         payload = compiled.files["device/entries.bin"]
         self.assertIn(b"shop, store", payload)

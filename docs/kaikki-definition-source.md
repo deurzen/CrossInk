@@ -21,6 +21,7 @@ Source SHA-256:
 | Aligned records | 64,787 |
 | Covered canonical lexemes | 62,710 / 181,609 (34.530227%) |
 | Unaligned records | 303,557 |
+| Headword-present POS conflicts | 5,488 |
 | Malformed/oversized records | 8 |
 | Parsed senses | 628,945 |
 | Parsed glosses | 957,404 |
@@ -28,7 +29,7 @@ Source SHA-256:
 | Truncated fields | 0 |
 | Source UUID | `84546eba-7af7-53e3-8f0c-a9e79414cc9c` |
 | Payload SHA-256 | `16aa7e402e6f77bb682c7de7541995f1a6cbd643170e4e6ce0f4f161e567f11e` |
-| `.cpdef` SHA-256 | `44109b1305fcd517b2a40e1f3ea4af832c3761343a559e3b5819a06edc88e782` |
+| `.cpdef` SHA-256 | `812b3195a09ad60a8c672ff0db4b23946e3fc029b0db42c97a9455f3270df564` |
 | Archive size | approximately 13 MiB |
 
 Two complete 1 GiB imports were byte-identical.

@@ -36,6 +36,7 @@ class DictCcStats:
     malformed_lines: int = 0
     aligned_lines: int = 0
     unaligned_lines: int = 0
+    pos_conflict_lines: int = 0
     emitted_entries: int = 0
 
     def as_dict(self) -> dict[str, int]:
@@ -44,6 +45,7 @@ class DictCcStats:
             "malformedLines": self.malformed_lines,
             "alignedLines": self.aligned_lines,
             "unalignedLines": self.unaligned_lines,
+            "posConflictLines": self.pos_conflict_lines,
             "emittedEntries": self.emitted_entries,
         }
 
@@ -154,6 +156,8 @@ def stream_dictcc_entries(
                 targets = _canonical_targets(canonical, by_headword, headwords, raw_pos)
                 if not targets:
                     stats.unaligned_lines += 1
+                    if any(headword in by_headword for headword in headwords):
+                        stats.pos_conflict_lines += 1
                     continue
                 stats.aligned_lines += 1
                 fields = [DefinitionFieldInput(1, translation)]

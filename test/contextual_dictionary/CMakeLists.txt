@@ -89,3 +89,8 @@ add_test(
   NAME ContextualDictionary.KaikkiDefinitions
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_kaikki_definitions.py
 )
+
+add_test(
+  NAME ContextualDictionary.CoverageReport
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_coverage_report.py
+)

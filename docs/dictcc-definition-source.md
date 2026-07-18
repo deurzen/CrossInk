@@ -25,11 +25,12 @@ Source SHA-256:
 | Emitted canonical-key entries | 304,301 |
 | Malformed/unsupported TSV rows | 3,261 |
 | Unaligned lines | 1,005,127 |
+| Headword-present POS conflicts | 20,621 |
 | Covered canonical lexemes | 105,036 / 181,609 (57.836341%) |
 | Truncated fields | 0 |
 | Source UUID | `122f8887-ab1b-574b-9026-ced568335fc0` |
 | Payload SHA-256 | `0a8b8f15cf72c757310ca7ee255c88937e1020237f2457d3e4349838ef0fcc4a` |
-| Private `.cpdef` SHA-256 | `39dfb0c23f5190f9877217e887bbc491f298e629d147d56709972a1c61fb211e` |
+| Private `.cpdef` SHA-256 | `e2da755c97aa2b6f5633445f78ddf1bd668791102218c0d9b278a087dd181499` |
 | Archive size | approximately 9.6 MiB |
 
 Two complete imports were byte-identical.

@@ -32,6 +32,7 @@ class KaikkiStats:
     malformed_senses: int = 0
     aligned_records: int = 0
     unaligned_records: int = 0
+    pos_conflict_records: int = 0
     senses: int = 0
     glosses: int = 0
     examples: int = 0
@@ -44,6 +45,7 @@ class KaikkiStats:
             "malformedSenses": self.malformed_senses,
             "alignedRecords": self.aligned_records,
             "unalignedRecords": self.unaligned_records,
+            "posConflictRecords": self.pos_conflict_records,
             "senses": self.senses,
             "glosses": self.glosses,
             "examples": self.examples,
@@ -154,6 +156,7 @@ def stream_kaikki_entries(
     canonical: CanonicalLexiconIndex,
     stats: KaikkiStats,
 ):
+    canonical_headwords = {headword for headword, _ in canonical.by_key}
     try:
         with path.open("rb") as source:
             for line in source:
@@ -180,6 +183,8 @@ def stream_kaikki_entries(
                     continue
                 if canonical.resolve(headword, part_of_speech) is None:
                     stats.unaligned_records += 1
+                    if headword in canonical_headwords:
+                        stats.pos_conflict_records += 1
                     continue
                 stats.aligned_records += 1
                 stats.emitted_entries += 1

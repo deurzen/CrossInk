@@ -58,15 +58,17 @@ class DictCcDefinitionsTest(unittest.TestCase):
                 "laden\tto load\tverb\t\n",
                 "Goethe\tJohann Wolfgang von Goethe\t\t\n",
                 "(abends) ausgehen\tto go out\tverb\t\n",
+                "Laden\tto load\tverb\t\n",
                 "bad\trow\tonly-three\n",
             )
         )
         compiled, stats = compile_dictcc_definition_source(path, self.canonical)
         self.assertEqual(compiled.coverage_count, 3)
-        self.assertEqual(stats.data_lines, 6)
+        self.assertEqual(stats.data_lines, 7)
         self.assertEqual(stats.malformed_lines, 1)
         self.assertEqual(stats.aligned_lines, 4)
-        self.assertEqual(stats.unaligned_lines, 1)
+        self.assertEqual(stats.unaligned_lines, 2)
+        self.assertEqual(stats.pos_conflict_lines, 1)
         self.assertEqual(stats.emitted_entries, 4)
         report = json.loads(compiled.files["compiler/coverage.json"])
         self.assertEqual(report["provenance"]["license"], "LicenseRef-dict.cc-private-use")
