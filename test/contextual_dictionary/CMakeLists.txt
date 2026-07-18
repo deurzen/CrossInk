@@ -84,3 +84,8 @@ add_test(
   NAME ContextualDictionary.DictCcDefinitions
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_dictcc_definitions.py
 )
+
+add_test(
+  NAME ContextualDictionary.KaikkiDefinitions
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_kaikki_definitions.py
+)

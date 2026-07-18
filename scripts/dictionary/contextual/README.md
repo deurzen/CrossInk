@@ -117,7 +117,15 @@ scripts/build_dictcc_definition_source.py \
   --output tmp.local/dictcc-de-en.cpdef
 ```
 
-Both the dict.cc source and output remain private-use artifacts.
+Both the dict.cc source and output remain private-use artifacts. Kaikki's
+English-Wiktionary German JSONL is also streamed line-by-line:
+
+```sh
+scripts/build_kaikki_definition_source.py \
+  --source tmp.local/kaikki.org-dictionary-German.jsonl \
+  --canonical tmp.local/german-canonical.cplex \
+  --output tmp.local/kaikki-de-en.cpdef
+```
 
 ## Transformer benchmark environment
 

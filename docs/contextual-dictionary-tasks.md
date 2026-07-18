@@ -57,7 +57,7 @@ committed.
 | C14 | Done | Implement deterministic `.cpdef` compiler and fixed canonical entry index | Missing entries use zero-length records; caps/CRC/UUID corruption tests pass |
 | C15 | Done | Compile current de-DE Wiktionary definitions against canonical IDs | Coverage report emitted; definitions/examples preserve provenance; no morphology ownership |
 | C16 | Done | Import and compile private dict.cc de→en source | 1.3M-line TSV streams without whole-file allocation; annotations/POS normalized; duplicate translations capped and reported |
-| C17 | Planned | Import and compile Kaikki German de→en source | 1 GB JSONL streams line-by-line; senses/qualifiers/POS mapped; malformed records counted, not fatal |
+| C17 | Done | Import and compile Kaikki German de→en source | 1 GB JSONL streams line-by-line; senses/qualifiers/POS mapped; malformed records counted, not fatal |
 | C18 | Planned | Produce source coverage and conflict report | Per-source/union canonical coverage, unmatched keys, POS conflicts and pathological entry sizes documented |
 
 ## Phase D — device formats and installation
@@ -132,6 +132,6 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Import Kaikki's German de-en JSONL in C17 line-by-line.
-2. Produce the three-source coverage/conflict report in C18.
+1. Produce the three-source coverage/conflict report in C18.
+2. Begin allocation-free canonical/source readers in C19.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
