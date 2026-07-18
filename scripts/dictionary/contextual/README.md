@@ -69,3 +69,12 @@ The lock was resolved on Linux x86-64. On another host platform, preserve the
 exact top-level Python, spaCy, and model versions and regenerate only
 platform-specific transitive wheels; do not change `zdl-model.json` without a
 new reference run and review.
+
+## Transformer benchmark environment
+
+`de-zdl-dist` is pinned only to reproduce C10. Install
+`requirements-zdl-dist.lock` as an overlay in a separate environment; it brings
+PyTorch and platform-specific dependencies. The measured comparison in
+[`docs/zdl-model-selection.md`](../../../docs/zdl-model-selection.md) found no
+accuracy gain and substantially higher host RSS, so the normal compiler remains
+on `de-zdl-lg`.

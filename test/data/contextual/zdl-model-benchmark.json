@@ -1,0 +1,44 @@
+{
+  "corpus": "test/data/contextual/german-ambiguity-corpus.json",
+  "host": {
+    "cpuCount": 16,
+    "machine": "x86_64",
+    "platform": "Linux-7.0.12-x86_64-with-glibc2.42",
+    "processor": "",
+    "python": "3.12.13"
+  },
+  "models": [
+    {
+      "accuracy": {
+        "cases": 16,
+        "contextCorrect": 13,
+        "fusedPrimaryCorrect": 10,
+        "morphologyCovered": 11
+      },
+      "coldCorpusSeconds": 0.120659,
+      "distribution": "de-zdl-lg",
+      "loadSeconds": 2.001353,
+      "peakRssBytes": 1267703808,
+      "version": "4.0.0",
+      "warmCorpusMeanSeconds": 0.116243,
+      "wheelBytes": 627548130
+    },
+    {
+      "accuracy": {
+        "cases": 16,
+        "contextCorrect": 13,
+        "fusedPrimaryCorrect": 10,
+        "morphologyCovered": 11
+      },
+      "coldCorpusSeconds": 0.138844,
+      "distribution": "de-zdl-dist",
+      "loadSeconds": 2.739539,
+      "peakRssBytes": 2234990592,
+      "version": "4.0.0",
+      "warmCorpusMeanSeconds": 0.12969,
+      "wheelBytes": 508569684
+    }
+  ],
+  "repeats": 5,
+  "schemaVersion": 1
+}

@@ -160,12 +160,12 @@ model, search, or runtime allocation.
 
 ### Contextual selector
 
-The preferred selector is ZDL's static German spaCy pipeline because it is
+The production selector is ZDL's static German spaCy pipeline because it is
 trained for lexicographic German and reports approximately 98.6% lemmatization
-accuracy with contextual POS tagging. The static model is preferred over the
-transformer model unless book-level evaluation demonstrates a meaningful
-accuracy gain; reported lemmatization accuracy is nearly identical while the
-static model has lower CPU and memory cost.
+accuracy with contextual POS tagging. C10 measured identical accuracy on the
+C09 corpus for static and transformer models, while the transformer used about
+967 MB more peak host RSS and was slower on CPU. The evidence and reproduction
+command are recorded in [`zdl-model-selection.md`](zdl-model-selection.md).
 
 For every XHTML spine:
 

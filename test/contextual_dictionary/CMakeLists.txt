@@ -11,6 +11,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.ZdlBenchmark
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_zdl_benchmark.py
+)
+
+add_test(
   NAME ContextualDictionary.DwdsmorPin
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_dwdsmor_pin.py
 )

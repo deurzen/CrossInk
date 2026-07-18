@@ -45,7 +45,7 @@ committed.
 | C08a | Planned | Augment missing Open Edition analyses from the de-DE form inventory | Missing common forms gain canonical candidates; source precedence/provenance and ambiguity caps are deterministic |
 | C08b | Planned | Recombine finite separable verbs from sentence context | Particle + finite base can resolve lexical separable lemma without changing unrelated token offsets |
 | C09 | Done | Build contextual German ambiguity corpus | Gold cases cover sentence-initial verbs, noun/verb homographs, participles, separable verbs, nominalization, compounds and names |
-| C10 | Planned | Benchmark static versus transformer ZDL models | Accuracy, wall time and peak host RAM measured on the same corpus; production selector chosen from evidence |
+| C10 | Done | Benchmark static versus transformer ZDL models | Accuracy, wall time and peak host RAM measured on the same corpus; production selector chosen from evidence |
 | C11 | Planned | Build deterministic canonical lexicon and compiler bundle | Dense IDs stable across input order; canonical UUID/fingerprint and model provenance emitted |
 | C12 | Planned | Add full-EPUB host compiler using the contextual provider | Canonical OPF preserved; XHTML markers and `language.bin` transactional; two builds are byte-identical |
 | C13 | Done | Retire exact-case-first misranking in the legacy browser compiler | Exact and folded credible analyses are merged; regression tests prevent noun-only sentence-start errors |
@@ -107,9 +107,9 @@ classifying missing tokens from spelling.
 
 ### Gate 2 — contextual model
 
-Choose static or transformer ZDL only after C10. The transformer must show a
-meaningful ambiguity-resolution improvement to justify its larger host download,
-RAM and compile time. Device RAM is unaffected either way.
+C10 selects `de-zdl-lg` 4.0.0 static: the transformer produced identical corpus
+accuracy while using about 967 MB more peak host RSS and running slower on CPU.
+The transformer remains a benchmark-only overlay. Device RAM is unaffected.
 
 ### Gate 3 — production cutover
 
@@ -132,7 +132,6 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Complete C10 by comparing static and transformer ZDL models on the C09
-   corpus and recording host cost.
-2. Add the measured de-DE form-inventory fallback before canonical lexicon C11.
-3. Add finite separable-verb recombination before full-EPUB compilation C12.
+1. Complete C08a by adding the measured de-DE form-inventory fallback.
+2. Complete C08b with finite separable-verb recombination.
+3. Re-run the C09 corpus, then begin canonical lexicon C11.
