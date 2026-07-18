@@ -72,7 +72,7 @@
   ],
   "expected": {
     "header": {"spines": 2, "shards": 3, "records": 6, "lemmas": 5},
-    "grammarDiagnostics": {"availableOccurrences": 69, "noContextualFeatureOccurrences": 0, "posMismatchOccurrences": 0, "withinShardConflicts": 0},
+    "grammarDiagnostics": {"nonzeroCandidates": 6, "availableOccurrences": 69, "noContextualFeatureOccurrences": 0, "posMismatchOccurrences": 0, "withinShardConflicts": 0},
     "spineDirectory": [[0, 1], [1, 2]],
     "localLemmas": [["Goethe", "PROPER_NOUN"], ["Laden", "NOUN"], ["aufstehen", "VERB"], ["laden", "VERB"], ["stehen", "VERB"]],
     "shards": [
@@ -98,6 +98,6 @@
         ]
       }
     ],
-    "artifactSha256": "b609ae0892b5ddeb0ca5abfd82c6f22cb07562f4b7fefe0f9d43c252da74a7b7"
+    "artifactSha256": "3d66a268f6fd3b870679b843de1a5b3ed98620a50f5cb765c9ca7550b799db06"
   }
 }

@@ -70,6 +70,7 @@ class ContextualEpubError(ValueError):
 
 @dataclass(frozen=True)
 class GrammarDiagnostics:
+    nonzero_candidates: int
     available_occurrences: int
     no_feature_occurrences: int
     pos_mismatch_occurrences: int
@@ -451,6 +452,11 @@ def compile_contextual_book(
     if len(shard_candidates) > MAX_SHARDS:
         raise ContextualEpubError(f"book exceeds {MAX_SHARDS} source shards")
     record_count = sum(len(items) for items in shard_candidates)
+    grammar_nonzero_candidates = sum(
+        candidate.grammar_descriptor != 0
+        for shard in shard_candidates
+        for candidate in shard
+    )
     grammar_conflicts = sum(
         candidate.grammar_conflict
         for shard in shard_candidates
@@ -521,6 +527,7 @@ def compile_contextual_book(
             "frequency": {"provider": frequency_id, "version": frequency_id},
             "grammarDescriptorVersion": GRAMMAR_DESCRIPTOR_VERSION,
             "grammarDiagnostics": {
+                "nonzeroCandidates": grammar_nonzero_candidates,
                 "availableOccurrences": grammar_available,
                 "noContextualFeatureOccurrences": grammar_no_features,
                 "posMismatchOccurrences": grammar_pos_mismatches,
@@ -593,10 +600,11 @@ def compile_contextual_book(
         bytes(artifact),
         missing,
         GrammarDiagnostics(
-            grammar_available,
-            grammar_no_features,
-            grammar_pos_mismatches,
-            grammar_conflicts,
+            nonzero_candidates=grammar_nonzero_candidates,
+            available_occurrences=grammar_available,
+            no_feature_occurrences=grammar_no_features,
+            pos_mismatch_occurrences=grammar_pos_mismatches,
+            within_shard_conflicts=grammar_conflicts,
         ),
     )
 

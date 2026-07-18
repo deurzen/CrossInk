@@ -91,6 +91,7 @@ def main() -> int:
     grammar = compiled.grammar_diagnostics
     print(
         "Grammar: "
+        f"{grammar.nonzero_candidates} nonzero candidate(s), "
         f"{grammar.available_occurrences} available occurrence(s), "
         f"{grammar.no_feature_occurrences} without contextual features, "
         f"{grammar.pos_mismatch_occurrences} POS mismatch(es), "

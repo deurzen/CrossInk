@@ -225,7 +225,7 @@ class ContextualEpubCompilerTest(unittest.TestCase):
         self.assertEqual(compiled.missing_canonical_analyses, 0)
         self.assertEqual(
             compiled.grammar_diagnostics,
-            GrammarDiagnostics(1, 2, 0, 0),
+            GrammarDiagnostics(1, 1, 2, 0, 0),
         )
         for surface, record in surfaces.items():
             expected_size = 20 + len(record["ids"]) * 2 + len(surface.encode("utf-8"))
@@ -243,6 +243,7 @@ class ContextualEpubCompilerTest(unittest.TestCase):
         self.assertEqual(
             metadata["grammarDiagnostics"],
             {
+                "nonzeroCandidates": 1,
                 "availableOccurrences": 1,
                 "noContextualFeatureOccurrences": 2,
                 "posMismatchOccurrences": 0,

@@ -18,6 +18,7 @@ from dictionary.contextual.form_inventory import (  # noqa: E402
     DeDeFormInventoryAnalyzer,
 )
 from dictionary.contextual.fusion import GermanAnalysisFuser  # noqa: E402
+from dictionary.contextual.grammar_descriptor import contextual_grammar  # noqa: E402
 from dictionary.contextual.separable_verbs import GermanSeparableVerbRecombiner  # noqa: E402
 from dictionary.contextual.zdl_adapter import ZdlContextAnalyzer  # noqa: E402
 
@@ -28,6 +29,16 @@ def analysis_json(analysis):
     return {
         "lemma": analysis.lemma,
         "pos": analysis.part_of_speech.name.lower().replace("_", "-"),
+    }
+
+
+def grammar_json(context, fused):
+    if not fused:
+        return {"descriptor": "0x00000000", "status": "noPrimaryAnalysis"}
+    grammar = contextual_grammar(context, fused[0])
+    return {
+        "descriptor": f"0x{grammar.descriptor:08X}",
+        "status": grammar.status.value,
     }
 
 
@@ -56,7 +67,7 @@ def main() -> int:
         GermanSeparableVerbRecombiner(morphology),
     )
     report = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "providers": {
             "dwdsmor": "0.18.0-open",
             "analysisPolicy": 2,
@@ -80,6 +91,8 @@ def main() -> int:
                 "category": case.category,
                 "expected": analysis_json(case.expected),
                 "context": analysis_json(case.context),
+                "contextFeatures": case.context.features.populated(),
+                "grammar": grammar_json(case.context, case.fused),
                 "morphology": [analysis_json(item) for item in case.morphology],
                 "fused": [analysis_json(item) for item in case.fused],
                 "contextCorrect": case.context_correct,

@@ -241,12 +241,15 @@ recompiled separately in U17 with adjacent pre-v5 backups.
 
 The candidate header grows from 16 to 20 bytes. Since both sizes are four-byte
 aligned, every candidate record grows by exactly four bytes without changing
-surface or local-ID alignment. The known production deltas are:
+surface or local-ID alignment. The exact candidate-record deltas and U08 measured total artifact deltas are:
 
-| EPUB | Candidates | Exact v5 artifact increase |
-| --- | ---: | ---: |
-| Homma novel | 126,718 | 506,872 bytes |
-| Klein collection | 57,242 | 228,968 bytes |
+| EPUB | Candidates | Record increase | Total artifact increase |
+| --- | ---: | ---: | ---: |
+| Homma novel | 126,718 | 506,872 bytes | 507,077 bytes |
+| Klein collection | 57,242 | 228,968 bytes | 229,171 bytes |
+
+The additional 205/203 bytes are bounded metadata and alignment growth, not
+candidate payload. Candidate records still grow by exactly four bytes each.
 
 Firmware adds one `u32` to the reusable decoded candidate and one `u32` to each
 of at most 48 shortlist items. It adds no static DRAM, page-turn I/O, definition

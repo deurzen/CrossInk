@@ -96,6 +96,7 @@ class AmbiguityCorpusTest(unittest.TestCase):
 
     def test_checked_in_augmented_baseline_is_explicit(self):
         baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(baseline["schemaVersion"], 2)
         providers = baseline["providers"]
         self.assertEqual(providers["dwdsmor"], "0.18.0-open")
         self.assertEqual(providers["analysisPolicy"], 2)
@@ -128,6 +129,23 @@ class AmbiguityCorpusTest(unittest.TestCase):
                 "imperative-liebe",
                 "archaic-verb-hub",
             },
+        )
+        grammar_by_id = {case["id"]: case["grammar"] for case in baseline["cases"]}
+        self.assertEqual(
+            grammar_by_id["finite-separable-aufstehen"],
+            {"descriptor": "0x0000BA80", "status": "available"},
+        )
+        self.assertEqual(
+            grammar_by_id["adjectival-participle-geschriebene"],
+            {"descriptor": "0x00000229", "status": "available"},
+        )
+        self.assertEqual(
+            grammar_by_id["homograph-laden-noun"],
+            {"descriptor": "0x00000220", "status": "available"},
+        )
+        self.assertEqual(
+            grammar_by_id["proper-name-goethe"],
+            {"descriptor": "0x00000000", "status": "noContextualFeatures"},
         )
 
 

@@ -106,10 +106,11 @@ cross-field combinations must be frozen in the format specification before
 compiler or firmware implementation starts.
 
 Adding the four-byte descriptor increases each aligned candidate record by four
-bytes: approximately 506,872 bytes for the 126,718-candidate Homma novel and
-228,968 bytes for the 57,242-candidate Klein collection. It adds four bytes to
-the allocation-free runtime candidate and at most four bytes per retained
-shortlist item. No definition payload or canonical package changes.
+bytes: exactly 506,872 record bytes for the 126,718-candidate Homma novel and
+228,968 for the 57,242-candidate Klein collection. U08 measured total artifact
+growth of 507,077 and 229,171 bytes after bounded metadata/alignment. Runtime
+still adds four bytes to the allocation-free candidate and at most four bytes
+per retained shortlist item. No definition payload or canonical package changes.
 
 ## Resource and lifecycle gates
 
@@ -171,7 +172,7 @@ reuse of the existing pager/page/session.
 | U05 | Done | Preserve primary grammar through surface aggregation | Identical evidence survives; conflicting repeated-surface evidence emits unavailable deterministically |
 | U06 | Done | Emit only v5 contextual records | Compiler writes the descriptor, bumps compiler metadata and rejects out-of-range/reserved values |
 | U07 | Done | Add v5 differential and corruption fixtures | Token offsets, markers, IDs, grammar words, record bytes, CRCs and complete artifact SHA agree independently |
-| U08 | Planned | Re-evaluate production corpora | German ambiguity baseline remains stable; v5 grammar accuracy is manually checked for verbs, nouns, adjectives and ambiguous forms |
+| U08 | Done | [Re-evaluate production corpora](contextual-grammar-production-evaluation.md) | German ambiguity baseline remains stable; v5 grammar accuracy is manually checked for verbs, nouns, adjectives and ambiguous forms |
 
 U04 adds a strict host encoder/decoder with no dependency on spaCy/DWDSmor enum
 ordinals. Checked-in vectors cover every field code and contradiction; an
@@ -196,6 +197,12 @@ infinitive grammar words plus exact candidate hex and full-artifact SHA. The
 regenerable format fixture is v5-only; CRC-correct corruption vectors cover
 reserved descriptor bits/codes and every structural contradiction class so U09
 can exercise candidate validation rather than fail earlier on payload CRC.
+
+U08 preserves the 14/16 fused ambiguity baseline and both known ranking
+failures. Dry-running both production books yields nonzero descriptors for
+108,067/126,718 and 43,784/57,242 final candidates; manual verb, noun, adjective
+and ambiguity checks pass representative cases while explicitly recording ZDL
+and primary-ranking errors rather than adding guesses.
 
 ## Phase C — bounded firmware support
 

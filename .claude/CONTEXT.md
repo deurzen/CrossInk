@@ -25,7 +25,8 @@ Keep this file focused on repo-specific gotchas that are worth reusing in future
 
 ## Dictionary
 
-- Firmware accepts only contextual `language.bin` version 4 and resolves canonical packages under `/.crosspoint/lexicons/`; there is no monolithic package fallback or state migration.
+- Firmware still accepts only contextual `language.bin` version 4, while the staged host compiler now emits v5; do not replace production EPUBs until the U09 firmware cutover and U17 recompilation.
+- Runtime resolves canonical packages under `/.crosspoint/lexicons/`; there is no monolithic package fallback or state migration.
 - The WebUI installs only `.cplex` and `.cpdef` packages. Contextual EPUB compilation is host-only and independent from the browser EPUB optimizer.
 
 ## Misc Repo Gotchas

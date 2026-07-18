@@ -195,6 +195,7 @@ def build_language(canonical_uuid: uuid.UUID) -> bytes:
             "frequency": {"provider": "none", "version": "none"},
             "grammarDescriptorVersion": 1,
             "grammarDiagnostics": {
+                "nonzeroCandidates": 1,
                 "availableOccurrences": 1,
                 "noContextualFeatureOccurrences": 0,
                 "posMismatchOccurrences": 0,
