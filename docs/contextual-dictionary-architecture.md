@@ -71,9 +71,9 @@ compiler/
   licenses/
 ```
 
-The complete DWDSmor automaton and contextual model remain desktop assets. They
-are not uploaded to the reader. Runtime lexical files contain only enough data
-to review learning state and validate definition-source alignment.
+The DWDSmor Open Edition automata and contextual model remain desktop assets.
+They are not uploaded to the reader. Runtime lexical files contain only enough
+data to review learning state and validate definition-source alignment.
 
 Canonical IDs are assigned deterministically by normalized `(lemma, coarse
 POS)` key. The manifest records source/model versions and SHA-256 hashes. A
@@ -144,15 +144,17 @@ idempotent.
 
 ### Canonical morphology
 
-The target morphology source is the complete DWDSmor DWDS edition, not the
-limited Open sample. DWDSmor enumerates lemmas, coarse/fine POS, inflectional
-features, compounds and word-formation analyses. The exact automaton version
-and hash are pinned in the canonical manifest.
+The production morphology source is DWDSmor 0.18.0 Open Edition. DWDSmor
+enumerates lemmas, coarse/fine POS, inflectional features, compounds and
+word-formation analyses. The package, individual automata, build revision and
+hashes are pinned in the canonical manifest.
 
-The complete edition is available from the maintainers under individual terms,
-so obtaining and fingerprinting that asset is an explicit prerequisite. The
-Open edition may be used for fixture development but is not the production
-quality gate.
+The Open Edition uses the comprehensive DWDSmor grammar with a sample lexicon,
+so its inflection behavior is suitable but open-class lexical coverage is lower
+than the unavailable private DWDS Edition. Contextual inference cannot recover
+a candidate absent from morphology. C09/C10 therefore measure coverage as well
+as disambiguation, and a later bounded fallback may contribute candidates from
+the retained definition lexicons without changing the on-device architecture.
 
 ### Contextual selector
 

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "surface": "Liebe",
+      "required": [
+        {"lemma": "Liebe", "pos": "NN"},
+        {"lemma": "lieben", "pos": "V"}
+      ]
+    },
+    {
+      "surface": "Laden",
+      "required": [
+        {"lemma": "Laden", "pos": "NN"},
+        {"lemma": "laden", "pos": "V"}
+      ]
+    },
+    {
+      "surface": "gebildet",
+      "required": [
+        {"lemma": "bilden", "pos": "V"},
+        {"lemma": "gebildet", "pos": "ADJ"}
+      ]
+    },
+    {
+      "surface": "Altbauten",
+      "required": [
+        {"lemma": "Altbau", "pos": "NN"}
+      ]
+    },
+    {
+      "surface": "Häusern",
+      "required": [
+        {"lemma": "Haus", "pos": "NN"}
+      ]
+    },
+    {
+      "surface": "ging",
+      "required": [
+        {"lemma": "gehen", "pos": "V"}
+      ]
+    }
+  ]
+}

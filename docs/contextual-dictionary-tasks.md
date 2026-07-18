@@ -29,7 +29,7 @@ committed.
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
 | C00 | Done | Specify the contextual canonical-lexicon and multi-source architecture | Architecture documents artifacts, provider boundaries, RAM budget, failure behavior and acceptance criteria |
-| C01 | Blocked on private access | Obtain and fingerprint the complete DWDSmor DWDS-edition analyzer | Provenance and terms recorded locally; automaton version/SHA-256 reproducible; sample analyses run |
+| C01 | Done | Retrieve and fingerprint the DWDSmor 0.18.0 Open Edition baseline | Provenance/license recorded; wheel and automaton SHA-256 reproducible; representative analyses pass |
 | C02 | Done | Pin the ZDL static German spaCy model and compiler environment | Locked Python/model versions and hashes; clean environment reproduces reference inference |
 | C03 | Done | Define canonical POS/features mapping and scoring policy | Versioned DWDSmor/ZDL→canonical mapping; unsupported tags and low-confidence behavior documented |
 | C04 | Done | Specify canonical, definition-source, attachment and next `language.bin` formats | Endianness, CRCs, caps, UUID/fingerprint rules and corruption fixtures documented before readers are written |
@@ -94,12 +94,14 @@ committed.
 
 ## Explicit decision gates
 
-### Gate 1 — production morphology asset
+### Gate 1 — Open Edition coverage
 
-Do not call the lexical pipeline production-ready with the limited DWDSmor Open
-edition. If the complete DWDS edition cannot be obtained, record that blocker
-and evaluate Zmorge/current-Wiktionary union as a named fallback rather than
-silently weakening the architecture.
+DWDSmor 0.18.0 Open Edition is the production morphology baseline. Its grammar
+is suitable, but its sample lexicon has lower open-class coverage than the
+unavailable DWDS Edition. C09/C10 must report missing-analysis coverage
+separately from contextual ranking accuracy. If coverage is insufficient,
+evaluate a named definition-lexicon or Zmorge fallback rather than silently
+classifying missing tokens from spelling.
 
 ### Gate 2 — contextual model
 
@@ -128,9 +130,7 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Unblock C01 by obtaining access to the private `dwdsmor-dwds` package,
-   then record its automaton hashes and sample analyses.
-2. Build C03/C09 together so scoring decisions are driven by real ambiguous
+1. Add the generic C05 host analyzer contract and German provider shell.
+2. Implement bounded DWDSmor and ZDL adapters in C06/C07.
+3. Build C08/C09 together so fusion decisions are driven by real ambiguous
    sentences rather than isolated token examples.
-3. Freeze C04 formats only after canonical identity and source-index needs are
-   demonstrated by small de-DE/dict.cc/Kaikki fixtures.

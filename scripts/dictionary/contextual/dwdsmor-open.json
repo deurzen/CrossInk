@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "pythonMinor": "3.12",
+  "package": {
+    "distribution": "dwdsmor",
+    "version": "0.18.0",
+    "sha256": "395a15e15286b0c191b42355b6e3c2a43c8959621ccf3563336c2e30399a2973",
+    "url": "https://files.pythonhosted.org/packages/81/c5/91a3a7f48801968f49b0bd49970068d34734022e6f15ce729f21d375f5a4/dwdsmor-0.18.0-py3-none-any.whl"
+  },
+  "edition": "open",
+  "built": "2026-04-28T09:25:23.465866+00:00",
+  "upstreamGitRevision": "f97b92c",
+  "license": "GPL-2.0-only",
+  "automata": {
+    "BUILT": {"bytes": 32, "sha256": "2efbf92bcd2474d211677016c1e448c060e079b6c8c0b1be5f264d2a78573fd4"},
+    "EDITION": {"bytes": 4, "sha256": "2348f998744212575d85959674f9607ab26f67708a917157472832386337c904"},
+    "GIT_REV": {"bytes": 7, "sha256": "973b9bb439d25f222fcf71b721ac2ae28dbd9641de2002deb6bcd1c993edc1bb"},
+    "finite.a": {"bytes": 941534, "sha256": "293668b6c23647f10e9ebea08583bbea74b760ad344d78344a5cfacc9ca8b941"},
+    "finite.ca": {"bytes": 434221, "sha256": "395e466c8503768ec915d6fbb329b62509960e4d7964341909f4f67b0f6e3f7c"},
+    "index.a": {"bytes": 313114, "sha256": "0283814adf74c6b77dbb265364b2647e20df9559ef842321abc5fc0ae00798c6"},
+    "index.ca": {"bytes": 146487, "sha256": "163e7b432d201b68f424b9b84100b476cb5ff3347748a6b1a64dbcc71f35a7ca"},
+    "lemma.a": {"bytes": 1497705, "sha256": "c39a31f78caa3a3e0ac6e32427c1c5b4e47b0f1b762a2984daebcf2723a2f65f"},
+    "lemma.ca": {"bytes": 687766, "sha256": "1f4e3c2cebf9aaad0137340144b9da1571e3ea80d150f738508524bc93fd4d18"},
+    "lemma2.a": {"bytes": 1499196, "sha256": "350dbd821315f004b2d237f16615065f5a34ecf36a7637e65894a18b6da15ba4"},
+    "lemma2.ca": {"bytes": 688385, "sha256": "02e72114b8fdec0a15b4abd42861fe1d616d2c330208a939d9a19125ff7cf406"},
+    "ppm.csv": {"bytes": 2843, "sha256": "8c82ff1988d78552a7511516036db513c80724bf3d457ba27fbcffa0c0281a82"},
+    "root.a": {"bytes": 1199896, "sha256": "41a6a7f39486c247167845cc8061aab09bacb350f38aa0e61fac493116f7e620"},
+    "root.ca": {"bytes": 570932, "sha256": "a0f72e2de01867fbc71755a84be372312a40364b77a81bc3521fc38b7f6c7219"},
+    "root2.a": {"bytes": 1215198, "sha256": "5d2704918eac76f3cadf02b37719064efb77dc1911836d353c1cdc8c2981e6eb"},
+    "root2.ca": {"bytes": 577919, "sha256": "88eac64563b30f567e417488a1bad493ac09a63cb494e0fa3b6c5e102fe45905"}
+  },
+  "referenceFixture": "test/data/contextual/dwdsmor-open-reference.json"
+}

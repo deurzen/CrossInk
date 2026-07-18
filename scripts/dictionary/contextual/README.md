@@ -4,6 +4,42 @@ This directory pins the desktop-only German contextual selector described in
 [`docs/contextual-dictionary-architecture.md`](../../../docs/contextual-dictionary-architecture.md).
 None of these packages or model files are uploaded to the reader.
 
+## DWDSmor Open Edition
+
+The production morphology baseline is `dwdsmor` 0.18.0 Open Edition on
+CPython 3.12. Its grammar is comprehensive, but its sample lexicon has lower
+open-class coverage than the unavailable private DWDS Edition. Contextual
+selection can rank only analyses that DWDSmor emits, so coverage must be
+measured explicitly in C09/C10 and retained definition lexicons will provide a
+bounded fallback later.
+
+Create the repository-local environment with `uv` and retrieve the pinned
+wheel:
+
+```sh
+uv venv --python 3.12 .cache/contextual/.venv
+uv pip install --python .cache/contextual/.venv/bin/python \
+  -r scripts/dictionary/contextual/requirements-dwdsmor.lock
+uv pip install --python .cache/contextual/.venv/bin/python \
+  --reinstall .cache/contextual/wheels/dwdsmor-0.18.0-py3-none-any.whl
+.cache/contextual/.venv/bin/python \
+  scripts/dictionary/contextual/verify_dwdsmor_open.py
+```
+
+The last reinstall command is optional; it demonstrates that the locally
+cached wheel is sufficient. Download that ignored local wheel from the URL in
+`dwdsmor-open.json`. The verifier pins all packaged automata by exact size and
+SHA-256, checks the wheel RECORD, and runs representative noun/verb,
+verb/adjective, inflection, and compound analyses. DWDSmor and its Open Edition
+are GPL-2.0-only desktop dependencies and are not linked into firmware.
+
+On NixOS, create the venv with the Nix CPython interpreter:
+
+```sh
+nix-shell -p python312 --run \
+  'uv venv --python "$(command -v python3.12)" .cache/contextual/.venv'
+```
+
 ## ZDL static model
 
 The production candidate is `de-zdl-lg` 4.0.0 with spaCy 3.8.14 on CPython

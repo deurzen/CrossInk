@@ -1,0 +1,9 @@
+# Resolved and verified with CPython 3.12.13 on Linux x86-64.
+# The DWDSmor wheel URL includes the PyPI-published SHA-256 digest.
+blessings==1.7
+dwdsmor @ https://files.pythonhosted.org/packages/81/c5/91a3a7f48801968f49b0bd49970068d34734022e6f15ce729f21d375f5a4/dwdsmor-0.18.0-py3-none-any.whl#sha256=395a15e15286b0c191b42355b6e3c2a43c8959621ccf3563336c2e30399a2973
+PyYAML==6.0.3
+sfst-transduce==1.3.1
+six==1.17.0
+tabulate==0.10.0
+tqdm==4.69.0
