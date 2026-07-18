@@ -94,16 +94,27 @@ class AmbiguityCorpusTest(unittest.TestCase):
             },
         )
 
-    def test_checked_in_open_edition_baseline_is_explicit(self):
+    def test_checked_in_augmented_baseline_is_explicit(self):
         baseline = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(baseline["providers"]["dwdsmor"], "0.18.0-open")
+        providers = baseline["providers"]
+        self.assertEqual(providers["dwdsmor"], "0.18.0-open")
+        self.assertEqual(providers["analysisPolicy"], 2)
+        self.assertEqual(
+            providers["formInventory"],
+            {
+                "archiveSha256": "5ae190802e85113ba192319b18c33e65ab1cd83a0f82a6e1154e824ba6a259ea",
+                "bundleUuid": "008b41d0021c591bb16e87573a017dfa",
+                "lexemeCount": 181609,
+                "licenseSpdx": "CC-BY-SA-4.0",
+            },
+        )
         self.assertEqual(
             baseline["summary"],
             {
                 "cases": 16,
                 "contextCorrect": 13,
-                "morphologyCovered": 11,
-                "fusedPrimaryCorrect": 10,
+                "morphologyCovered": 16,
+                "fusedPrimaryCorrect": 14,
             },
         )
         failures = {
@@ -115,10 +126,6 @@ class AmbiguityCorpusTest(unittest.TestCase):
             failures,
             {
                 "imperative-liebe",
-                "verbal-participle-geschrieben",
-                "adjectival-participle-geschriebene",
-                "finite-separable-aufstehen",
-                "proper-name-goethe",
                 "archaic-verb-hub",
             },
         )

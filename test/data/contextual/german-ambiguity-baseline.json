@@ -21,6 +21,10 @@
       "id": "sentence-initial-verb-laden",
       "morphology": [
         {
+          "lemma": "Lade",
+          "pos": "noun"
+        },
+        {
           "lemma": "Laden",
           "pos": "noun"
         },
@@ -52,6 +56,10 @@
       "id": "homograph-laden-noun",
       "morphology": [
         {
+          "lemma": "Lade",
+          "pos": "noun"
+        },
+        {
           "lemma": "Laden",
           "pos": "noun"
         },
@@ -82,6 +90,14 @@
       "fusedPrimaryCorrect": true,
       "id": "homograph-laden-verb",
       "morphology": [
+        {
+          "lemma": "Lade",
+          "pos": "noun"
+        },
+        {
+          "lemma": "Laden",
+          "pos": "noun"
+        },
         {
           "lemma": "laden",
           "pos": "verb"
@@ -118,8 +134,16 @@
           "pos": "noun"
         },
         {
+          "lemma": "Liebe",
+          "pos": "proper-noun"
+        },
+        {
           "lemma": "lieben",
           "pos": "verb"
+        },
+        {
+          "lemma": "Lieble",
+          "pos": "proper-noun"
         }
       ],
       "morphologyCovered": true
@@ -153,8 +177,16 @@
           "pos": "noun"
         },
         {
+          "lemma": "Liebe",
+          "pos": "proper-noun"
+        },
+        {
           "lemma": "lieben",
           "pos": "verb"
+        },
+        {
+          "lemma": "Lieble",
+          "pos": "proper-noun"
         }
       ],
       "morphologyCovered": true
@@ -170,11 +202,25 @@
         "lemma": "schreiben",
         "pos": "verb"
       },
-      "fused": [],
-      "fusedPrimaryCorrect": false,
+      "fused": [
+        {
+          "lemma": "schreiben",
+          "pos": "verb"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
       "id": "verbal-participle-geschrieben",
-      "morphology": [],
-      "morphologyCovered": false
+      "morphology": [
+        {
+          "lemma": "geschrieben",
+          "pos": "adjective"
+        },
+        {
+          "lemma": "schreiben",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
     },
     {
       "category": "participle",
@@ -187,11 +233,21 @@
         "lemma": "geschrieben",
         "pos": "adjective"
       },
-      "fused": [],
-      "fusedPrimaryCorrect": false,
+      "fused": [
+        {
+          "lemma": "geschrieben",
+          "pos": "adjective"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
       "id": "adjectival-participle-geschriebene",
-      "morphology": [],
-      "morphologyCovered": false
+      "morphology": [
+        {
+          "lemma": "geschrieben",
+          "pos": "adjective"
+        }
+      ],
+      "morphologyCovered": true
     },
     {
       "category": "separable-verb",
@@ -206,19 +262,27 @@
       },
       "fused": [
         {
-          "lemma": "stehen",
+          "lemma": "aufstehen",
           "pos": "verb"
-        }
-      ],
-      "fusedPrimaryCorrect": false,
-      "id": "finite-separable-aufstehen",
-      "morphology": [
+        },
         {
           "lemma": "stehen",
           "pos": "verb"
         }
       ],
-      "morphologyCovered": false
+      "fusedPrimaryCorrect": true,
+      "id": "finite-separable-aufstehen",
+      "morphology": [
+        {
+          "lemma": "aufstehen",
+          "pos": "verb"
+        },
+        {
+          "lemma": "stehen",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
     },
     {
       "category": "separable-verb",
@@ -267,6 +331,10 @@
       "fusedPrimaryCorrect": true,
       "id": "nominalized-infinitive-lesen",
       "morphology": [
+        {
+          "lemma": "Lese",
+          "pos": "noun"
+        },
         {
           "lemma": "Lesen",
           "pos": "noun"
@@ -343,11 +411,21 @@
         "lemma": "Goethe",
         "pos": "proper-noun"
       },
-      "fused": [],
-      "fusedPrimaryCorrect": false,
+      "fused": [
+        {
+          "lemma": "Goethe",
+          "pos": "proper-noun"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
       "id": "proper-name-goethe",
-      "morphology": [],
-      "morphologyCovered": false
+      "morphology": [
+        {
+          "lemma": "Goethe",
+          "pos": "proper-noun"
+        }
+      ],
+      "morphologyCovered": true
     },
     {
       "category": "archaic-form",
@@ -360,11 +438,33 @@
         "lemma": "heben",
         "pos": "verb"
       },
-      "fused": [],
+      "fused": [
+        {
+          "lemma": "Hub",
+          "pos": "noun"
+        },
+        {
+          "lemma": "Hub",
+          "pos": "proper-noun"
+        }
+      ],
       "fusedPrimaryCorrect": false,
       "id": "archaic-verb-hub",
-      "morphology": [],
-      "morphologyCovered": false
+      "morphology": [
+        {
+          "lemma": "heben",
+          "pos": "verb"
+        },
+        {
+          "lemma": "Hub",
+          "pos": "noun"
+        },
+        {
+          "lemma": "Hub",
+          "pos": "proper-noun"
+        }
+      ],
+      "morphologyCovered": true
     },
     {
       "category": "noun-adverb-homograph",
@@ -393,6 +493,10 @@
         {
           "lemma": "morgen",
           "pos": "adverb"
+        },
+        {
+          "lemma": "Morgen",
+          "pos": "proper-noun"
         }
       ],
       "morphologyCovered": true
@@ -424,13 +528,24 @@
         {
           "lemma": "morgen",
           "pos": "adverb"
+        },
+        {
+          "lemma": "Morgen",
+          "pos": "proper-noun"
         }
       ],
       "morphologyCovered": true
     }
   ],
   "providers": {
+    "analysisPolicy": 2,
     "dwdsmor": "0.18.0-open",
+    "formInventory": {
+      "archiveSha256": "5ae190802e85113ba192319b18c33e65ab1cd83a0f82a6e1154e824ba6a259ea",
+      "bundleUuid": "008b41d0021c591bb16e87573a017dfa",
+      "lexemeCount": 181609,
+      "licenseSpdx": "CC-BY-SA-4.0"
+    },
     "spacy": "3.8.14",
     "zdl": "de-zdl-lg-4.0.0"
   },
@@ -438,7 +553,7 @@
   "summary": {
     "cases": 16,
     "contextCorrect": 13,
-    "fusedPrimaryCorrect": 10,
-    "morphologyCovered": 11
+    "fusedPrimaryCorrect": 14,
+    "morphologyCovered": 16
   }
 }

@@ -44,7 +44,7 @@ committed.
 | C08 | Done | Fuse contextual and morphological analyses | Primary plus ≤7 alternatives emitted deterministically; confidence policy has focused unit tests |
 | C08a | Done | Augment missing Open Edition analyses from the de-DE form inventory | Missing common forms gain canonical candidates; source precedence/provenance and ambiguity caps are deterministic |
 | C08b | Done | Recombine finite separable verbs from sentence context | Particle + finite base can resolve lexical separable lemma without changing unrelated token offsets |
-| C09 | Done | Build contextual German ambiguity corpus | Gold cases cover sentence-initial verbs, noun/verb homographs, participles, separable verbs, nominalization, compounds and names |
+| C09 | Done | Build contextual German ambiguity corpus | Gold cases cover sentence-initial verbs, noun/verb homographs, participles, separable verbs, nominalization, compounds and names; policy 2 measures 16/16 coverage and 14/16 primary accuracy |
 | C10 | Done | Benchmark static versus transformer ZDL models | Accuracy, wall time and peak host RAM measured on the same corpus; production selector chosen from evidence |
 | C11 | Planned | Build deterministic canonical lexicon and compiler bundle | Dense IDs stable across input order; canonical UUID/fingerprint and model provenance emitted |
 | C12 | Planned | Add full-EPUB host compiler using the contextual provider | Canonical OPF preserved; XHTML markers and `language.bin` transactional; two builds are byte-identical |
@@ -132,6 +132,6 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Re-run the C09 corpus and record the remaining contextual failures.
-2. Begin canonical lexicon C11.
-3. Carry both canonical POS version 1 and analysis policy version 2 into compiler metadata.
+1. Begin canonical lexicon C11.
+2. Carry both canonical POS version 1 and analysis policy version 2 into compiler metadata.
+3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
