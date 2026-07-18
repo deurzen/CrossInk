@@ -1,10 +1,12 @@
 add_executable(BookLanguageFormatTest
   BookLanguageFormatTest.cpp
   BookLanguageReaderTest.cpp
+  DefinitionPagerTest.cpp
   GrammarPresentationTest.cpp
   ${REPO_ROOT}/lib/Dictionary/BookLanguageFormat.cpp
   ${REPO_ROOT}/lib/Dictionary/BookLanguageReader.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
+  ${REPO_ROOT}/lib/Dictionary/DefinitionPager.cpp
   ${REPO_ROOT}/lib/Dictionary/GrammarPresentation.cpp
   ${REPO_ROOT}/lib/Dictionary/PageShortlist.cpp
 )

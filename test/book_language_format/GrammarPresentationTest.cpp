@@ -102,6 +102,25 @@ TEST(GrammarPresentation, FormatsPrimaryPosAwareOrderInEnglishAndGerman) {
   EXPECT_EQ(grammar(5, 0x00001C01U), "Pronoun · Nominative · Third person plural");
 }
 
+TEST(GrammarPresentation, OmitsUnavailableFeaturesButRetainsPartOfSpeech) {
+  EXPECT_EQ(grammar(1, 0), "Noun");
+  EXPECT_EQ(grammar(2, 0), "Verb");
+}
+
+TEST(GrammarPresentation, FormatsDistinctAlternativeAnalysisLabels) {
+  std::array<char, 64> primary{};
+  std::array<char, 64> alternative{};
+  size_t primaryLength = 0;
+  size_t alternativeLength = 0;
+  ASSERT_TRUE(dictionary::grammar_presentation::formatAnalysisLabel(
+      "laufen", 2, {nullptr, englishLabel}, {nullptr, byteWidth}, 64, primary.data(), primary.size(), primaryLength));
+  ASSERT_TRUE(dictionary::grammar_presentation::formatAnalysisLabel("Lauf", 1, {nullptr, englishLabel},
+                                                                    {nullptr, byteWidth}, 64, alternative.data(),
+                                                                    alternative.size(), alternativeLength));
+  EXPECT_EQ(std::string_view(primary.data(), primaryLength), "laufen · Verb");
+  EXPECT_EQ(std::string_view(alternative.data(), alternativeLength), "Lauf · Noun");
+}
+
 TEST(GrammarPresentation, AppliesFrozenComponentDropOrder) {
   constexpr uint32_t adjective = 0x0000022AU;
   const std::string withoutPositive = "Adjective · Accusative · Masculine · Singular";

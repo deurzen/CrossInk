@@ -44,6 +44,8 @@ class MappedInputManager {
 #ifdef SIMULATOR
   void simulatorInjectPress(Button button);
   void simulatorInjectRelease(Button button);
+  // Injects a named physical button position through the active reader mapping.
+  void simulatorInjectPhysicalRelease(Button physicalButton);
   void simulatorClearInputFrame();
 #endif
 

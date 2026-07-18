@@ -262,11 +262,20 @@ existing bottom definition-page indicator remains independent.
 
 | ID | Status | Work item | Completion gate |
 | --- | --- | --- | --- |
-| U15 | Planned | Add focused host and simulator interaction tests | Grammar omission, alternatives, pagination, all button modes, edge wrap and post-status removal are covered |
+| U15 | Done | Add focused host and simulator interaction tests | Grammar omission, alternatives, pagination, all button modes, edge wrap and post-status removal are covered |
 | U16 | Planned | Run complete automated qualification | Host, contextual Python, WebUI, simulator smoke, firmware, format, static analysis and generated-file checks pass |
 | U17 | Planned | Recompile the two production German EPUBs | Adjacent byte-identical pre-v5 backups are preserved; outputs validate as v5 with the existing canonical UUID |
 | U18 | Planned | Validate UX and resources on X3/X4 | `knipste · knipsen` grammar, alternative labels, direct word navigation, orientations, heap, largest block, stack and one-reader behavior pass |
 | U19 | Planned | Run updated 100-cycle endurance gate | Word changes, definition paging, status removals, source reorder and reboot show no decline or stale state |
+
+U15 extracts the deterministic input priority and selection arithmetic into an
+allocation-free helper used by the activity. Focused host tests cover all three
+modes, simultaneous releases, definition-page bounds, one-item no-op, both word
+wraps and every post-status destination; presentation tests cover omitted
+features, alternative labels and sequential pager continuation. The simulator
+injects named physical button positions through reader mapping and records all
+six logical actions in portrait, inverted and both landscape orientations. The
+suite grows from 200 to 209 tests without retained RAM growth.
 
 ## Phase E — measurement-gated optimization
 

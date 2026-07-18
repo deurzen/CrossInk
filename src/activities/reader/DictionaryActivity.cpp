@@ -1,5 +1,6 @@
 #include "DictionaryActivity.h"
 
+#include <DictionaryNavigation.h>
 #include <GrammarPresentation.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -112,6 +113,29 @@ const char* modeName(const uint8_t mode) {
 
 bool entryCursorAtStart(const dictionary::definition::Cursor& cursor) {
   return cursor.fieldHeaderOffset == 4 && cursor.fieldIndex == 0 && cursor.fieldByteOffset == 0;
+}
+
+bool readReleasedAction(void* context, const dictionary::navigation::Action action) {
+  auto& input = *static_cast<MappedInputManager*>(context);
+  using Action = dictionary::navigation::Action;
+  using Button = MappedInputManager::Button;
+  switch (action) {
+    case Action::Back:
+      return input.wasReleased(Button::Back);
+    case Action::Confirm:
+      return input.wasReleased(Button::Confirm);
+    case Action::Left:
+      return input.wasReleased(Button::Left);
+    case Action::Right:
+      return input.wasReleased(Button::Right);
+    case Action::Up:
+      return input.wasReleased(Button::Up);
+    case Action::Down:
+      return input.wasReleased(Button::Down);
+    case Action::None:
+      return false;
+  }
+  return false;
 }
 
 dictionary::lexeme_state::Status statusValue(const uint8_t index) {
@@ -540,12 +564,15 @@ bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const
 }
 
 void DictionaryActivity::changeDefinitionPage(const int delta) {
-  if (definitionFailed_ || !definitionPage_) return;
-  if (delta > 0 && definitionPage_->hasNext) {
+  if (!definitionPage_ || delta == 0) return;
+  using dictionary::navigation::Action;
+  const auto move = dictionary::navigation::definitionPageMove(
+      definitionFailed_, definitionPageIndex_, definitionPage_->hasNext, delta < 0 ? Action::Left : Action::Right);
+  if (move == dictionary::navigation::PageMove::Next) {
     loadDefinitionPage(definitionPageNext_, definitionPageIndex_ + 1);
     return;
   }
-  if (delta >= 0 || definitionPageIndex_ == 0) return;
+  if (move != dictionary::navigation::PageMove::Previous) return;
 
   // Backward navigation replays bounded pages from the entry start. This keeps
   // memory independent of definition length; only explicit reverse navigation
@@ -563,8 +590,11 @@ void DictionaryActivity::changeDefinitionPage(const int delta) {
 
 void DictionaryActivity::changeSelectedWord(const int delta) {
   if (delta == 0 || !session_ || !shortlist_ || selected_ >= shortlist_->count) return;
-  const uint16_t oldIndex = selected_;
+  using dictionary::navigation::Action;
+  const Action action = delta < 0 ? Action::Up : Action::Down;
+  dictionary::navigation::WordMove move;
   if (statusFilterPending_) {
+    const uint16_t oldIndex = selected_;
     dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
     if (!session_->filterShortlist(*shortlist_, error)) {
       LOG_ERR("DICT", "Post-status shortlist filter failed: %s", dictionary::lookup::sessionErrorName(error));
@@ -576,23 +606,16 @@ void DictionaryActivity::changeSelectedWord(const int delta) {
     }
     statusFilterPending_ = false;
     statusSaved_ = false;
-    if (shortlist_->count == 0) {
+    move = dictionary::navigation::moveAfterCurrentRemoval(oldIndex, shortlist_->count, action);
+    if (move.finish) {
       finish();
       return;
     }
-    if (delta > 0) {
-      selected_ = oldIndex < shortlist_->count ? oldIndex : 0;
-    } else {
-      selected_ = oldIndex == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : oldIndex - 1;
-    }
   } else {
-    if (shortlist_->count <= 1) return;
-    if (delta > 0) {
-      selected_ = static_cast<uint16_t>((selected_ + 1) % shortlist_->count);
-    } else {
-      selected_ = selected_ == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : selected_ - 1;
-    }
+    move = dictionary::navigation::moveWord(selected_, shortlist_->count, action);
   }
+  if (!move.changed) return;
+  selected_ = move.selection;
   openDefinition();
 }
 
@@ -635,95 +658,65 @@ void DictionaryActivity::returnToShortlist() {
 }
 
 void DictionaryActivity::loop() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (mode_ == Mode::Shortlist) {
-      finish();
-    } else if (mode_ == Mode::Status) {
-      mode_ = Mode::Definition;
-      requestUpdate();
-    } else {
-      returnToShortlist();
-    }
-    return;
+  using namespace dictionary::navigation;
+  const Action action = firstReleased(&mappedInput, readReleasedAction);
+  dictionary::navigation::Mode navigationMode = dictionary::navigation::Mode::Shortlist;
+  if (mode_ == DictionaryActivity::Mode::Definition) {
+    navigationMode = dictionary::navigation::Mode::Definition;
+  } else if (mode_ == DictionaryActivity::Mode::Status) {
+    navigationMode = dictionary::navigation::Mode::Status;
   }
 
-  if (mode_ == Mode::Shortlist) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  switch (effectFor(navigationMode, action, definitionFailed_)) {
+    case Effect::None:
+      return;
+    case Effect::Finish:
+      finish();
+      return;
+    case Effect::OpenDefinition:
       openDefinition();
       return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
-      selected_ = selected_ == 0 ? static_cast<uint16_t>(shortlist_->count - 1) : selected_ - 1;
+    case Effect::ReturnToShortlist:
+      returnToShortlist();
+      return;
+    case Effect::CancelStatus:
+      mode_ = DictionaryActivity::Mode::Definition;
       requestUpdate();
       return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
-      selected_ = static_cast<uint16_t>((selected_ + 1) % shortlist_->count);
-      requestUpdate();
-      return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
-      const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
-      selected_ = selected_ > rows ? static_cast<uint16_t>(selected_ - rows) : 0;
-      requestUpdate();
-      return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
-      const uint16_t rows = static_cast<uint16_t>(shortlistRowsPerPage());
-      selected_ = static_cast<uint16_t>(std::min<size_t>(shortlist_->count - 1, selected_ + rows));
-      requestUpdate();
-    }
-    return;
-  }
-
-  if (mode_ == Mode::Status) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    case Effect::SaveStatus:
       saveSelectedStatus();
       return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
-      statusSelection_ = statusSelection_ == 0 ? 2 : statusSelection_ - 1;
-      requestUpdate();
+    case Effect::MoveShortlist: {
+      const uint16_t previous = selected_;
+      selected_ =
+          moveShortlistSelection(selected_, shortlist_->count, static_cast<uint16_t>(shortlistRowsPerPage()), action);
+      if (selected_ != previous) requestUpdate();
       return;
     }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
-      statusSelection_ = static_cast<uint8_t>((statusSelection_ + 1) % 3);
-      requestUpdate();
+    case Effect::MoveStatus: {
+      const uint8_t previous = statusSelection_;
+      statusSelection_ = moveStatusSelection(statusSelection_, action);
+      if (statusSelection_ != previous) requestUpdate();
       return;
     }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
-      statusSelection_ = statusSelection_ == 0 ? 2 : statusSelection_ - 1;
-      requestUpdate();
-      return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
-      statusSelection_ = static_cast<uint8_t>((statusSelection_ + 1) % 3);
-      requestUpdate();
-    }
-    return;
-  }
-
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (!definitionFailed_) {
-      mode_ = Mode::Status;
+    case Effect::OpenStatus:
+      mode_ = DictionaryActivity::Mode::Status;
       statusSelection_ = 0;
       requestUpdate();
-    }
-    return;
+      return;
+    case Effect::PreviousPage:
+      changeDefinitionPage(-1);
+      return;
+    case Effect::NextPage:
+      changeDefinitionPage(1);
+      return;
+    case Effect::PreviousWord:
+      changeSelectedWord(-1);
+      return;
+    case Effect::NextWord:
+      changeSelectedWord(1);
+      return;
   }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
-    changeDefinitionPage(-1);
-    return;
-  }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
-    changeDefinitionPage(1);
-    return;
-  }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
-    changeSelectedWord(-1);
-    return;
-  }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Down)) changeSelectedWord(1);
 }
 
 void DictionaryActivity::renderShortlist() {

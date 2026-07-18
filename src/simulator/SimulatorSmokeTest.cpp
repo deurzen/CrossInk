@@ -2,11 +2,13 @@
 
 #include "SimulatorSmokeTest.h"
 
+#include <DictionaryNavigation.h>
 #include <HalStorage.h>
 #include <Logging.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <vector>
@@ -89,6 +91,113 @@ class SimulatorSmokeTest {
     return std::max(0, std::atoi(raw));
   }
 
+  static MappedInputManager::Button mappedButton(const dictionary::navigation::Action action) {
+    using Action = dictionary::navigation::Action;
+    using Button = MappedInputManager::Button;
+    switch (action) {
+      case Action::Back:
+        return Button::Back;
+      case Action::Confirm:
+        return Button::Confirm;
+      case Action::Left:
+        return Button::Left;
+      case Action::Right:
+        return Button::Right;
+      case Action::Up:
+        return Button::Up;
+      case Action::Down:
+      case Action::None:
+        return Button::Down;
+    }
+    return Button::Down;
+  }
+
+  static bool smokeActionReleased(void*, const dictionary::navigation::Action action) {
+    return action != dictionary::navigation::Action::None && mappedInputManager.wasReleased(mappedButton(action));
+  }
+
+  static void validateDictionaryInputTrace() {
+    struct SavedSettings {
+      uint8_t orientation;
+      uint8_t frontOrientationAware;
+      uint8_t sideOrientationAware;
+      uint8_t readerFrontButtonsEnabled;
+      uint8_t readerBack;
+      uint8_t readerConfirm;
+      uint8_t readerLeft;
+      uint8_t readerRight;
+    } saved{SETTINGS.orientation,
+            SETTINGS.frontButtonOrientationAware,
+            SETTINGS.sideButtonOrientationAware,
+            SETTINGS.readerFrontButtonsEnabled,
+            SETTINGS.readerFrontButtonBack,
+            SETTINGS.readerFrontButtonConfirm,
+            SETTINGS.readerFrontButtonLeft,
+            SETTINGS.readerFrontButtonRight};
+
+    SETTINGS.frontButtonOrientationAware = CrossPointSettings::FRONT_ORIENTATION_AWARE_NAV_BUTTONS;
+    SETTINGS.sideButtonOrientationAware = 1;
+    SETTINGS.readerFrontButtonsEnabled = 1;
+    SETTINGS.readerFrontButtonBack = CrossPointSettings::FRONT_HW_BACK;
+    SETTINGS.readerFrontButtonConfirm = CrossPointSettings::FRONT_HW_CONFIRM;
+    SETTINGS.readerFrontButtonLeft = CrossPointSettings::FRONT_HW_LEFT;
+    SETTINGS.readerFrontButtonRight = CrossPointSettings::FRONT_HW_RIGHT;
+    mappedInputManager.setReaderMode(true);
+
+    constexpr dictionary::navigation::Action actions[] = {
+        dictionary::navigation::Action::Back, dictionary::navigation::Action::Confirm,
+        dictionary::navigation::Action::Left, dictionary::navigation::Action::Right,
+        dictionary::navigation::Action::Up,   dictionary::navigation::Action::Down,
+    };
+    constexpr CrossPointSettings::ORIENTATION orientations[] = {
+        CrossPointSettings::PORTRAIT,
+        CrossPointSettings::INVERTED,
+        CrossPointSettings::LANDSCAPE_CW,
+        CrossPointSettings::LANDSCAPE_CCW,
+    };
+    for (const auto orientation : orientations) {
+      SETTINGS.orientation = orientation;
+      const bool swapped = orientation != CrossPointSettings::PORTRAIT;
+      const auto labels = mappedInputManager.mapLabels("back", "confirm", "previous", "next");
+      if (std::strcmp(labels.btn1, "back") != 0 || std::strcmp(labels.btn2, "confirm") != 0 ||
+          std::strcmp(labels.btn3, swapped ? "next" : "previous") != 0 ||
+          std::strcmp(labels.btn4, swapped ? "previous" : "next") != 0) {
+        fail("Dictionary front-label mapping failed in orientation %u", static_cast<unsigned>(orientation));
+      }
+
+      for (const auto physicalAction : actions) {
+        mappedInputManager.simulatorClearInputFrame();
+        mappedInputManager.simulatorInjectPhysicalRelease(mappedButton(physicalAction));
+        dictionary::navigation::Action expected = physicalAction;
+        if (swapped && physicalAction == dictionary::navigation::Action::Left) {
+          expected = dictionary::navigation::Action::Right;
+        } else if (swapped && physicalAction == dictionary::navigation::Action::Right) {
+          expected = dictionary::navigation::Action::Left;
+        } else if (swapped && physicalAction == dictionary::navigation::Action::Up) {
+          expected = dictionary::navigation::Action::Down;
+        } else if (swapped && physicalAction == dictionary::navigation::Action::Down) {
+          expected = dictionary::navigation::Action::Up;
+        }
+        const auto actual = dictionary::navigation::firstReleased(nullptr, smokeActionReleased);
+        if (actual != expected) {
+          fail("Dictionary input trace failed in orientation %u", static_cast<unsigned>(orientation));
+        }
+      }
+    }
+
+    mappedInputManager.simulatorClearInputFrame();
+    mappedInputManager.setReaderMode(false);
+    SETTINGS.orientation = saved.orientation;
+    SETTINGS.frontButtonOrientationAware = saved.frontOrientationAware;
+    SETTINGS.sideButtonOrientationAware = saved.sideOrientationAware;
+    SETTINGS.readerFrontButtonsEnabled = saved.readerFrontButtonsEnabled;
+    SETTINGS.readerFrontButtonBack = saved.readerBack;
+    SETTINGS.readerFrontButtonConfirm = saved.readerConfirm;
+    SETTINGS.readerFrontButtonLeft = saved.readerLeft;
+    SETTINGS.readerFrontButtonRight = saved.readerRight;
+    LOG_INF("SMOKE", "Validated dictionary input trace across 4 orientations");
+  }
+
   static void applyRequestedTheme() {
     const char* raw = std::getenv("CROSSINK_SIMULATOR_SMOKE_THEME");
     if (raw == nullptr || raw[0] == '\0') {
@@ -145,6 +254,7 @@ class SimulatorSmokeTest {
     switch (step) {
       case SmokeStep::Start:
         LOG_INF("SMOKE", "Starting simulator smoke test");
+        validateDictionaryInputTrace();
         if (!CrossPointSettings::verifySleepTimeoutMigrationContract()) {
           fail("Sleep timeout migration contract failed");
         }

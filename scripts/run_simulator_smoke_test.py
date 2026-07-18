@@ -131,6 +131,10 @@ def run_smoke(args: argparse.Namespace) -> int:
         print("Simulator smoke test did not print its success marker", file=sys.stderr)
         return 2
 
+    if "Validated dictionary input trace across 4 orientations" not in proc.stdout:
+        print("Simulator smoke test did not validate dictionary input orientations", file=sys.stderr)
+        return 2
+
     if "Saved word inbox context 1" not in proc.stdout:
         print("Simulator smoke test did not persist a Word Inbox context", file=sys.stderr)
         return 2

@@ -387,6 +387,59 @@ void MappedInputManager::simulatorInjectRelease(Button button) {
   simulatorHeld[idx] = false;
 }
 
+void MappedInputManager::simulatorInjectPhysicalRelease(const Button physicalButton) {
+  const bool useReaderMapping = readerMode && SETTINGS.readerFrontButtonsEnabled;
+  const ButtonIndex btnBack = useReaderMapping ? SETTINGS.readerFrontButtonBack : SETTINGS.frontButtonBack;
+  const ButtonIndex btnConfirm = useReaderMapping ? SETTINGS.readerFrontButtonConfirm : SETTINGS.frontButtonConfirm;
+  const ButtonIndex btnLeft = useReaderMapping ? SETTINGS.readerFrontButtonLeft : SETTINGS.frontButtonLeft;
+  const ButtonIndex btnRight = useReaderMapping ? SETTINGS.readerFrontButtonRight : SETTINGS.frontButtonRight;
+  const ButtonIndex mappedBack = mapFrontButtonForReaderOrientation(btnBack, btnLeft, btnRight, readerMode);
+  const ButtonIndex mappedConfirm = mapFrontButtonForReaderOrientation(btnConfirm, btnLeft, btnRight, readerMode);
+  const ButtonIndex mappedLeft = mapFrontButtonForReaderOrientation(btnLeft, btnLeft, btnRight, readerMode);
+  const ButtonIndex mappedRight = mapFrontButtonForReaderOrientation(btnRight, btnLeft, btnRight, readerMode);
+
+  ButtonIndex hardware = kNoButton;
+  switch (physicalButton) {
+    case Button::Back:
+      hardware = HalGPIO::BTN_BACK;
+      break;
+    case Button::Confirm:
+      hardware = HalGPIO::BTN_CONFIRM;
+      break;
+    case Button::Left:
+      hardware = HalGPIO::BTN_LEFT;
+      break;
+    case Button::Right:
+      hardware = HalGPIO::BTN_RIGHT;
+      break;
+    case Button::Up:
+      hardware = HalGPIO::BTN_UP;
+      break;
+    case Button::Down:
+      hardware = HalGPIO::BTN_DOWN;
+      break;
+    case Button::Power:
+    case Button::PageBack:
+    case Button::PageForward:
+      simulatorInjectRelease(physicalButton);
+      return;
+  }
+
+  if (hardware == mappedBack) {
+    simulatorInjectRelease(Button::Back);
+  } else if (hardware == mappedConfirm) {
+    simulatorInjectRelease(Button::Confirm);
+  } else if (hardware == mappedLeft) {
+    simulatorInjectRelease(Button::Left);
+  } else if (hardware == mappedRight) {
+    simulatorInjectRelease(Button::Right);
+  } else if (hardware == mapSideButtonForReaderOrientation(HalGPIO::BTN_UP, readerMode)) {
+    simulatorInjectRelease(Button::Up);
+  } else if (hardware == mapSideButtonForReaderOrientation(HalGPIO::BTN_DOWN, readerMode)) {
+    simulatorInjectRelease(Button::Down);
+  }
+}
+
 void MappedInputManager::simulatorClearInputFrame() {
   simulatorPressed.fill(false);
   simulatorReleased.fill(false);
