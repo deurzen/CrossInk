@@ -26,6 +26,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.FormInventory
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_form_inventory.py
+)
+
+add_test(
   NAME ContextualDictionary.AnalysisPolicy
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_analysis_policy.py
 )

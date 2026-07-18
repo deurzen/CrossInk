@@ -11,7 +11,7 @@ from .analysis_policy import (
     CanonicalAnalysis,
     score_analysis,
 )
-from .pipeline import ContextToken, RankedAnalysis
+from .pipeline import AnalysisProvenance, ContextToken, MorphologyCandidate, RankedAnalysis
 
 MIN_NORMALIZED_SCORE = -1000
 MAX_NORMALIZED_SCORE = 1250
@@ -21,6 +21,7 @@ MAX_NORMALIZED_SCORE = 1250
 class _ScoredCandidate:
     analysis: CanonicalAnalysis
     evidence: AnalysisScore
+    provenance: AnalysisProvenance
 
 
 def _lexical_key(analysis: CanonicalAnalysis) -> tuple[bytes, int]:
@@ -40,23 +41,41 @@ def normalize_score(score: int) -> int:
 
 
 class GermanAnalysisFuser:
-    """Rank DWDSmor candidates and collapse inflection variants by lexical key."""
+    """Rank morphology candidates and collapse inflection variants by lexical key."""
 
     def rank(
         self,
         token: ContextToken,
-        candidates: tuple[CanonicalAnalysis, ...],
+        candidates: tuple[MorphologyCandidate, ...],
     ) -> tuple[RankedAnalysis, ...]:
         if not candidates:
             return ()
 
         best_by_lexical_key: dict[tuple[bytes, int], _ScoredCandidate] = {}
         for candidate in candidates:
-            scored = _ScoredCandidate(candidate, score_analysis(token.analysis, candidate))
-            key = _lexical_key(candidate)
+            scored = _ScoredCandidate(
+                candidate.analysis,
+                score_analysis(token.analysis, candidate.analysis),
+                candidate.provenance,
+            )
+            key = _lexical_key(candidate.analysis)
             previous = best_by_lexical_key.get(key)
-            if previous is None or self._variant_order(scored) < self._variant_order(previous):
+            if previous is None:
                 best_by_lexical_key[key] = scored
+                continue
+            combined_provenance = previous.provenance | scored.provenance
+            if self._variant_order(scored) < self._variant_order(previous):
+                best_by_lexical_key[key] = _ScoredCandidate(
+                    scored.analysis,
+                    scored.evidence,
+                    combined_provenance,
+                )
+            else:
+                best_by_lexical_key[key] = _ScoredCandidate(
+                    previous.analysis,
+                    previous.evidence,
+                    combined_provenance,
+                )
 
         ordered = sorted(best_by_lexical_key.values(), key=self._candidate_order)
         top_score = ordered[0].evidence.total
@@ -64,7 +83,11 @@ class GermanAnalysisFuser:
         retained = [candidate for candidate in ordered if candidate.evidence.total >= minimum_score]
         retained = retained[:MAX_ALTERNATIVES]
         return tuple(
-            RankedAnalysis(candidate.analysis, candidate.evidence.total)
+            RankedAnalysis(
+                candidate.analysis,
+                candidate.evidence.total,
+                candidate.provenance,
+            )
             for candidate in retained
         )
 

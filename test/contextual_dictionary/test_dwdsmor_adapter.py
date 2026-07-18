@@ -12,6 +12,7 @@ from dictionary.contextual.dwdsmor_adapter import (  # noqa: E402
     DwdsmorLimits,
     DwdsmorMorphologyAnalyzer,
 )
+from dictionary.contextual.pipeline import AnalysisProvenance  # noqa: E402
 
 
 class FakeAnalyzer:
@@ -40,7 +41,11 @@ class DwdsmorAdapterTest(unittest.TestCase):
                 traversal("Liebe", "NN", case="Nom", number="Sg"),
             )
         )
-        analyses = tuple(DwdsmorMorphologyAnalyzer(source).analyze_surface("Liebe"))
+        candidates = tuple(DwdsmorMorphologyAnalyzer(source).analyze_surface("Liebe"))
+        self.assertTrue(
+            all(item.provenance == AnalysisProvenance.PRIMARY_MORPHOLOGY for item in candidates)
+        )
+        analyses = tuple(item.analysis for item in candidates)
         self.assertEqual(len(analyses), 2)
         self.assertEqual(
             {(item.lemma, item.part_of_speech) for item in analyses},
@@ -52,7 +57,7 @@ class DwdsmorAdapterTest(unittest.TestCase):
 
     def test_normalizes_surface_and_lemma_to_nfc(self):
         source = FakeAnalyzer((traversal("Ha\u0308user", "NN"),))
-        analysis = tuple(DwdsmorMorphologyAnalyzer(source).analyze_surface("Ha\u0308user"))[0]
+        analysis = tuple(DwdsmorMorphologyAnalyzer(source).analyze_surface("Ha\u0308user"))[0].analysis
         self.assertEqual(source.surfaces, ["Häuser"])
         self.assertEqual(analysis.lemma, "Häuser")
 

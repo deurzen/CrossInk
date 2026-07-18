@@ -42,7 +42,7 @@ committed.
 | C06 | Done | Add bounded DWDSmor sentence/token analysis adapter | All analyzer output is parsed with explicit caps; malformed/oversized output fails cleanly |
 | C07 | Done | Add ZDL contextual POS/lemma adapter | Sentence offsets round-trip to XHTML tokens; model errors and token mismatches are reported |
 | C08 | Done | Fuse contextual and morphological analyses | Primary plus ≤7 alternatives emitted deterministically; confidence policy has focused unit tests |
-| C08a | Planned | Augment missing Open Edition analyses from the de-DE form inventory | Missing common forms gain canonical candidates; source precedence/provenance and ambiguity caps are deterministic |
+| C08a | Done | Augment missing Open Edition analyses from the de-DE form inventory | Missing common forms gain canonical candidates; source precedence/provenance and ambiguity caps are deterministic |
 | C08b | Planned | Recombine finite separable verbs from sentence context | Particle + finite base can resolve lexical separable lemma without changing unrelated token offsets |
 | C09 | Done | Build contextual German ambiguity corpus | Gold cases cover sentence-initial verbs, noun/verb homographs, participles, separable verbs, nominalization, compounds and names |
 | C10 | Done | Benchmark static versus transformer ZDL models | Accuracy, wall time and peak host RAM measured on the same corpus; production selector chosen from evidence |
@@ -132,6 +132,6 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Complete C08a by adding the measured de-DE form-inventory fallback.
-2. Complete C08b with finite separable-verb recombination.
-3. Re-run the C09 corpus, then begin canonical lexicon C11.
+1. Complete C08b with finite separable-verb recombination.
+2. Re-run the C09 corpus and record remaining contextual failures.
+3. Begin canonical lexicon C11.

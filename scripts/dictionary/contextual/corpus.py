@@ -166,11 +166,13 @@ def evaluate_corpus(
         if case.target.occurrence >= len(matching):
             raise CorpusError(f"{case.case_id}: contextual tokenizer did not return target")
         token = matching[case.target.occurrence]
-        morphology = tuple(morphology_analyzer.analyze_surface(token.surface))
-        ranked = tuple(fuser.rank(token, morphology))
+        morphology_candidates = tuple(morphology_analyzer.analyze_surface(token.surface))
+        ranked = tuple(fuser.rank(token, morphology_candidates))
         expected = CanonicalAnalysis(case.target.lemma, case.target.part_of_speech)
         expected_key = _semantic_key(expected)
-        lexical_morphology = _unique_lexical_analyses(morphology)
+        lexical_morphology = _unique_lexical_analyses(
+            candidate.analysis for candidate in morphology_candidates
+        )
         fused = tuple(item.analysis for item in ranked)
         evaluations.append(
             CaseEvaluation(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import IntFlag
 from typing import Iterable, Protocol, runtime_checkable
 
 from .analysis_policy import CanonicalAnalysis
@@ -35,10 +36,38 @@ class ContextToken:
     analysis: CanonicalAnalysis
 
 
+class AnalysisProvenance(IntFlag):
+    """Candidate evidence sources; values are compiler metadata, not identity."""
+
+    PRIMARY_MORPHOLOGY = 0x01
+    EXACT_FORM_INVENTORY = 0x02
+    FOLDED_FORM_INVENTORY = 0x04
+    CONTEXT_RECOMBINATION = 0x08
+
+
+_ALL_PROVENANCE = (
+    AnalysisProvenance.PRIMARY_MORPHOLOGY
+    | AnalysisProvenance.EXACT_FORM_INVENTORY
+    | AnalysisProvenance.FOLDED_FORM_INVENTORY
+    | AnalysisProvenance.CONTEXT_RECOMBINATION
+)
+
+
+@dataclass(frozen=True)
+class MorphologyCandidate:
+    analysis: CanonicalAnalysis
+    provenance: AnalysisProvenance
+
+    def __post_init__(self) -> None:
+        if not self.provenance or self.provenance & ~_ALL_PROVENANCE:
+            raise ValueError("invalid morphology provenance")
+
+
 @dataclass(frozen=True)
 class RankedAnalysis:
     analysis: CanonicalAnalysis
     score: int
+    provenance: AnalysisProvenance
 
 
 @dataclass(frozen=True)
@@ -57,7 +86,7 @@ class ContextAnalyzer(Protocol):
 
 @runtime_checkable
 class MorphologyAnalyzer(Protocol):
-    def analyze_surface(self, surface: str) -> Iterable[CanonicalAnalysis]: ...
+    def analyze_surface(self, surface: str) -> Iterable[MorphologyCandidate]: ...
 
 
 @runtime_checkable
@@ -65,7 +94,7 @@ class AnalysisFuser(Protocol):
     def rank(
         self,
         token: ContextToken,
-        candidates: tuple[CanonicalAnalysis, ...],
+        candidates: tuple[MorphologyCandidate, ...],
     ) -> Iterable[RankedAnalysis]: ...
 
 
@@ -154,7 +183,7 @@ class AnalyzerPipeline:
                 raise
             except Exception as error:
                 raise AnalysisPipelineError("morphology", str(error)) from error
-            if any(not isinstance(candidate, CanonicalAnalysis) for candidate in candidate_values):
+            if any(not isinstance(candidate, MorphologyCandidate) for candidate in candidate_values):
                 raise AnalysisPipelineError(
                     "morphology",
                     f"token {token_index} has an invalid candidate type",
@@ -174,7 +203,8 @@ class AnalyzerPipeline:
             if any(not isinstance(item, RankedAnalysis) for item in ranked_values):
                 raise AnalysisPipelineError("fusion", f"token {token_index} has an invalid ranked type")
             ranked = tuple(ranked_values)
-            if any(item.analysis not in candidates for item in ranked):
+            candidate_analyses = {candidate.analysis for candidate in candidates}
+            if any(item.analysis not in candidate_analyses for item in ranked):
                 raise AnalysisPipelineError("fusion", f"token {token_index} introduced a new analysis")
             if len({item.analysis for item in ranked}) != len(ranked):
                 raise AnalysisPipelineError("fusion", f"token {token_index} contains duplicate analyses")

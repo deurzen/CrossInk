@@ -7,6 +7,7 @@ import unicodedata
 from typing import Any, Iterable
 
 from .analysis_policy import CanonicalAnalysis, map_dwdsmor_analysis
+from .pipeline import AnalysisProvenance, MorphologyCandidate
 
 
 class DwdsmorAdapterError(RuntimeError):
@@ -75,7 +76,7 @@ class DwdsmorMorphologyAnalyzer:
             raise DwdsmorAdapterError(f"cannot open DWDSmor lemma automaton: {error}") from error
         return cls(analyzer, limits)
 
-    def analyze_surface(self, surface: str) -> Iterable[CanonicalAnalysis]:
+    def analyze_surface(self, surface: str) -> Iterable[MorphologyCandidate]:
         if not isinstance(surface, str) or not surface:
             raise DwdsmorAdapterError("surface must be non-empty text")
         normalized = unicodedata.normalize("NFC", surface)
@@ -109,7 +110,10 @@ class DwdsmorMorphologyAnalyzer:
             raise
         except Exception as error:
             raise DwdsmorAdapterError(f"cannot iterate analyzer output: {error}") from error
-        return tuple(sorted(unique, key=_analysis_key))
+        return tuple(
+            MorphologyCandidate(analysis, AnalysisProvenance.PRIMARY_MORPHOLOGY)
+            for analysis in sorted(unique, key=_analysis_key)
+        )
 
     def _convert_traversal(self, traversal: Any, index: int) -> CanonicalAnalysis:
         lemma = getattr(traversal, "analysis", None)

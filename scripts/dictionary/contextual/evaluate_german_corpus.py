@@ -13,6 +13,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from dictionary.contextual.corpus import evaluate_corpus, load_corpus  # noqa: E402
 from dictionary.contextual.dwdsmor_adapter import DwdsmorMorphologyAnalyzer  # noqa: E402
+from dictionary.contextual.form_inventory import (  # noqa: E402
+    AugmentedMorphologyAnalyzer,
+    DeDeFormInventoryAnalyzer,
+)
 from dictionary.contextual.fusion import GermanAnalysisFuser  # noqa: E402
 from dictionary.contextual.zdl_adapter import ZdlContextAnalyzer  # noqa: E402
 
@@ -30,13 +34,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--form-inventory",
+        type=Path,
+        help="verified de-DE .cpdict compiler inventory to augment DWDSmor",
+    )
     parser.add_argument("--require-perfect", action="store_true")
     args = parser.parse_args()
 
+    morphology = DwdsmorMorphologyAnalyzer.from_open_edition()
+    inventory = None
+    if args.form_inventory:
+        inventory = DeDeFormInventoryAnalyzer.from_cpdict(args.form_inventory)
+        morphology = AugmentedMorphologyAnalyzer(morphology, inventory)
     evaluation = evaluate_corpus(
         load_corpus(args.corpus),
         ZdlContextAnalyzer.from_pinned_model(),
-        DwdsmorMorphologyAnalyzer.from_open_edition(),
+        morphology,
         GermanAnalysisFuser(),
     )
     report = {
@@ -45,6 +59,16 @@ def main() -> int:
             "dwdsmor": "0.18.0-open",
             "spacy": "3.8.14",
             "zdl": "de-zdl-lg-4.0.0",
+            "formInventory": (
+                {
+                    "archiveSha256": inventory.identity.source_sha256,
+                    "bundleUuid": inventory.identity.bundle_uuid.hex(),
+                    "lexemeCount": inventory.identity.lexeme_count,
+                    "licenseSpdx": inventory.identity.license_spdx,
+                }
+                if inventory is not None
+                else None
+            ),
         },
         "summary": evaluation.summary(),
         "cases": [

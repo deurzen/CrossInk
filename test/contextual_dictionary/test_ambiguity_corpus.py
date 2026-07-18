@@ -9,7 +9,11 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from dictionary.contextual.analysis_policy import CanonicalAnalysis  # noqa: E402
 from dictionary.contextual.corpus import evaluate_corpus, load_corpus  # noqa: E402
 from dictionary.contextual.fusion import GermanAnalysisFuser  # noqa: E402
-from dictionary.contextual.pipeline import ContextToken  # noqa: E402
+from dictionary.contextual.pipeline import (  # noqa: E402
+    AnalysisProvenance,
+    ContextToken,
+    MorphologyCandidate,
+)
 
 CORPUS_PATH = ROOT / "test" / "data" / "contextual" / "german-ambiguity-corpus.json"
 BASELINE_PATH = ROOT / "test" / "data" / "contextual" / "german-ambiguity-baseline.json"
@@ -46,7 +50,10 @@ class GoldMorphology:
             self.by_surface.setdefault(target.surface, set()).add(analysis)
 
     def analyze_surface(self, surface):
-        return tuple(self.by_surface[surface])
+        return tuple(
+            MorphologyCandidate(analysis, AnalysisProvenance.PRIMARY_MORPHOLOGY)
+            for analysis in self.by_surface[surface]
+        )
 
 
 class AmbiguityCorpusTest(unittest.TestCase):

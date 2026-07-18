@@ -82,6 +82,14 @@ are not resolved by source lexeme ID. No score causes a valid morphology
 candidate to be destructively deleted before the bounded-alternative policy
 runs.
 
+C08a unions DWDSmor with the compiler-only de-DE form inventory. Duplicate
+analyses merge provenance rather than creating duplicate candidates. Candidate
+precedence is DWDSmor, exact inventory form, then case-folded inventory form;
+ranking still uses linguistic evidence rather than source IDs. The union fails
+cleanly above 256 unique analyses instead of silently producing an unbounded
+list. Provenance is compiler metadata and does not participate in canonical
+identity.
+
 For `language.bin`, raw scores are clamped to `[-1000, 1250]` and linearly
 rounded to confidence `0..1000`. Raw scores remain in host pipeline records;
 normalization is an encoding concern and does not change ordering.

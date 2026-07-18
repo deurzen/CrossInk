@@ -39,6 +39,35 @@ regression/evidence corpus, not a representative estimate of all German prose.
 | Proper name *Goethe* | ZDL identifies a proper noun; Open Edition emits no candidate |
 | Archaic *hub* | Neither pinned provider resolves `heben` |
 
+## C08a form-inventory augmentation
+
+The retained de-DE bundle (`008b41d0-021c-591b-b16e-87573a017dfa`, archive
+SHA-256 `5ae190802e85113ba192319b18c33e65ab1cd83a0f82a6e1154e824ba6a259ea`)
+was then loaded as a compiler-only morphology inventory. Its 667,970 forms add
+exact and case-folded candidates with explicit provenance; definition text does
+not enter analysis.
+
+| Stage | Open only | Open + de-DE forms |
+| --- | ---: | ---: |
+| Expected morphology present | 11/16 | 15/16 |
+| Fused primary correct | 10/16 | 13/16 |
+
+This recovers `geschrieben`, `geschriebene`, `Goethe`, and `hub`. The archaic
+`hub` remains misranked because ZDL labels it `OTHER` and the case-folded noun
+`Hub` therefore outranks verb `heben`. Finite `steht … auf` remains absent until
+C08b recombination. These results are reproduced with:
+
+```sh
+.cache/contextual/.venv/bin/python \
+  scripts/dictionary/contextual/evaluate_german_corpus.py \
+  --form-inventory tmp.local/german-wiktionary.cpdict
+```
+
+The inventory is desktop-only. Loading it constructs exact and folded Python
+indexes once so full-book analysis performs O(1) form lookup without repeated
+archive reads. This host heap cost does not change firmware, EPUB, or SD-card
+RAM budgets.
+
 ## Decision
 
 The Open Edition is sufficient as the deterministic inflection and

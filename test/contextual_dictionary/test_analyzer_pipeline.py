@@ -9,11 +9,13 @@ from dictionary.contextual.analysis_policy import CanonicalAnalysis, CanonicalPo
 from dictionary.contextual.german_provider import GermanLanguageAnalyzer  # noqa: E402
 from dictionary.contextual.pipeline import (  # noqa: E402
     AnalysisPipelineError,
+    AnalysisProvenance,
     AnalyzedToken,
     AnalyzerLimits,
     AnalyzerPipeline,
     ContextToken,
     LanguageAnalyzer,
+    MorphologyCandidate,
     RankedAnalysis,
 )
 
@@ -37,7 +39,10 @@ class SyntheticMorphology:
     def analyze_surface(self, surface):
         if self.error:
             raise self.error
-        return self.by_surface.get(surface, ())
+        return tuple(
+            MorphologyCandidate(analysis, AnalysisProvenance.PRIMARY_MORPHOLOGY)
+            for analysis in self.by_surface.get(surface, ())
+        )
 
 
 class SyntheticFuser:
@@ -47,7 +52,10 @@ class SyntheticFuser:
     def rank(self, token, candidates):
         if self.override is not None:
             return self.override
-        return tuple(RankedAnalysis(candidate, 1000 - index) for index, candidate in enumerate(candidates))
+        return tuple(
+            RankedAnalysis(candidate.analysis, 1000 - index, candidate.provenance)
+            for index, candidate in enumerate(candidates)
+        )
 
 
 class AnalyzerPipelineTest(unittest.TestCase):
@@ -81,7 +89,10 @@ class AnalyzerPipelineTest(unittest.TestCase):
                     start=104,
                     end=109,
                     context=self.context_analysis,
-                    analyses=(RankedAnalysis(self.noun, 1000), RankedAnalysis(self.verb, 999)),
+                    analyses=(
+                        RankedAnalysis(self.noun, 1000, AnalysisProvenance.PRIMARY_MORPHOLOGY),
+                        RankedAnalysis(self.verb, 999, AnalysisProvenance.PRIMARY_MORPHOLOGY),
+                    ),
                 ),
             ),
         )
@@ -121,10 +132,11 @@ class AnalyzerPipelineTest(unittest.TestCase):
             ).analyze_sentence("Wir laden.")
 
     def test_fuser_cannot_invent_or_duplicate_candidates(self):
+        source = AnalysisProvenance.PRIMARY_MORPHOLOGY
         invented = CanonicalAnalysis("erfinden", CanonicalPos.VERB)
         with self.assertRaisesRegex(AnalysisPipelineError, "introduced a new analysis"):
-            self.pipeline(fuser=SyntheticFuser((RankedAnalysis(invented, 1),))).analyze_sentence("Wir laden.")
-        duplicate = (RankedAnalysis(self.verb, 2), RankedAnalysis(self.verb, 1))
+            self.pipeline(fuser=SyntheticFuser((RankedAnalysis(invented, 1, source),))).analyze_sentence("Wir laden.")
+        duplicate = (RankedAnalysis(self.verb, 2, source), RankedAnalysis(self.verb, 1, source))
         with self.assertRaisesRegex(AnalysisPipelineError, "duplicate analyses"):
             self.pipeline(fuser=SyntheticFuser(duplicate)).analyze_sentence("Wir laden.")
 
