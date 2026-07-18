@@ -10,7 +10,11 @@ import zlib
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from dictionary.contextual.analysis_policy import CanonicalAnalysis, CanonicalPos  # noqa: E402
+from dictionary.contextual.analysis_policy import (  # noqa: E402
+    CanonicalAnalysis,
+    CanonicalFeatures,
+    CanonicalPos,
+)
 from dictionary.contextual.canonical_lexicon import (  # noqa: E402
     CanonicalLexemeInput,
     compile_canonical_bundle,
@@ -29,7 +33,8 @@ HEADER_FORMAT = "<4sHHIHH16s8s8sHHIIIIIIIIIIIII"
 
 
 def canonical_analysis(value):
-    return CanonicalAnalysis(value[0], CanonicalPos[value[1]])
+    features = CanonicalFeatures(**value[2]) if len(value) == 3 else CanonicalFeatures()
+    return CanonicalAnalysis(value[0], CanonicalPos[value[1]], features)
 
 
 def provenance(names):
@@ -127,7 +132,7 @@ def identity(value):
 class ContextualCompilerDifferentialTest(unittest.TestCase):
     def test_offsets_markers_ids_and_binary_records_match_checked_in_fixture(self):
         fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        self.assertEqual(fixture["schemaVersion"], 1)
+        self.assertEqual(fixture["schemaVersion"], 2)
         xhtml_spines = fixture_spines(fixture)
 
         for spine_index, (spine, expected) in enumerate(zip(xhtml_spines, fixture["spines"])):
@@ -190,6 +195,19 @@ class ContextualCompilerDifferentialTest(unittest.TestCase):
             self.assertEqual(values[23], zlib.crc32(data[108:]) & 0xFFFFFFFF)
             self.assertEqual(struct.unpack_from("<I", data, 104)[0], zlib.crc32(data[:104]) & 0xFFFFFFFF)
 
+            metadata_offset = values[19]
+            self.assertEqual(struct.unpack_from("<4sHH", data, metadata_offset), (b"CXLM", 1, 16))
+            metadata_length = struct.unpack_from("<I", data, metadata_offset + 8)[0]
+            metadata = json.loads(
+                data[metadata_offset + 16 : metadata_offset + 16 + metadata_length]
+            )
+            self.assertEqual(metadata["compilerVersion"], 2)
+            self.assertEqual(metadata["grammarDescriptorVersion"], 1)
+            self.assertEqual(
+                metadata["grammarDiagnostics"],
+                fixture["expected"]["grammarDiagnostics"],
+            )
+
             spine_directory = [
                 list(struct.unpack_from("<II", data, values[15] + index * 8))
                 for index in range(values[9])
@@ -227,7 +245,6 @@ class ContextualCompilerDifferentialTest(unittest.TestCase):
                     )
                     self.assertEqual(record_size % 4, 0)
                     self.assertGreaterEqual(record_size, 20 + analysis_count * 2 + surface_length)
-                    self.assertEqual(grammar, 0)
                     local_ids = struct.unpack_from(f"<{analysis_count}H", data, cursor + 20)
                     text_start = cursor + 20 + analysis_count * 2
                     surface_bytes = data[text_start : text_start + surface_length]
@@ -246,6 +263,8 @@ class ContextualCompilerDifferentialTest(unittest.TestCase):
                             "flags": flags,
                             "difficulty": difficulty,
                             "confidence": confidence,
+                            "grammar": f"0x{grammar:08X}",
+                            "recordHex": data[record_start : record_start + record_size].hex(),
                         }
                     )
                     cursor += record_size

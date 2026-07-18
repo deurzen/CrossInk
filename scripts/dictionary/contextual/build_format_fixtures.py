@@ -165,7 +165,19 @@ def build_attachments(canonical_uuid: uuid.UUID, source_uuid: uuid.UUID) -> byte
 
 def build_language(canonical_uuid: uuid.UUID) -> bytes:
     surface = b"laden"
-    record = bytearray(struct.pack("<QHBBBBH", fnv1a64(surface), 0, len(surface), 2, 0x03, 200, 1000))
+    record = bytearray(
+        struct.pack(
+            "<QHBBBBHI",
+            fnv1a64(surface),
+            0,
+            len(surface),
+            2,
+            0x03,
+            200,
+            1000,
+            0x00010000,  # infinitive
+        )
+    )
     record.extend(struct.pack("<HH", 1, 0))  # primary global 2, alternate global 0
     record.extend(surface)
     align4(record)
@@ -178,9 +190,16 @@ def build_language(canonical_uuid: uuid.UUID) -> bytes:
         {
             "analysisPolicyVersion": 2,
             "canonicalUuid": str(canonical_uuid),
-            "compilerVersion": 1,
+            "compilerVersion": 2,
             "dwdsmor": {"edition": "fixture-open", "sha256": "0" * 64, "version": "fixture"},
             "frequency": {"provider": "none", "version": "none"},
+            "grammarDescriptorVersion": 1,
+            "grammarDiagnostics": {
+                "availableOccurrences": 1,
+                "noContextualFeatureOccurrences": 0,
+                "posMismatchOccurrences": 0,
+                "withinShardConflicts": 0,
+            },
             "shardTokenCount": 64,
             "spacyVersion": "3.8.14",
             "tokenizerVersion": 1,
@@ -207,7 +226,7 @@ def build_language(canonical_uuid: uuid.UUID) -> bytes:
         artifact,
         0,
         b"CXLG",
-        4,
+        5,
         108,
         0,
         1,
@@ -241,7 +260,7 @@ def build_files() -> dict[str, bytes]:
     definition_files, source_uuid = build_definition(canonical_uuid)
     files.update(definition_files)
     files["attachments.bin"] = build_attachments(canonical_uuid, source_uuid)
-    files["language-v4.bin"] = build_language(canonical_uuid)
+    files["language-v5.bin"] = build_language(canonical_uuid)
     return files
 
 

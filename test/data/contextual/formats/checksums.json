@@ -27,8 +27,8 @@
     "bytes": 144,
     "sha256": "1528671aa17a22ce4623cebfc59b6463e84bf31404ba4201950aa63e4a018397"
   },
-  "language-v4.bin": {
-    "bytes": 660,
-    "sha256": "56fa4b43aeade89ba1ff3f2b5e29e89e27684ff1212a2b497b7991db62122654"
+  "language-v5.bin": {
+    "bytes": 828,
+    "sha256": "6e1536a24f90a0ce354308d00761e1acdd0328bec444ca20bf41e73c80c277b0"
   }
 }

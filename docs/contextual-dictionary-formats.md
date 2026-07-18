@@ -254,11 +254,12 @@ json:utf8[jsonLength]
 Canonical JSON uses sorted keys and no insignificant whitespace. Required keys
 are canonical UUID, DWDSmor edition/version/SHA-256, ZDL model/version/SHA-256,
 spaCy version, tokenizer version, analysis policy version, compiler version,
-frequency provider/version, and shard token count. The current v4 compiler
-records canonical POS layout version 1 and analysis policy version 2; these are
-separate because C08b changed ranking without renumbering POS classes. Firmware may ignore JSON
-content after bounds/UTF-8 validation; the fixed header UUID controls runtime
-compatibility.
+frequency provider/version, and shard token count. The v5 compiler also records
+compiler version 2, grammar descriptor layout 1, deterministic grammar
+diagnostics, canonical POS layout version 1 and analysis policy version 2.
+These are separate because ranking and presentation contracts can change
+without renumbering POS classes. Firmware may ignore JSON content after
+bounds/UTF-8 validation; the fixed header UUID controls runtime compatibility.
 
 ## Validation order and corruption fixtures
 
@@ -272,7 +273,9 @@ Readers fail in this order where applicable:
 6. individual record invariants.
 
 `test/data/contextual/formats/corruption-cases.json` defines deterministic
-mutations of checked-in valid fixtures. C19 allocation-free readers must reject
-every case with the named error category before seeking outside the validated
-source. `scripts/dictionary/contextual/build_format_fixtures.py` regenerates the
-fixtures and checksum manifest byte-for-byte.
+mutations of checked-in valid fixtures. The v5 set includes reserved descriptor
+bits/codes and every structural contradiction class; payload and header CRCs are
+recomputed so these cases reach candidate validation. U09 allocation-free
+readers must reject every case with the named error category before seeking
+outside the validated source. `scripts/dictionary/contextual/build_format_fixtures.py`
+regenerates the fixtures and checksum manifest byte-for-byte.

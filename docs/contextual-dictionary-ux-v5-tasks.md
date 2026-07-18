@@ -170,7 +170,7 @@ reuse of the existing pager/page/session.
 | U04 | Done | Add deterministic grammar descriptor encoder | Every supported DWDSmor/ZDL canonical feature maps to a validated packed value; malformed combinations fail |
 | U05 | Done | Preserve primary grammar through surface aggregation | Identical evidence survives; conflicting repeated-surface evidence emits unavailable deterministically |
 | U06 | Done | Emit only v5 contextual records | Compiler writes the descriptor, bumps compiler metadata and rejects out-of-range/reserved values |
-| U07 | Planned | Add v5 differential and corruption fixtures | Token offsets, markers, IDs, grammar words, record bytes, CRCs and complete artifact SHA agree independently |
+| U07 | Done | Add v5 differential and corruption fixtures | Token offsets, markers, IDs, grammar words, record bytes, CRCs and complete artifact SHA agree independently |
 | U08 | Planned | Re-evaluate production corpora | German ambiguity baseline remains stable; v5 grammar accuracy is manually checked for verbs, nouns, adjectives and ambiguous forms |
 
 U04 adds a strict host encoder/decoder with no dependency on spaCy/DWDSmor enum
@@ -190,6 +190,12 @@ metadata version 2. Every descriptor is validated again at the serializer
 boundary; diagnostics count available occurrences, missing features, POS
 mismatches and within-shard conflicts in metadata and CLI output. Existing
 records grow by exactly four aligned bytes.
+
+U07 upgrades the independent compiler fixture with noun, proper-noun, finite and
+infinitive grammar words plus exact candidate hex and full-artifact SHA. The
+regenerable format fixture is v5-only; CRC-correct corruption vectors cover
+reserved descriptor bits/codes and every structural contradiction class so U09
+can exercise candidate validation rather than fail earlier on payload CRC.
 
 ## Phase C — bounded firmware support
 

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "canonicalLexemes": [
     ["stehen", "VERB"],
     ["Laden", "NOUN"],
@@ -44,8 +44,8 @@
       "sourceOffset": 1,
       "tokens": [
         {"surface": "Im", "start": 1, "context": ["im", "OTHER"], "analyses": []},
-        {"surface": "Laden", "start": 4, "context": ["Laden", "NOUN"], "analyses": [["Laden", "NOUN", 1000, ["PRIMARY_MORPHOLOGY"]]]},
-        {"surface": "laden", "start": 10, "context": ["laden", "VERB"], "analyses": [["laden", "VERB", 1000, ["PRIMARY_MORPHOLOGY"]]]},
+        {"surface": "Laden", "start": 4, "context": ["Laden", "NOUN", {"case": "dative", "gender": "neuter", "number": "singular"}], "analyses": [["Laden", "NOUN", 1000, ["PRIMARY_MORPHOLOGY"]]]},
+        {"surface": "laden", "start": 10, "context": ["laden", "VERB", {"verb_form": "infinitive"}], "analyses": [["laden", "VERB", 1000, ["PRIMARY_MORPHOLOGY"]]]},
         {"surface": "wir", "start": 16, "context": ["wir", "OTHER"], "analyses": []}
       ]
     },
@@ -54,9 +54,9 @@
       "sourceOffset": 22,
       "tokens": [
         {"surface": "Er", "start": 22, "context": ["er", "OTHER"], "analyses": []},
-        {"surface": "steht", "start": 25, "context": ["stehen", "VERB"], "analyses": [["aufstehen", "VERB", 1150, ["EXACT_FORM_INVENTORY", "CONTEXT_RECOMBINATION"]], ["stehen", "VERB", 1000, ["PRIMARY_MORPHOLOGY"]]]},
+        {"surface": "steht", "start": 25, "context": ["stehen", "VERB", {"mood": "indicative", "number": "singular", "person": "third", "tense": "present", "verb_form": "finite"}], "analyses": [["aufstehen", "VERB", 1150, ["EXACT_FORM_INVENTORY", "CONTEXT_RECOMBINATION"]], ["stehen", "VERB", 1000, ["PRIMARY_MORPHOLOGY"]]]},
         {"surface": "auf", "start": 31, "context": ["auf", "OTHER"], "analyses": []},
-        {"surface": "Goethe", "start": 36, "context": ["Goethe", "PROPER_NOUN"], "analyses": [["Goethe", "PROPER_NOUN", 1000, ["EXACT_FORM_INVENTORY"]]]}
+        {"surface": "Goethe", "start": 36, "context": ["Goethe", "PROPER_NOUN", {"case": "nominative", "number": "singular"}], "analyses": [["Goethe", "PROPER_NOUN", 1000, ["EXACT_FORM_INVENTORY"]]]}
       ]
     },
     {
@@ -65,38 +65,39 @@
         "count": 65,
         "separator": " ",
         "sourceOffset": 1,
-        "context": ["laden", "VERB"],
+        "context": ["laden", "VERB", {"verb_form": "infinitive"}],
         "analyses": [["laden", "VERB", 1000, ["PRIMARY_MORPHOLOGY"]]]
       }
     }
   ],
   "expected": {
     "header": {"spines": 2, "shards": 3, "records": 6, "lemmas": 5},
+    "grammarDiagnostics": {"availableOccurrences": 69, "noContextualFeatureOccurrences": 0, "posMismatchOccurrences": 0, "withinShardConflicts": 0},
     "spineDirectory": [[0, 1], [1, 2]],
     "localLemmas": [["Goethe", "PROPER_NOUN"], ["Laden", "NOUN"], ["aufstehen", "VERB"], ["laden", "VERB"], ["stehen", "VERB"]],
     "shards": [
       {
         "tokenRange": [0, 8],
         "records": [
-          {"surface": "steht", "lemmas": [["aufstehen", "VERB"], ["stehen", "VERB"]], "flags": 19, "difficulty": 0, "confidence": 956},
-          {"surface": "laden", "lemmas": [["laden", "VERB"]], "flags": 2, "difficulty": 0, "confidence": 889},
-          {"surface": "Laden", "lemmas": [["Laden", "NOUN"]], "flags": 2, "difficulty": 0, "confidence": 889},
-          {"surface": "Goethe", "lemmas": [["Goethe", "PROPER_NOUN"]], "flags": 50, "difficulty": 0, "confidence": 889}
+          {"surface": "steht", "lemmas": [["aufstehen", "VERB"], ["stehen", "VERB"]], "flags": 19, "difficulty": 0, "confidence": 956, "grammar": "0x0000BA80", "recordHex": "7988445aad3f2712200005021300bc0380ba0000020004007374656874000000"},
+          {"surface": "laden", "lemmas": [["laden", "VERB"]], "flags": 2, "difficulty": 0, "confidence": 889, "grammar": "0x00010000", "recordHex": "cd0a4385ecc8cb271c000501020079030000010003006c6164656e00"},
+          {"surface": "Laden", "lemmas": [["Laden", "NOUN"]], "flags": 2, "difficulty": 0, "confidence": 889, "grammar": "0x00000263", "recordHex": "2d6e9bd9f7a763431c000501020079036302000001004c6164656e00"},
+          {"surface": "Goethe", "lemmas": [["Goethe", "PROPER_NOUN"]], "flags": 50, "difficulty": 0, "confidence": 889, "grammar": "0x00000201", "recordHex": "c93916c58320d2c81c00060132007903010200000000476f65746865"}
         ]
       },
       {
         "tokenRange": [8, 72],
         "records": [
-          {"surface": "laden", "lemmas": [["laden", "VERB"]], "flags": 2, "difficulty": 0, "confidence": 889}
+          {"surface": "laden", "lemmas": [["laden", "VERB"]], "flags": 2, "difficulty": 0, "confidence": 889, "grammar": "0x00010000", "recordHex": "cd0a4385ecc8cb271c000501020079030000010003006c6164656e00"}
         ]
       },
       {
         "tokenRange": [72, 73],
         "records": [
-          {"surface": "laden", "lemmas": [["laden", "VERB"]], "flags": 2, "difficulty": 0, "confidence": 889}
+          {"surface": "laden", "lemmas": [["laden", "VERB"]], "flags": 2, "difficulty": 0, "confidence": 889, "grammar": "0x00010000", "recordHex": "cd0a4385ecc8cb271c000501020079030000010003006c6164656e00"}
         ]
       }
     ],
-    "artifactSha256": "ef776a4a397f33bb2f62522376fc3c468f236ff112775c856a02c9e998e7b2ab"
+    "artifactSha256": "b609ae0892b5ddeb0ca5abfd82c6f22cb07562f4b7fefe0f9d43c252da74a7b7"
   }
 }

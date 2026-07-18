@@ -88,8 +88,8 @@
       "expected": "DUPLICATE_SOURCE_UUID"
     },
     {
-      "name": "language v4 unsupported flags",
-      "file": "language-v4.bin",
+      "name": "language v5 unsupported flags",
+      "file": "language-v5.bin",
       "operation": "write-u32",
       "offset": 8,
       "value": 1,
@@ -97,8 +97,8 @@
       "expected": "UNSUPPORTED_FLAGS"
     },
     {
-      "name": "language v4 canonical UUID missing",
-      "file": "language-v4.bin",
+      "name": "language v5 canonical UUID missing",
+      "file": "language-v5.bin",
       "operation": "zero",
       "offset": 16,
       "length": 16,
@@ -106,12 +106,75 @@
       "expected": "INVALID_CANONICAL_UUID"
     },
     {
-      "name": "language v4 payload corrupt",
-      "file": "language-v4.bin",
+      "name": "language v5 payload corrupt",
+      "file": "language-v5.bin",
       "operation": "xor-u8",
       "offset": 136,
       "value": 128,
       "expected": "BAD_PAYLOAD_CRC"
+    },
+    {
+      "name": "language v5 grammar reserved bit",
+      "file": "language-v5.bin",
+      "operation": "write-u32",
+      "offset": 152,
+      "value": 131072,
+      "recomputePayloadCrc": true,
+      "expected": "INVALID_GRAMMAR_DESCRIPTOR"
+    },
+    {
+      "name": "language v5 grammar reserved case",
+      "file": "language-v5.bin",
+      "operation": "write-u32",
+      "offset": 152,
+      "value": 5,
+      "recomputePayloadCrc": true,
+      "expected": "INVALID_GRAMMAR_DESCRIPTOR"
+    },
+    {
+      "name": "language v5 grammar reserved number",
+      "file": "language-v5.bin",
+      "operation": "write-u32",
+      "offset": 152,
+      "value": 1536,
+      "recomputePayloadCrc": true,
+      "expected": "INVALID_GRAMMAR_DESCRIPTOR"
+    },
+    {
+      "name": "language v5 grammar infinitive contradiction",
+      "file": "language-v5.bin",
+      "operation": "write-u32",
+      "offset": 152,
+      "value": 65537,
+      "recomputePayloadCrc": true,
+      "expected": "INVALID_GRAMMAR_DESCRIPTOR"
+    },
+    {
+      "name": "language v5 grammar participle contradiction",
+      "file": "language-v5.bin",
+      "operation": "write-u32",
+      "offset": 152,
+      "value": 98432,
+      "recomputePayloadCrc": true,
+      "expected": "INVALID_GRAMMAR_DESCRIPTOR"
+    },
+    {
+      "name": "language v5 grammar finite contradiction",
+      "file": "language-v5.bin",
+      "operation": "write-u32",
+      "offset": 152,
+      "value": 32769,
+      "recomputePayloadCrc": true,
+      "expected": "INVALID_GRAMMAR_DESCRIPTOR"
+    },
+    {
+      "name": "language v5 grammar mood without verb form",
+      "file": "language-v5.bin",
+      "operation": "write-u32",
+      "offset": 152,
+      "value": 128,
+      "recomputePayloadCrc": true,
+      "expected": "INVALID_GRAMMAR_DESCRIPTOR"
     }
   ]
 }

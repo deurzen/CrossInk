@@ -95,14 +95,16 @@ class ContextualFormatTest(unittest.TestCase):
         self.assertEqual(attachments[52:84], bytes(32))
         self.assertEqual(struct.unpack_from("<I", attachments, 84)[0], crc32(attachments[:84]))
 
-        language = (FIXTURES / "language-v4.bin").read_bytes()
+        language = (FIXTURES / "language-v5.bin").read_bytes()
         self.assertEqual(language[:4], b"CXLG")
-        self.assertEqual(struct.unpack_from("<HH", language, 4), (4, 108))
+        self.assertEqual(struct.unpack_from("<HH", language, 4), (5, 108))
         self.assertEqual(language[16:32], canonical_uuid)
         self.assertEqual(language[40:48].rstrip(b"\0"), b"und")
         self.assertEqual(struct.unpack_from("<I", language, 96)[0], len(language))
         self.assertEqual(struct.unpack_from("<I", language, 100)[0], crc32(language[108:]))
         self.assertEqual(struct.unpack_from("<I", language, 104)[0], crc32(language[:104]))
+        record_offset = struct.unpack_from("<I", language, 76)[0]
+        self.assertEqual(struct.unpack_from("<I", language, record_offset + 16)[0], 0x00010000)
 
         metadata_offset = struct.unpack_from("<I", language, 84)[0]
         self.assertEqual(language[metadata_offset : metadata_offset + 4], b"CXLM")
@@ -110,6 +112,8 @@ class ContextualFormatTest(unittest.TestCase):
         metadata = json.loads(language[metadata_offset + 16 : metadata_offset + 16 + json_length])
         self.assertEqual(metadata["canonicalUuid"], str(uuid.UUID(bytes=canonical_uuid)))
         self.assertEqual(metadata["analysisPolicyVersion"], 2)
+        self.assertEqual(metadata["compilerVersion"], 2)
+        self.assertEqual(metadata["grammarDescriptorVersion"], 1)
 
     def test_checksum_manifest_covers_every_binary(self):
         manifest = json.loads((FIXTURES / "checksums.json").read_text(encoding="utf-8"))
@@ -131,6 +135,20 @@ class ContextualFormatTest(unittest.TestCase):
             mutated = self.apply_mutation(original, case)
             self.assertNotEqual(mutated, original)
             self.assertTrue(case["expected"])
+            if case.get("recomputePayloadCrc"):
+                self.assertEqual(struct.unpack_from("<I", mutated, 100)[0], crc32(mutated[108:]))
+                self.assertEqual(struct.unpack_from("<I", mutated, 104)[0], crc32(mutated[:104]))
+        self.assertTrue(
+            {
+                "language v5 grammar reserved bit",
+                "language v5 grammar reserved case",
+                "language v5 grammar reserved number",
+                "language v5 grammar infinitive contradiction",
+                "language v5 grammar participle contradiction",
+                "language v5 grammar finite contradiction",
+                "language v5 grammar mood without verb form",
+            }.issubset(names)
+        )
 
     @staticmethod
     def apply_mutation(original, case):
@@ -159,12 +177,17 @@ class ContextualFormatTest(unittest.TestCase):
             if secondary["operation"] != "write-u8":
                 raise AssertionError("unsupported secondary fixture mutation")
             data[secondary["offset"]] = secondary["value"]
+        if case.get("recomputePayloadCrc"):
+            if case["file"] != "language-v5.bin":
+                raise AssertionError("payload CRC recomputation is only defined for language v5")
+            struct.pack_into("<I", data, 100, crc32(data[108:]))
+            case = {**case, "recomputeHeaderCrc": True}
         if case.get("recomputeHeaderCrc"):
             crc_offset = {
                 "canonical-meta.bin": 108,
                 "definition-meta.bin": 140,
                 "attachments.bin": 84,
-                "language-v4.bin": 104,
+                "language-v5.bin": 104,
             }[case["file"]]
             struct.pack_into("<I", data, crc_offset, crc32(data[:crc_offset]))
         return bytes(data)
