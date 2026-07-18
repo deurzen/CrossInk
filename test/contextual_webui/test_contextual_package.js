@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const UUID_BYTES = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
@@ -47,6 +48,14 @@ function canonicalArchive(corruptHash = false) {
 }
 
 async function main() {
+  const filesPageScript = fs.readFileSync(path.resolve(__dirname, "../../web/pages/files.js"), "utf8");
+  assert.match(filesPageScript, /const CONTEXTUAL_LANGUAGE_PATH = "META-INF\/crossink\/language\.bin";/);
+  assert.match(
+    filesPageScript,
+    /low === CONTEXTUAL_LANGUAGE_PATH\.toLowerCase\(\) \? STORE_OPTS : DEFLATE_OPTS/,
+    "EPUB conversion must keep contextual language artifacts uncompressed",
+  );
+
   let archive = canonicalArchive();
   global.JSZip = { loadAsync: async () => archive };
   const script = path.resolve(__dirname, "../../web/pages/dictionaries.js");

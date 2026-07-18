@@ -1946,11 +1946,13 @@ function exportLogToFile(filename = null, isBatch = false) {
 const DEFENSIVE_STYLE =
   '<style type="text/css">img,svg{max-width:100%;height:auto}body{overflow-wrap:break-word}table{max-width:100%;table-layout:fixed}pre,code{white-space:pre-wrap;word-wrap:break-word}*{box-sizing:border-box}</style>';
 const X_LOCATION_MANIFEST_PATH = "META-INF/x-locations.json";
+const CONTEXTUAL_LANGUAGE_PATH = "META-INF/crossink/language.bin";
 const X_LOCATION_WORDS_PER_UNIT = 64;
 const X_DEFAULT_REFERENCE_CHARACTERS_PER_PAGE = 1500;
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const OPF_NS = "http://www.idpf.org/2007/opf";
 const DEFLATE_OPTS = { compression: "DEFLATE", compressionOptions: { level: 8 }, createFolders: false };
+const STORE_OPTS = { compression: "STORE", createFolders: false };
 
 /** First defined namespaceURI walking node -> ancestors, else the fallback. */
 function inheritedNs(nodes, fallback) {
@@ -3722,7 +3724,11 @@ async function convertEpubFile(file, progressCallback) {
       const t = extraTextFiles[path] || scrubEpubTextResource(path, await safeReadText(fileObj));
       data = new TextEncoder().encode(t);
     }
-    out.file(path, data, DEFLATE_OPTS);
+    // language.bin is already a dense binary artifact and firmware validates it
+    // by streaming directly to SD. Deflating it would require a 32 KiB inflate
+    // window while WebUI allocations are still live on the ESP32-C3.
+    const compression = low === CONTEXTUAL_LANGUAGE_PATH.toLowerCase() ? STORE_OPTS : DEFLATE_OPTS;
+    out.file(path, data, compression);
   }
 
   if (progressCallback) progressCallback(100);

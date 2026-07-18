@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- WebUI EPUB conversion now keeps contextual dictionary artifacts uncompressed so large v5 books can be validated and uploaded within ESP32-C3 memory limits.
 - Contextual EPUB compilation now excludes Wiktextract form metadata and safely rejects pathological fallback fan-out, preventing common words such as `sein` from acquiring hundreds of unrelated verb analyses.
 
 - Dictionary EPUB compilation now merges credible case-folded analyses behind exact-case matches, preventing capitalization from hiding alternate verb or noun interpretations.
