@@ -1,6 +1,5 @@
 #include "DictionaryLookupSession.h"
 
-#include <Crc32.h>
 #include <HalStorage.h>
 #include <Logging.h>
 
@@ -13,15 +12,6 @@
 
 namespace dictionary::lookup {
 namespace {
-
-uint16_t readU16(const uint8_t* data) {
-  return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8U);
-}
-
-uint32_t readU32(const uint8_t* data) {
-  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8U) |
-         (static_cast<uint32_t>(data[2]) << 16U) | (static_cast<uint32_t>(data[3]) << 24U);
-}
 
 bool appendPath(char* output, const size_t capacity, const char* directory, const char* leaf) {
   const int written = std::snprintf(output, capacity, "%s/%s", directory, leaf);
@@ -63,29 +53,12 @@ bool Session::initializeSource(SourceContext& context, const char* path, const u
          sourceReader_.fileSize(path, sourceToken, &sourceIoMetrics_, context.size);
 }
 
-bool Session::validateLegacyRuntimeMetadata(SessionError& error) {
-  uint8_t data[kDictionaryMetaSize]{};
-  if (metaSource_.size != sizeof(data) || !readAt(&metaSource_, 0, data, sizeof(data)) ||
-      std::memcmp(data, "CXDM", 4) != 0 || readU16(data + 4) != kDictionaryPackageVersion ||
-      readU16(data + 6) != kDictionaryMetaSize || updateCrc32(0, data, 76) != readU32(data + 76) ||
-      std::memcmp(data + 12, identityUuid_, sizeof(identityUuid_)) != 0) {
-    error = SessionError::DICTIONARY_INVALID;
-    return false;
-  }
-  runtimeLexemeCount_ = readU32(data + 44);
-  if (runtimeLexemeCount_ == 0 || runtimeLexemeCount_ > kMaxLexemeCount || readU16(data + 48) != kLexemeRecordSize) {
-    error = SessionError::DICTIONARY_INVALID;
-    return false;
-  }
-  return true;
-}
-
 bool Session::openCanonicalRuntime(const char* directory, SessionError& error) {
   char path[kMaxLookupPath]{};
   if (!appendPath(path, sizeof(path), directory, "meta.bin") || !initializeSource(metaSource_, path, 2) ||
       !appendPath(path, sizeof(path), directory, "lexemes.bin") || !initializeSource(lexemesSource_, path, 3) ||
       !appendPath(path, sizeof(path), directory, "headwords.bin") || !initializeSource(headwordsSource_, path, 4)) {
-    error = SessionError::DICTIONARY_MISSING;
+    error = SessionError::CANONICAL_MISSING;
     return false;
   }
 
@@ -94,11 +67,11 @@ bool Session::openCanonicalRuntime(const char* directory, SessionError& error) {
   const RandomAccessSource lexemes{&lexemesSource_, lexemesSource_.size, readAt};
   const RandomAccessSource headwords{&headwordsSource_, headwordsSource_.size, readAt};
   if (!canonical_.open(meta, lexemes, headwords, formatError)) {
-    error = SessionError::DICTIONARY_INVALID;
+    error = SessionError::CANONICAL_INVALID;
     return false;
   }
   const auto& metadata = canonical_.metadata();
-  if (std::memcmp(metadata.canonicalUuid, identityUuid_, sizeof(identityUuid_)) != 0) {
+  if (std::memcmp(metadata.canonicalUuid, canonicalUuid_, sizeof(canonicalUuid_)) != 0) {
     error = SessionError::IDENTITY_MISMATCH;
     return false;
   }
@@ -128,7 +101,7 @@ bool Session::loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[
   const RandomAccessSource index{&sources.indexSource, sources.indexSource.size, readAt};
   const RandomAccessSource entries{&sources.entriesSource, sources.entriesSource.size, readAt};
   contextual::RuntimeFormatError formatError;
-  if (!sources.reader.open(meta, index, entries, session.identityUuid_, session.runtimeLexemeCount_, formatError)) {
+  if (!sources.reader.open(meta, index, entries, session.canonicalUuid_, session.runtimeLexemeCount_, formatError)) {
     session.sourceReader_.close();
     return false;
   }
@@ -167,7 +140,7 @@ void Session::discoverDefinitionSources(const char* canonicalDirectory) {
   // package reader first so real SD hardware never has two readers open.
   sourceReader_.close();
   contextual::AttachmentError attachmentError;
-  const auto& canonicalUuid = *reinterpret_cast<const uint8_t (*)[16]>(identityUuid_);
+  const auto& canonicalUuid = *reinterpret_cast<const uint8_t (*)[16]>(canonicalUuid_);
   if (!definitionSources_.attachments.open(attachment_storage::backend(), canonicalDirectory, canonicalUuid,
                                            attachmentError)) {
     LOG_ERR("DICT", "Failed to open contextual attachments: %s", contextual::attachmentErrorName(attachmentError));
@@ -199,29 +172,22 @@ void Session::discoverDefinitionSources(const char* canonicalDirectory) {
       definitionSources_.catalog.skippedCount == 0 ? SourceDiscoveryStatus::READY : SourceDiscoveryStatus::PARTIAL;
 }
 
-bool Session::openReaders(const char* languageArtifactPath, const char* bookCachePath,
-                          const std::array<uint8_t, 16>& expectedIdentityUuid, SessionError& error) {
+bool Session::openReaders(const char* languageArtifactPath,
+                          const std::array<uint8_t, 16>& expectedCanonicalUuid, SessionError& error) {
   readersOpen_ = false;
   stateOpen_ = false;
   runtimeLexemeCount_ = 0;
-  package_ = {};
   canonical_ = {};
   definitionSources_ = {};
-  contextualIdentity_ = false;
   sourceReader_.close();
   sourceIoMetrics_.reset();
   stateIoMetrics_.reset();
   error = SessionError::NONE;
-  if (!languageArtifactPath || !bookCachePath || languageArtifactPath[0] == '\0' || bookCachePath[0] == '\0') {
+  if (!languageArtifactPath || languageArtifactPath[0] == '\0') {
     error = SessionError::INVALID_INPUT;
     return false;
   }
-  if (std::strlen(bookCachePath) >= sizeof(cachePath_)) {
-    error = SessionError::PATH_TOO_LONG;
-    return false;
-  }
-  std::strcpy(cachePath_, bookCachePath);
-  std::memcpy(identityUuid_, expectedIdentityUuid.data(), sizeof(identityUuid_));
+  std::memcpy(canonicalUuid_, expectedCanonicalUuid.data(), sizeof(canonicalUuid_));
 
   if (!initializeSource(languageSource_, languageArtifactPath, 1)) {
     error = std::strlen(languageArtifactPath) >= sizeof(languageSource_.path) ? SessionError::PATH_TOO_LONG
@@ -234,49 +200,20 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
     error = SessionError::BOOK_ARTIFACT_INVALID;
     return false;
   }
-  if (!book_language::matchesIdentity(book_.header(), identityUuid_)) {
+  if (!book_language::matchesCanonicalLexicon(book_.header(), canonicalUuid_)) {
     error = SessionError::IDENTITY_MISMATCH;
     return false;
   }
 
   char uuidHex[33]{};
-  formatUuid(identityUuid_, uuidHex);
+  formatUuid(canonicalUuid_, uuidHex);
   char directory[kMaxLookupPath]{};
-  char path[kMaxLookupPath]{};
-  contextualIdentity_ = book_.header().usesCanonicalIdentity();
-  const char* packageRoot = contextualIdentity_ ? CANONICAL_ROOT_PATH : DICTIONARY_ROOT_PATH;
-  if (!appendPath(directory, sizeof(directory), packageRoot, uuidHex)) {
+  if (!appendPath(directory, sizeof(directory), CANONICAL_ROOT_PATH, uuidHex)) {
     error = SessionError::PATH_TOO_LONG;
     return false;
   }
-  if (contextualIdentity_) {
-    if (!openCanonicalRuntime(directory, error)) return false;
-    discoverDefinitionSources(directory);
-    readersOpen_ = true;
-    return true;
-  }
-
-  if (!appendPath(path, sizeof(path), directory, "meta.bin") || !initializeSource(metaSource_, path, 2)) {
-    error = SessionError::DICTIONARY_MISSING;
-    return false;
-  }
-  if (!validateLegacyRuntimeMetadata(error)) return false;
-
-  const struct {
-    const char* leaf;
-    SourceContext* source;
-    uint8_t token;
-  } deferred[] = {{"lexemes.bin", &lexemesSource_, 3},
-                  {"headwords.bin", &headwordsSource_, 4},
-                  {"entries.bin", &entriesSource_, 5}};
-  const bool sourcesReady = std::all_of(std::begin(deferred), std::end(deferred), [&](const auto& file) {
-    return appendPath(path, sizeof(path), directory, file.leaf) && setSourcePath(*file.source, path, file.token);
-  });
-  if (!sourcesReady) {
-    error = SessionError::PATH_TOO_LONG;
-    return false;
-  }
-
+  if (!openCanonicalRuntime(directory, error)) return false;
+  discoverDefinitionSources(directory);
   readersOpen_ = true;
   return true;
 }
@@ -294,7 +231,7 @@ bool Session::openLearningState(SessionError& error) {
   }
 
   lexeme_state::StateError stateError = lexeme_state::StateError::NONE;
-  if (!state_.open(language_state_storage::backend(&stateIoMetrics_), language_state_storage::ROOT_PATH, identityUuid_,
+  if (!state_.open(language_state_storage::backend(&stateIoMetrics_), language_state_storage::ROOT_PATH, canonicalUuid_,
                    runtimeLexemeCount_, stateError)) {
     error = SessionError::STATE_FAILED;
     return false;
@@ -313,7 +250,7 @@ bool Session::filterShortlist(page_shortlist::Shortlist& shortlist, SessionError
   size_t referenceCount = 0;
   for (uint16_t itemIndex = 0; itemIndex < shortlist.count; ++itemIndex) {
     const auto& item = shortlist.items[itemIndex];
-    const uint8_t identityCount = page_shortlist::learningIdentityCount(item, contextualIdentity_);
+    const uint8_t identityCount = page_shortlist::learningIdentityCount(item);
     if (identityCount == 0) {
       error = SessionError::BOOK_ARTIFACT_INVALID;
       return false;
@@ -368,7 +305,7 @@ bool Session::readDefinitionIndexes(const uint32_t canonicalId,
   output = {};
   outputCount = 0;
   error = SessionError::NONE;
-  if (!readersOpen_ || !contextualIdentity_ || canonicalId >= runtimeLexemeCount_) {
+  if (!readersOpen_ || canonicalId >= runtimeLexemeCount_) {
     error = SessionError::INVALID_INPUT;
     return false;
   }
@@ -395,25 +332,25 @@ bool Session::readDefinitionIndexes(const uint32_t canonicalId,
 }
 
 bool Session::readContextualEntryChunk(void* context, const EntrySlice& entry, const uint32_t relativeOffset,
-                                       void* output, const size_t capacity, size_t& bytesRead, PackageError& error) {
+                                       void* output, const size_t capacity, size_t& bytesRead, RuntimeError& error) {
   bytesRead = 0;
-  error = PackageError::NONE;
+  error = RuntimeError::NONE;
   auto& source = *static_cast<SourceContext*>(context);
   if (!source.reader || entry.length == 0 || entry.length > kMaxEntryBytes ||
       static_cast<uint64_t>(entry.offset) + entry.length > source.size || relativeOffset > entry.length) {
-    error = PackageError::ENTRY_RANGE_INVALID;
+    error = RuntimeError::ENTRY_RANGE_INVALID;
     return false;
   }
   if (capacity == 0 || relativeOffset == entry.length) return true;
   if (!output) {
-    error = PackageError::OUTPUT_BUFFER_TOO_SMALL;
+    error = RuntimeError::OUTPUT_BUFFER_TOO_SMALL;
     return false;
   }
   bytesRead = std::min<size_t>(capacity, entry.length - relativeOffset);
   if (!source.reader->readAt(source.path, source.sourceToken, source.size, entry.offset + relativeOffset, output,
                              bytesRead, source.metrics)) {
     bytesRead = 0;
-    error = PackageError::ENTRY_READ_FAILED;
+    error = RuntimeError::ENTRY_READ_FAILED;
     return false;
   }
   return true;
@@ -422,43 +359,11 @@ bool Session::readContextualEntryChunk(void* context, const EntrySlice& entry, c
 bool Session::contextualEntryReader(const uint8_t sourceIndex, definition::EntryReader& output, SessionError& error) {
   output = {};
   error = SessionError::NONE;
-  if (!readersOpen_ || !contextualIdentity_ || sourceIndex >= definitionSources_.catalog.sourceCount) {
+  if (!readersOpen_ || sourceIndex >= definitionSources_.catalog.sourceCount) {
     error = SessionError::INVALID_INPUT;
     return false;
   }
   output = {&definitionSources_.retainedEntrySources[sourceIndex], readContextualEntryChunk};
-  return true;
-}
-
-bool Session::openDefinitionPackage(SessionError& error) {
-  error = SessionError::NONE;
-  if (!readersOpen_) {
-    error = SessionError::INVALID_INPUT;
-    return false;
-  }
-  if (contextualIdentity_) {
-    // C25/C26 open attached definition sources; v4 must never be interpreted
-    // as a legacy package sharing the same UUID.
-    error = SessionError::DICTIONARY_MISSING;
-    return false;
-  }
-  if (package_.isOpen()) return true;
-  if (!sourceReader_.fileSize(lexemesSource_.path, 3, &sourceIoMetrics_, lexemesSource_.size) ||
-      !sourceReader_.fileSize(headwordsSource_.path, 4, &sourceIoMetrics_, headwordsSource_.size) ||
-      !sourceReader_.fileSize(entriesSource_.path, 5, &sourceIoMetrics_, entriesSource_.size)) {
-    error = SessionError::DICTIONARY_MISSING;
-    return false;
-  }
-
-  PackageError packageError = PackageError::NONE;
-  const RandomAccessSource meta{&metaSource_, metaSource_.size, readAt};
-  const RandomAccessSource lexemes{&lexemesSource_, lexemesSource_.size, readAt};
-  const RandomAccessSource headwords{&headwordsSource_, headwordsSource_.size, readAt};
-  const RandomAccessSource entries{&entriesSource_, entriesSource_.size, readAt};
-  if (!package_.open(meta, lexemes, headwords, entries, packageError)) {
-    error = SessionError::DICTIONARY_INVALID;
-    return false;
-  }
   return true;
 }
 
@@ -469,7 +374,7 @@ bool Session::globalLexemeId(const uint16_t localLemmaId, uint32_t& globalLexeme
 }
 
 bool Session::setItemStatus(const page_shortlist::Item& item, const lexeme_state::Status status, SessionError& error) {
-  const uint8_t identityCount = page_shortlist::learningIdentityCount(item, contextualIdentity_);
+  const uint8_t identityCount = page_shortlist::learningIdentityCount(item);
   if (identityCount == 0) {
     error = SessionError::BOOK_ARTIFACT_INVALID;
     return false;
@@ -514,10 +419,10 @@ const char* sessionErrorName(const SessionError error) {
       return "book artifact unavailable";
     case SessionError::BOOK_ARTIFACT_INVALID:
       return "book artifact invalid";
-    case SessionError::DICTIONARY_MISSING:
-      return "dictionary missing";
-    case SessionError::DICTIONARY_INVALID:
-      return "dictionary invalid";
+    case SessionError::CANONICAL_MISSING:
+      return "canonical lexicon missing";
+    case SessionError::CANONICAL_INVALID:
+      return "canonical lexicon invalid";
     case SessionError::IDENTITY_MISMATCH:
       return "identity mismatch";
     case SessionError::STATE_FAILED:

@@ -149,57 +149,36 @@ int DictionaryActivity::measureDefinitionText(void* context, const std::string_v
   return activity.renderer.getTextAdvanceX(UI_10_FONT_ID, activity.lineScratch_, EpdFontFamily::REGULAR);
 }
 
-bool DictionaryActivity::openAnalysisEntry(const uint8_t analysisIndex) {
-  if (!shortlist_ || selected_ >= shortlist_->count || analysisIndex >= shortlist_->items[selected_].analysisCount) {
-    return false;
-  }
-  uint32_t globalLexemeId = 0;
-  dictionary::PackageError packageError = dictionary::PackageError::NONE;
-  if (!session_->globalLexemeId(shortlist_->items[selected_].localLemmaIds[analysisIndex], globalLexemeId) ||
-      !session_->package().readLexeme(globalLexemeId, lexeme_, packageError) ||
-      !session_->package().getEntrySlice(lexeme_, entry_, packageError)) {
-    LOG_ERR("DICT", "Definition analysis %u failed: %s", static_cast<unsigned>(analysisIndex),
-            dictionary::packageErrorName(packageError));
-    return false;
-  }
-  return true;
-}
-
 bool DictionaryActivity::openDefinition() {
   const unsigned long startedAt = millis();
-  const auto ioBefore = session_->sourceIoMetrics();
   definitionFailed_ = false;
   contextualSourceWarning_ = false;
   definitionFailure_ = DefinitionFailure::None;
   statusSaved_ = false;
-  dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
-  const bool contextual = session_ && session_->usesCanonicalIdentity();
-  if (contextual) {
-    if (session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::ATTACHMENTS_INVALID) {
-      definitionFailed_ = true;
-      definitionFailure_ = DefinitionFailure::AttachmentsInvalid;
-      mode_ = Mode::Definition;
-      requestUpdate();
-      return false;
-    }
-    if (session_->definitionSourceCount() == 0) {
-      definitionFailed_ = true;
-      definitionFailure_ = DefinitionFailure::NoCompatibleSources;
-      mode_ = Mode::Definition;
-      requestUpdate();
-      return false;
-    }
-    contextualSourceWarning_ = session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::PARTIAL;
-  }
-  if (!shortlist_ || selected_ >= shortlist_->count ||
-      (!contextual && !session_->openDefinitionPackage(sessionError))) {
-    LOG_ERR("DICT", "Definition package open failed: %s", dictionary::lookup::sessionErrorName(sessionError));
+  if (!session_ || !shortlist_ || selected_ >= shortlist_->count) {
+    LOG_ERR("DICT", "Definition selection is invalid");
     definitionFailed_ = true;
     definitionFailure_ = DefinitionFailure::General;
     mode_ = Mode::Definition;
     requestUpdate();
     return false;
   }
+  const auto ioBefore = session_->sourceIoMetrics();
+  if (session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::ATTACHMENTS_INVALID) {
+    definitionFailed_ = true;
+    definitionFailure_ = DefinitionFailure::AttachmentsInvalid;
+    mode_ = Mode::Definition;
+    requestUpdate();
+    return false;
+  }
+  if (session_->definitionSourceCount() == 0) {
+    definitionFailed_ = true;
+    definitionFailure_ = DefinitionFailure::NoCompatibleSources;
+    mode_ = Mode::Definition;
+    requestUpdate();
+    return false;
+  }
+  contextualSourceWarning_ = session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::PARTIAL;
 
   const std::string_view surface = shortlist_->surface(selected_);
   const size_t headwordLength = std::min(surface.size(), sizeof(headword_) - 1);
@@ -374,7 +353,6 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
 
 bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const uint32_t pageIndex) {
   if (!pager_ || !definitionPage_ || !shortlist_ || selected_ >= shortlist_->count) return false;
-  dictionary::definition::PagerError error = dictionary::definition::PagerError::NONE;
   const dictionary::definition::WidthMeasurer measurer{this, measureDefinitionText};
   const int lineStep = renderer.getLineHeight(UI_10_FONT_ID) + kDefinitionLineGap;
   int top = 0;
@@ -384,62 +362,12 @@ bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const
   contentMargins(top, right, bottom, left);
   (void)right;
   (void)left;
-  const uint8_t analysisCount = shortlist_->items[selected_].analysisCount;
-  // Reserve the worst-case divider and meaning gaps up front so streamed lines
-  // can never overflow the viewport, even when all analyses fit on one page.
-  const bool contextual = session_->usesCanonicalIdentity();
-  const int dividerReserve = contextual ? 0 : std::max(0, static_cast<int>(analysisCount) - 1) * kAnalysisDividerHeight;
-  const int availableHeight =
-      std::max(1, renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved - dividerReserve);
+  const int availableHeight = std::max(1, renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved);
   const int visualRowHeight =
-      contextual ? std::max({lineStep + kDefinitionMeaningGap, kSourceDividerHeight, kAnalysisDividerHeight})
-                 : lineStep + kDefinitionMeaningGap;
+      std::max({lineStep + kDefinitionMeaningGap, kSourceDividerHeight, kAnalysisDividerHeight});
   const size_t visibleLines = static_cast<size_t>(std::max(1, availableHeight / std::max(1, visualRowHeight)));
   const size_t maxLines = std::min(visibleLines, dictionary::definition::kMaxPageLines);
-  if (contextual) {
-    return loadContextualDefinitionPage(start, pageIndex, measurer, maxLines);
-  }
-
-  DefinitionCursor cursor = start;
-  bool firstEntry = true;
-  *definitionPage_ = {};
-  while (cursor.analysisIndex < analysisCount && definitionPage_->lineCount < maxLines) {
-    if (!openAnalysisEntry(cursor.analysisIndex)) {
-      definitionFailed_ = true;
-      requestUpdate();
-      return false;
-    }
-    const uint8_t firstNewLine = definitionPage_->lineCount;
-    const bool startsNewAnalysis = !firstEntry;
-    const bool pageLoaded = firstEntry ? pager_->load(session_->package(), entry_, cursor.entry, measurer,
-                                                      definitionContentWidth(), maxLines, *definitionPage_, error)
-                                       : pager_->append(session_->package(), entry_, cursor.entry, measurer,
-                                                        definitionContentWidth(), maxLines, *definitionPage_, error);
-    if (!pageLoaded) {
-      LOG_ERR("DICT", "Definition page failed: %s", dictionary::definition::pagerErrorName(error));
-      definitionFailed_ = true;
-      requestUpdate();
-      return false;
-    }
-    if (startsNewAnalysis && definitionPage_->lineCount > firstNewLine) {
-      definitionPage_->lines[firstNewLine].analysisStart = true;
-    }
-    firstEntry = false;
-    if (definitionPage_->hasNext) {
-      definitionPageNext_ = {definitionPage_->next, cursor.analysisIndex};
-      break;
-    }
-    ++cursor.analysisIndex;
-    cursor.entry = {};
-    definitionPageNext_ = {cursor.entry, cursor.analysisIndex};
-  }
-
-  definitionPage_->hasNext = definitionPageNext_.analysisIndex < analysisCount;
-  definitionFailed_ = false;
-  definitionPageStart_ = start;
-  definitionPageIndex_ = pageIndex;
-  requestUpdate();
-  return true;
+  return loadContextualDefinitionPage(start, pageIndex, measurer, maxLines);
 }
 
 void DictionaryActivity::changeDefinitionPage(const int delta) {

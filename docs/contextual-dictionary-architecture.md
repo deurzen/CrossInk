@@ -222,14 +222,10 @@ crossink-dictionary compile-epub input.epub output.epub
 C12 implements the current command as `scripts/compile_contextual_epub.py`;
 its preservation, transaction, determinism, and v4 metadata behavior are
 specified in [`contextual-epub-compiler.md`](contextual-epub-compiler.md).
-The resulting EPUB remains uploadable through File Transfer and receives the
-same transactional device-side extraction and validation as today. The WebUI
-continues to install runtime lexical/definition bundles and manage source order.
-
-The current browser-only exact-form compiler remains available during
-migration, clearly labeled as legacy/basic analysis. A future browser-native
-contextual backend is optional and must produce byte-identical artifacts for a
-fixed model before replacing the host compiler.
+The resulting EPUB is uploaded through File Transfer and receives transactional
+device-side extraction and validation. The WebUI installs canonical and
+definition packages and manages source order. EPUB optimization is independent;
+it does not compile or alter dictionary artifacts.
 
 ## Firmware runtime
 

@@ -3,24 +3,26 @@
 ### Added
 
 - Word Inbox captures save visible EPUB and TXT/Markdown text through a configurable reader shortcut, with optional screenshots disabled by default; saved contexts can be reviewed, copied, and deleted in the WebUI.
-- EPUB optimization can compile dictionary candidate shards from a cached `.cpdict` bundle in an off-main-thread browser worker; firmware validates and extracts the resulting artifact with bounded memory.
 - Dictionary-optimized EPUBs now retain source-shard ranges in each rendered page, allowing lookups to stay correct across font, layout, and orientation changes.
 - Compatible EPUBs can open a bounded unknown-word shortlist through a configurable shortcut, stream definitions from SD, and mark words as learning, known, or ignored.
-- The Dictionaries WebUI installs, inspects, replaces, and removes runtime packages transactionally, reviews WAL-protected learning states, and exports CSV/TSV while keeping compiler data in the desktop browser.
 - A pinned host compiler can build deterministic canonical German lexicons, independently aligned definition-source bundles, and contextually analyzed EPUB artifacts from DWDSmor, ZDL, and the de-DE form inventory while preserving the canonical OPF.
 - The Dictionaries WebUI can transactionally install canonical `.cplex` and definition-source `.cpdef` packages, show compatibility and coverage, and atomically order up to three attached sources.
 
 ### Changed
 
-- Dictionary-aware EPUB compilation is now a separate upload option from image optimization and can preserve the book's images and auxiliary package files unchanged.
+- Contextual EPUB compilation is host-only and independent from image optimization; the WebUI optimizer no longer runs morphology or rewrites dictionary artifacts.
 - Failed or cancelled EPUB optimization no longer silently uploads the original book; users must explicitly retry or upload without optimization.
-- Contextual EPUB artifacts and global learning state now use canonical lexicon UUIDs, while legacy bundle-keyed statuses remain isolated until explicit migration.
+- EPUB artifacts and global learning state use canonical lexicon UUIDs exclusively.
 - Contextual lookups now retain up to three attached, compatible definition-source descriptors in configured order and skip unavailable sources without loading their indexes or entries.
 - Contextual definition lookup now reads one fixed 8-byte entry-index record per attached source through a single switching SD handle, classifying source misses and corruption independently.
 - Contextual definitions now stream across every retained analysis and attached source through the existing single page buffer, with bounded forward cursors and replay-based backward navigation.
 - Contextual definition pages now identify each source with a centered labeled divider while preserving separate analysis and meaning spacing without clipping the content area.
 - Contextual Known, Learning, and Ignore actions now update the primary canonical lexical item once, keeping suppression independent of alternative analyses and definition-source order.
 - Contextual dictionary failures now distinguish missing or incompatible canonical lexicons, attachment problems, unavailable sources, missing definitions, and damaged source data with actionable translated messages.
+
+### Removed
+
+- Removed version-3 dictionary artifacts, monolithic runtime packages, bundle-keyed state paths, exact-form browser compilation, and all legacy dictionary install, review, and API routes.
 
 ### Fixed
 

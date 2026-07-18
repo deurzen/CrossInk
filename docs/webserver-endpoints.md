@@ -22,7 +22,6 @@ the IP address shown on the device screen.
 | `GET` | `/dictionaries` | Dictionary runtime installation and compatibility page |
 | `GET` | `/word-inbox` | Saved reading-context browser |
 | `GET` | `/js/jszip.min.js` | JavaScript ZIP asset used by the file manager |
-| `GET` | `/js/dictionary-worker.js` | Off-main-thread dictionary book compiler; requested only when dictionary optimization is enabled |
 
 ## Device Status
 
@@ -380,20 +379,9 @@ Successful response:
 ## Dictionary Management API
 
 Dictionary UUID parameters accept canonical UUID text or 32 hexadecimal digits.
-Clients never provide an SD-card path: firmware maps only the five fixed runtime
-filenames into a hidden staging directory. Compiler resources such as
-`compiler/forms.bin` must remain in the browser and are not accepted.
-
-### `GET /api/dictionaries`
-
-Streams up to 64 installed bundle records. Inventory checks metadata and exact
-file sizes without rescanning large payload CRCs on every request. A package
-that no longer passes this lightweight inspection is returned with
-`"valid":false` and an error code.
-
-```json
-[{"uuid":"01020304-0506-0708-090a-0b0c0d0e0f10","valid":true,"sourceLanguage":"de","targetLanguage":"en","lexemeCount":200000,"runtimeBytes":48123456}]
-```
+Clients never provide an SD-card path: firmware maps only the fixed contextual
+runtime filenames into a hidden staging directory. Compiler models and metadata
+are not accepted.
 
 ### `GET /api/dictionaries/contextual`
 
@@ -414,19 +402,9 @@ never loads a source index or definition payload.
 
 ### Transactional installation
 
-Installation is a fixed-file sequence followed by an explicit commit. Omitting
-`kind` (or using `kind=legacy`) retains the five-file `.cpdict` API:
-
-```bash
-UUID=01020304-0506-0708-090a-0b0c0d0e0f10
-curl -X POST "http://crosspoint.local/api/dictionaries/install/start?uuid=$UUID"
-curl -X POST -F "file=@meta.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=meta.bin"
-curl -X POST -F "file=@lexemes.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=lexemes.bin"
-curl -X POST -F "file=@headwords.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=headwords.bin"
-curl -X POST -F "file=@entries.bin" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=entries.bin"
-curl -X POST -F "file=@licenses.txt" "http://crosspoint.local/api/dictionaries/install/file?uuid=$UUID&name=licenses.txt"
-curl -X POST "http://crosspoint.local/api/dictionaries/install/commit?uuid=$UUID"
-```
+Installation is a fixed-file sequence followed by an explicit commit. Every
+request must use `kind=canonical` or `kind=definition`; omitted and unknown kinds
+are rejected.
 
 The browser sends runtime files in 256 KB requests. Each request includes an
 `offset`; firmware accepts it only when it exactly matches the staged file size.
@@ -438,8 +416,8 @@ payload once through the same buffer, validates `meta.bin`, exact sizes, UUID,
 and CRCs, then publishes the package with a directory rename. Failed validation
 leaves an existing same-UUID package untouched.
 
-Contextual packages use the same start/file/progress/commit/cancel endpoints
-with `kind=canonical` or `kind=definition`. Canonical uploads accept only
+Canonical and definition packages use the same start/file/progress/commit/cancel
+endpoints. Canonical uploads accept only
 `meta.bin`, `lexemes.bin`, `headwords.bin`, and `licenses.txt`; definition
 uploads accept only `meta.bin`, `entry-index.bin`, `entries.bin`, and
 `licenses.txt`. A definition commit also supplies `canonicalUuid`; firmware
@@ -457,28 +435,6 @@ staging directory. Include the same `kind` used at start. `POST
 /api/dictionaries/remove?uuid=<uuid>&kind=<kind>` atomically removes an installed
 package; learning state is deliberately retained under
 `/.crosspoint/language-state/`.
-
-### Learning-state review
-
-`GET /api/dictionaries/learning?uuid=<uuid>&cursor=0&scan=4096` scans at most
-4096 dense lexeme IDs (2048 packed status bytes) and returns at most 50 nonzero
-states. `nextCursor` resumes after the last scanned or emitted ID; clients keep
-requesting windows until `done` is true. The status file is never loaded whole.
-
-```json
-{"generation":7,"nextCursor":4096,"done":false,"items":[{"lexemeId":12,"status":2,"partOfSpeech":1,"headword":"Haus"}]}
-```
-
-`POST /api/dictionaries/learning/status?uuid=<uuid>&id=<lexeme-id>&status=<0-4>`
-changes one state through the same synced WAL used by the reader. Status values
-are 0 unseen, 1 known, 2 learning, 3 ignored, and 4 implicitly familiar.
-Setting unseen removes the entry from subsequent review responses. Per-book
-suppression projections rebuild lazily on their next explicit lookup because
-the global generation changes.
-
-The Dictionaries page paginates these windows for review and generates CSV or
-TSV exports in the desktop browser; the firmware does not allocate an export or
-status-sized buffer.
 
 ## OPDS Server API
 

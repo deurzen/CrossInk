@@ -49,7 +49,7 @@ int hexValue(const char value) {
 
 }  // namespace
 
-bool parseBundleUuid(const char* text, uint8_t (&uuid)[16]) {
+bool parsePackageUuid(const char* text, uint8_t (&uuid)[16]) {
   std::memset(uuid, 0, sizeof(uuid));
   if (text == nullptr) return false;
   const size_t length = std::strlen(text);
@@ -70,7 +70,7 @@ bool parseBundleUuid(const char* text, uint8_t (&uuid)[16]) {
   return input == length && validUuid(uuid);
 }
 
-void formatBundleUuid(const uint8_t (&uuid)[16], char (&output)[37]) {
+void formatPackageUuid(const uint8_t (&uuid)[16], char (&output)[37]) {
   static constexpr char HEX_DIGITS[] = "0123456789abcdef";
   size_t position = 0;
   for (size_t i = 0; i < sizeof(uuid); ++i) {
@@ -128,14 +128,14 @@ bool Installer::open(const StorageBackend& storage, const char* rootPath, Instal
   return true;
 }
 
-bool Installer::directoryPath(const uint8_t (&bundleUuid)[16], const char* prefix, char* output, const size_t capacity,
+bool Installer::directoryPath(const uint8_t (&packageUuid)[16], const char* prefix, char* output, const size_t capacity,
                               InstallError& error) const {
-  if (!open_ || !validUuid(bundleUuid) || prefix == nullptr || output == nullptr || capacity == 0) {
+  if (!open_ || !validUuid(packageUuid) || prefix == nullptr || output == nullptr || capacity == 0) {
     error = InstallError::INVALID_INPUT;
     return false;
   }
   char hex[33]{};
-  uuidHex(bundleUuid, hex);
+  uuidHex(packageUuid, hex);
   const int written = std::snprintf(output, capacity, "%s/%s%s", rootPath_, prefix, hex);
   if (written < 0 || static_cast<size_t>(written) >= capacity) {
     error = InstallError::PATH_TOO_LONG;
@@ -144,10 +144,10 @@ bool Installer::directoryPath(const uint8_t (&bundleUuid)[16], const char* prefi
   return true;
 }
 
-bool Installer::filePath(const uint8_t (&bundleUuid)[16], const char* prefix, const RuntimeFile file, char* output,
+bool Installer::filePath(const uint8_t (&packageUuid)[16], const char* prefix, const RuntimeFile file, char* output,
                          const size_t capacity, InstallError& error) const {
   const char* name = runtimeFileName(file);
-  if (name == nullptr || !directoryPath(bundleUuid, prefix, output, capacity, error)) return false;
+  if (name == nullptr || !directoryPath(packageUuid, prefix, output, capacity, error)) return false;
   const size_t used = std::strlen(output);
   const int written = std::snprintf(output + used, capacity - used, "/%s", name);
   if (written < 0 || static_cast<size_t>(written) >= capacity - used) {
@@ -157,16 +157,16 @@ bool Installer::filePath(const uint8_t (&bundleUuid)[16], const char* prefix, co
   return true;
 }
 
-bool Installer::installedDirectoryPath(const uint8_t (&bundleUuid)[16], char* output, const size_t capacity,
+bool Installer::installedDirectoryPath(const uint8_t (&packageUuid)[16], char* output, const size_t capacity,
                                        InstallError& error) const {
   error = InstallError::NONE;
-  return directoryPath(bundleUuid, "", output, capacity, error);
+  return directoryPath(packageUuid, "", output, capacity, error);
 }
 
-bool Installer::begin(const uint8_t (&bundleUuid)[16], InstallError& error) {
+bool Installer::begin(const uint8_t (&packageUuid)[16], InstallError& error) {
   error = InstallError::NONE;
-  if (!recover(bundleUuid, error) ||
-      !directoryPath(bundleUuid, kStagePrefix, pathScratch_, sizeof(pathScratch_), error)) {
+  if (!recover(packageUuid, error) ||
+      !directoryPath(packageUuid, kStagePrefix, pathScratch_, sizeof(pathScratch_), error)) {
     return false;
   }
   if (storage_.exists(storage_.context, pathScratch_) && !storage_.removeTree(storage_.context, pathScratch_)) {
@@ -180,16 +180,16 @@ bool Installer::begin(const uint8_t (&bundleUuid)[16], InstallError& error) {
   return true;
 }
 
-bool Installer::stagingFilePath(const uint8_t (&bundleUuid)[16], const RuntimeFile file, char* output,
+bool Installer::stagingFilePath(const uint8_t (&packageUuid)[16], const RuntimeFile file, char* output,
                                 const size_t capacity, InstallError& error) {
   error = InstallError::NONE;
-  return filePath(bundleUuid, kStagePrefix, file, output, capacity, error);
+  return filePath(packageUuid, kStagePrefix, file, output, capacity, error);
 }
 
 bool Installer::sourceReadAt(void* rawContext, const uint32_t offset, void* output, const size_t length) {
   auto& context = *static_cast<SourceContext*>(rawContext);
-  if (context.installer == nullptr || context.bundleUuid == nullptr) return false;
-  const auto& uuid = *reinterpret_cast<const uint8_t (*)[16]>(context.bundleUuid);
+  if (context.installer == nullptr || context.packageUuid == nullptr) return false;
+  const auto& uuid = *reinterpret_cast<const uint8_t (*)[16]>(context.packageUuid);
   InstallError error = InstallError::NONE;
   if (!context.installer->filePath(uuid, context.prefix, context.file, context.installer->pathScratch_,
                                    sizeof(context.installer->pathScratch_), error)) {
@@ -199,93 +199,16 @@ bool Installer::sourceReadAt(void* rawContext, const uint32_t offset, void* outp
                                             offset, output, length);
 }
 
-bool Installer::makeSource(SourceContext& context, const uint8_t (&bundleUuid)[16], const char* prefix,
+bool Installer::makeSource(SourceContext& context, const uint8_t (&packageUuid)[16], const char* prefix,
                            const RuntimeFile file, RandomAccessSource& source, InstallError& error) {
-  if (!filePath(bundleUuid, prefix, file, pathScratch_, sizeof(pathScratch_), error)) return false;
+  if (!filePath(packageUuid, prefix, file, pathScratch_, sizeof(pathScratch_), error)) return false;
   const uint64_t size = storage_.fileSize(storage_.context, pathScratch_);
   if (size == std::numeric_limits<uint64_t>::max()) {
     error = InstallError::REQUIRED_FILE_MISSING;
     return false;
   }
-  context = {this, bundleUuid, prefix, file};
+  context = {this, packageUuid, prefix, file};
   source = {&context, size, sourceReadAt};
-  return true;
-}
-
-bool Installer::validatePackage(const uint8_t (&bundleUuid)[16], const char* prefix, uint8_t* scratch,
-                                const size_t scratchSize, const bool verifyCrc, PackageInfo& info,
-                                InstallError& error) {
-  info = {};
-  error = InstallError::NONE;
-  if (!open_ || !validUuid(bundleUuid) || prefix == nullptr ||
-      (verifyCrc && (scratch == nullptr || scratchSize < kMinimumValidationScratch))) {
-    error = InstallError::INVALID_INPUT;
-    return false;
-  }
-  if (!directoryPath(bundleUuid, prefix, pathScratch_, sizeof(pathScratch_), error)) return false;
-  if (!storage_.exists(storage_.context, pathScratch_)) {
-    error = prefix[0] == '\0' ? InstallError::PACKAGE_MISSING : InstallError::STAGING_MISSING;
-    return false;
-  }
-
-  SourceContext metaContext;
-  SourceContext lexemesContext;
-  SourceContext headwordsContext;
-  SourceContext entriesContext;
-  RandomAccessSource meta;
-  RandomAccessSource lexemes;
-  RandomAccessSource headwords;
-  RandomAccessSource entries;
-  if (!makeSource(metaContext, bundleUuid, prefix, RuntimeFile::Meta, meta, error) ||
-      !makeSource(lexemesContext, bundleUuid, prefix, RuntimeFile::Lexemes, lexemes, error) ||
-      !makeSource(headwordsContext, bundleUuid, prefix, RuntimeFile::Headwords, headwords, error) ||
-      !makeSource(entriesContext, bundleUuid, prefix, RuntimeFile::Entries, entries, error)) {
-    return false;
-  }
-  if (!filePath(bundleUuid, prefix, RuntimeFile::Licenses, pathScratch_, sizeof(pathScratch_), error)) return false;
-  const uint64_t licenseSize = storage_.fileSize(storage_.context, pathScratch_);
-  if (licenseSize == std::numeric_limits<uint64_t>::max()) {
-    error = InstallError::REQUIRED_FILE_MISSING;
-    return false;
-  }
-  if (licenseSize == 0 || licenseSize > kMaxLicenseBytes) {
-    error = InstallError::LICENSE_INVALID;
-    return false;
-  }
-
-  DictionaryPackage package;
-  PackageError packageError = PackageError::NONE;
-  if (!package.open(meta, lexemes, headwords, entries, packageError)) {
-    error = InstallError::PACKAGE_INVALID;
-    return false;
-  }
-  const PackageMetadata& metadata = package.metadata();
-  if (std::memcmp(metadata.dictionaryBundleUuid, bundleUuid, sizeof(metadata.dictionaryBundleUuid)) != 0) {
-    error = InstallError::UUID_MISMATCH;
-    return false;
-  }
-  if (verifyCrc) {
-    const struct {
-      RuntimeFile file;
-      uint32_t crc;
-    } checks[] = {{RuntimeFile::Lexemes, metadata.lexemesCrc32},
-                  {RuntimeFile::Headwords, metadata.headwordsCrc32},
-                  {RuntimeFile::Entries, metadata.entriesCrc32}};
-    for (const auto& check : checks) {
-      if (!filePath(bundleUuid, prefix, check.file, pathScratch_, sizeof(pathScratch_), error)) return false;
-      if (!storage_.validateCrc(storage_.context, pathScratch_, check.crc, scratch, scratchSize)) {
-        error = InstallError::CRC_MISMATCH;
-        return false;
-      }
-    }
-  }
-
-  std::memcpy(info.bundleUuid, metadata.dictionaryBundleUuid, sizeof(info.bundleUuid));
-  std::memcpy(info.sourceLanguage, metadata.sourceLanguage, sizeof(info.sourceLanguage));
-  std::memcpy(info.targetLanguage, metadata.targetLanguage, sizeof(info.targetLanguage));
-  info.lexemeCount = metadata.lexemeCount;
-  info.runtimeBytes = kDictionaryMetaSize + static_cast<uint64_t>(metadata.lexemesFileSize) +
-                      metadata.headwordsFileSize + metadata.entriesFileSize + licenseSize;
   return true;
 }
 
@@ -446,16 +369,6 @@ bool Installer::validateDefinitionPackage(const uint8_t (&sourceUuid)[16], const
   return true;
 }
 
-bool Installer::validateStaged(const uint8_t (&bundleUuid)[16], uint8_t* scratch, const size_t scratchSize,
-                               PackageInfo& info, InstallError& error) {
-  return validatePackage(bundleUuid, kStagePrefix, scratch, scratchSize, true, info, error);
-}
-
-bool Installer::inspectInstalled(const uint8_t (&bundleUuid)[16], PackageInfo& info, InstallError& error) {
-  if (!recover(bundleUuid, error)) return false;
-  return validatePackage(bundleUuid, "", nullptr, 0, false, info, error);
-}
-
 bool Installer::validateStagedCanonical(const uint8_t (&canonicalUuid)[16], uint8_t* scratch, const size_t scratchSize,
                                         CanonicalPackageInfo& info, InstallError& error) {
   return validateCanonicalPackage(canonicalUuid, kStagePrefix, scratch, scratchSize, true, info, error);
@@ -508,11 +421,11 @@ bool Installer::inspectInstalledDefinitionMetadata(const uint8_t (&sourceUuid)[1
   return validateDefinitionPackage(sourceUuid, "", canonicalUuid, canonicalCount, nullptr, 0, false, info, error);
 }
 
-bool Installer::recover(const uint8_t (&bundleUuid)[16], InstallError& error) {
+bool Installer::recover(const uint8_t (&packageUuid)[16], InstallError& error) {
   error = InstallError::NONE;
-  if (!directoryPath(bundleUuid, "", pathScratch_, sizeof(pathScratch_), error) ||
-      !directoryPath(bundleUuid, kBackupPrefix, pathScratch2_, sizeof(pathScratch2_), error) ||
-      !directoryPath(bundleUuid, kRemovalPrefix, pathScratch3_, sizeof(pathScratch3_), error)) {
+  if (!directoryPath(packageUuid, "", pathScratch_, sizeof(pathScratch_), error) ||
+      !directoryPath(packageUuid, kBackupPrefix, pathScratch2_, sizeof(pathScratch2_), error) ||
+      !directoryPath(packageUuid, kRemovalPrefix, pathScratch3_, sizeof(pathScratch3_), error)) {
     return false;
   }
   // A removal directory means the final->hidden rename already committed.
@@ -560,16 +473,6 @@ bool Installer::publishStaged(const uint8_t (&uuid)[16], InstallError& error) {
   return true;
 }
 
-bool Installer::commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, const size_t scratchSize, PackageInfo& info,
-                       InstallError& error, const PrepareCallback prepare, void* prepareContext) {
-  if (!validateStaged(bundleUuid, scratch, scratchSize, info, error)) return false;
-  if (prepare && !prepare(prepareContext, bundleUuid, info.lexemeCount)) {
-    error = InstallError::PREPARE_FAILED;
-    return false;
-  }
-  return publishStaged(bundleUuid, error);
-}
-
 bool Installer::commitCanonical(const uint8_t (&canonicalUuid)[16], uint8_t* scratch, const size_t scratchSize,
                                 CanonicalPackageInfo& info, InstallError& error) {
   if (!validateStagedCanonical(canonicalUuid, scratch, scratchSize, info, error)) return false;
@@ -586,9 +489,9 @@ bool Installer::commitDefinition(const uint8_t (&sourceUuid)[16], const uint8_t 
   return publishStaged(sourceUuid, error);
 }
 
-bool Installer::cancel(const uint8_t (&bundleUuid)[16], InstallError& error) {
+bool Installer::cancel(const uint8_t (&packageUuid)[16], InstallError& error) {
   error = InstallError::NONE;
-  if (!directoryPath(bundleUuid, kStagePrefix, pathScratch_, sizeof(pathScratch_), error)) return false;
+  if (!directoryPath(packageUuid, kStagePrefix, pathScratch_, sizeof(pathScratch_), error)) return false;
   if (!storage_.exists(storage_.context, pathScratch_)) return true;
   if (!storage_.removeTree(storage_.context, pathScratch_)) {
     error = InstallError::REMOVE_FAILED;
@@ -597,9 +500,9 @@ bool Installer::cancel(const uint8_t (&bundleUuid)[16], InstallError& error) {
   return true;
 }
 
-bool Installer::remove(const uint8_t (&bundleUuid)[16], InstallError& error) {
-  if (!recover(bundleUuid, error) || !directoryPath(bundleUuid, "", pathScratch_, sizeof(pathScratch_), error) ||
-      !directoryPath(bundleUuid, kRemovalPrefix, pathScratch2_, sizeof(pathScratch2_), error)) {
+bool Installer::remove(const uint8_t (&packageUuid)[16], InstallError& error) {
+  if (!recover(packageUuid, error) || !directoryPath(packageUuid, "", pathScratch_, sizeof(pathScratch_), error) ||
+      !directoryPath(packageUuid, kRemovalPrefix, pathScratch2_, sizeof(pathScratch2_), error)) {
     return false;
   }
   if (!storage_.exists(storage_.context, pathScratch_)) return true;
@@ -641,8 +544,6 @@ const char* installErrorName(const InstallError error) {
       return "uuid-mismatch";
     case InstallError::CRC_MISMATCH:
       return "crc-mismatch";
-    case InstallError::PREPARE_FAILED:
-      return "prepare-failed";
     case InstallError::RENAME_FAILED:
       return "rename-failed";
     case InstallError::REMOVE_FAILED:

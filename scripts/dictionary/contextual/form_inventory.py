@@ -11,7 +11,7 @@ import unicodedata
 import zipfile
 import zlib
 
-from dictionary.book_compiler import CompilerDictionary, load_compiler_dictionary
+from dictionary.contextual.compiler_support import CompilerDictionary, load_compiler_dictionary
 
 from .analysis_policy import CanonicalAnalysis, CanonicalPos
 from .pipeline import AnalysisProvenance, MorphologyAnalyzer, MorphologyCandidate

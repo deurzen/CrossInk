@@ -629,46 +629,6 @@ h2 {
       transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
       -moz-appearance: textfield;
     }
-.dictionary-support-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin: 8px 0 12px;
-      padding: 10px;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      background: var(--accent-color-10);
-    }
-.dictionary-support-row .setting-desc {
-      flex: 1 1 180px;
-      margin: 0;
-    }
-.dictionary-compiler-controls {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-.dictionary-bundle-btn,
-.dictionary-bundle-clear {
-      border: 1px solid var(--border-color);
-      border-radius: 5px;
-      background: var(--card-bg);
-      color: var(--title-color);
-      padding: 5px 8px;
-      font-size: 0.72em;
-      cursor: pointer;
-    }
-.dictionary-bundle-btn:hover,
-.dictionary-bundle-clear:hover {
-      border-color: var(--accent-color);
-      color: var(--accent-color);
-    }
-.dictionary-bundle-status-ready {
-      color: #27ae60;
-    }
 .reference-characters-input::-webkit-outer-spin-button,
 .reference-characters-input::-webkit-inner-spin-button {
       margin: 0;

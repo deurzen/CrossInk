@@ -118,10 +118,3 @@ print(f"{'LogoPng':18} {len(logo_png):>7}B raw")
 jszip = read(JS_OUT, "jszip.min.js")
 orig, comp = emit_gzip(os.path.join(JS_OUT, "jszip_minJs.generated.h"), "jszip_minJs", jszip)
 print(f"{'jszip_minJs':18} {orig:>7}B -> {comp:>6}B gz")
-
-# Dictionary compilation runs off the UI thread in a separately cached worker.
-dictionary_worker = read(WEB, "assets", "dictionary-worker.js")
-orig, comp = emit_gzip(
-    os.path.join(JS_OUT, "dictionary_workerJs.generated.h"), "dictionary_workerJs", dictionary_worker
-)
-print(f"{'dictionaryWorkerJs':18} {orig:>7}B -> {comp:>6}B gz")

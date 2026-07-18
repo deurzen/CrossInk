@@ -15,7 +15,6 @@
 namespace {
 using dictionary::installer::Installer;
 using dictionary::installer::InstallError;
-using dictionary::installer::PackageInfo;
 using dictionary::installer::RuntimeFile;
 using dictionary::installer::StorageBackend;
 
@@ -124,80 +123,7 @@ void writeU64(std::vector<uint8_t>& data, const size_t offset, const uint64_t va
   writeU32(data, offset + 4, static_cast<uint32_t>(value >> 32U));
 }
 
-struct Fixture {
-  std::vector<uint8_t> meta;
-  std::vector<uint8_t> lexemes;
-  std::vector<uint8_t> headwords;
-  std::vector<uint8_t> entries;
-  std::vector<uint8_t> licenses;
-};
-
-Fixture fixture(const uint8_t (&uuid)[16] = UUID) {
-  Fixture result;
-  result.meta.resize(dictionary::kDictionaryMetaSize, 0);
-  result.lexemes.resize(dictionary::kLexemeRecordSize, 0);
-  result.headwords = {'H', 'a', 'u', 's'};
-  result.entries = {1, 0, 1, 0, 1, 0, 5, 0, 'h', 'o', 'u', 's', 'e'};
-  result.licenses = {'C', 'C', '0', '-', '1', '.', '0', '\n'};
-
-  writeU32(result.lexemes, 0, 0);
-  writeU32(result.lexemes, 4, 0);
-  writeU32(result.lexemes, 8, result.entries.size());
-  writeU32(result.lexemes, 12, 1);
-  writeU32(result.lexemes, 16, 0);
-  writeU16(result.lexemes, 20, result.headwords.size());
-  result.lexemes[22] = 1;
-
-  std::memcpy(result.meta.data(), "CXDM", 4);
-  writeU16(result.meta, 4, dictionary::kDictionaryPackageVersion);
-  writeU16(result.meta, 6, dictionary::kDictionaryMetaSize);
-  std::memcpy(result.meta.data() + 12, uuid, 16);
-  std::memcpy(result.meta.data() + 28, "de", 2);
-  std::memcpy(result.meta.data() + 36, "en", 2);
-  writeU32(result.meta, 44, 1);
-  writeU16(result.meta, 48, dictionary::kLexemeRecordSize);
-  writeU32(result.meta, 52, result.lexemes.size());
-  writeU32(result.meta, 56, result.headwords.size());
-  writeU32(result.meta, 60, result.entries.size());
-  writeU32(result.meta, 64, dictionary::updateCrc32(0, result.lexemes.data(), result.lexemes.size()));
-  writeU32(result.meta, 68, dictionary::updateCrc32(0, result.headwords.data(), result.headwords.size()));
-  writeU32(result.meta, 72, dictionary::updateCrc32(0, result.entries.data(), result.entries.size()));
-  writeU32(result.meta, 76, dictionary::updateCrc32(0, result.meta.data(), 76));
-  return result;
-}
-
-void stage(Installer& installer, MemoryStorage& storage, const Fixture& data, const uint8_t (&uuid)[16] = UUID) {
-  InstallError error;
-  ASSERT_TRUE(installer.begin(uuid, error)) << dictionary::installer::installErrorName(error);
-  const struct {
-    RuntimeFile file;
-    const std::vector<uint8_t>* bytes;
-  } files[] = {{RuntimeFile::Meta, &data.meta},
-               {RuntimeFile::Lexemes, &data.lexemes},
-               {RuntimeFile::Headwords, &data.headwords},
-               {RuntimeFile::Entries, &data.entries},
-               {RuntimeFile::Licenses, &data.licenses}};
-  for (const auto& item : files) {
-    char path[dictionary::installer::kMaxInstallPath]{};
-    ASSERT_TRUE(installer.stagingFilePath(uuid, item.file, path, sizeof(path), error));
-    storage.files[path] = *item.bytes;
-  }
-}
-
-struct PrepareProbe {
-  bool succeed = true;
-  uint32_t calls = 0;
-  uint32_t lexemeCount = 0;
-};
-
-bool preparePackage(void* context, const uint8_t (&bundleUuid)[16], const uint32_t lexemeCount) {
-  auto& probe = *static_cast<PrepareProbe*>(context);
-  ++probe.calls;
-  probe.lexemeCount = lexemeCount;
-  return probe.succeed && std::memcmp(bundleUuid, UUID, sizeof(UUID)) == 0;
-}
-
-Installer openedInstaller(MemoryStorage& storage, const char* root = "/.crosspoint/dictionaries") {
+Installer openedInstaller(MemoryStorage& storage, const char* root = "/.crosspoint/lexicons") {
   Installer installer;
   InstallError error;
   EXPECT_TRUE(installer.open(backend(storage), root, error));
@@ -315,167 +241,19 @@ void stageDefinition(Installer& installer, MemoryStorage& storage, const Definit
 
 }  // namespace
 
-TEST(DictionaryInstaller, ParsesOnlyCanonicalOrCompactBundleUuids) {
+TEST(DictionaryInstaller, ParsesOnlyCanonicalOrCompactPackageUuids) {
   uint8_t uuid[16]{};
-  EXPECT_TRUE(dictionary::installer::parseBundleUuid("0102030405060708090a0b0c0d0e0f10", uuid));
+  EXPECT_TRUE(dictionary::installer::parsePackageUuid("0102030405060708090a0b0c0d0e0f10", uuid));
   EXPECT_EQ(std::memcmp(uuid, UUID, sizeof(uuid)), 0);
-  EXPECT_TRUE(dictionary::installer::parseBundleUuid("01020304-0506-0708-090a-0b0c0d0e0f10", uuid));
+  EXPECT_TRUE(dictionary::installer::parsePackageUuid("01020304-0506-0708-090a-0b0c0d0e0f10", uuid));
   EXPECT_EQ(std::memcmp(uuid, UUID, sizeof(uuid)), 0);
-  EXPECT_FALSE(dictionary::installer::parseBundleUuid("../0102030405060708090a0b0c0d0e0f10", uuid));
-  EXPECT_FALSE(dictionary::installer::parseBundleUuid("00000000-0000-0000-0000-000000000000", uuid));
-  EXPECT_FALSE(dictionary::installer::parseBundleUuid("01020304_0506-0708-090a-0b0c0d0e0f10", uuid));
+  EXPECT_FALSE(dictionary::installer::parsePackageUuid("../0102030405060708090a0b0c0d0e0f10", uuid));
+  EXPECT_FALSE(dictionary::installer::parsePackageUuid("00000000-0000-0000-0000-000000000000", uuid));
+  EXPECT_FALSE(dictionary::installer::parsePackageUuid("01020304_0506-0708-090a-0b0c0d0e0f10", uuid));
 
   char formatted[37]{};
-  dictionary::installer::formatBundleUuid(UUID, formatted);
+  dictionary::installer::formatPackageUuid(UUID, formatted);
   EXPECT_STREQ(formatted, "01020304-0506-0708-090a-0b0c0d0e0f10");
-}
-
-TEST(DictionaryInstaller, ValidatesAndAtomicallyPublishesPackage) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture());
-
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error))
-      << dictionary::installer::installErrorName(error);
-  EXPECT_EQ(info.lexemeCount, 1U);
-  EXPECT_STREQ(info.sourceLanguage, "de");
-  EXPECT_EQ(storage.validateCrcCalls, 3);
-  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
-  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.installing-") + UUID_HEX));
-}
-
-TEST(DictionaryInstaller, PreparesStateBeforePublishingPackage) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture());
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  PrepareProbe probe{false};
-
-  EXPECT_FALSE(installer.commit(UUID, scratch, sizeof(scratch), info, error, preparePackage, &probe));
-  EXPECT_EQ(error, InstallError::PREPARE_FAILED);
-  EXPECT_EQ(probe.calls, 1U);
-  EXPECT_EQ(probe.lexemeCount, 1U);
-  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
-  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.installing-") + UUID_HEX));
-
-  probe.succeed = true;
-  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error, preparePackage, &probe));
-  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
-}
-
-TEST(DictionaryInstaller, RejectsCorruptionWithoutReplacingInstalledPackage) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture());
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
-  const std::string installedMeta = std::string("/.crosspoint/dictionaries/") + UUID_HEX + "/meta.bin";
-  const auto originalMeta = storage.files.at(installedMeta);
-
-  Fixture corrupt = fixture();
-  corrupt.entries.back() ^= 0x01U;
-  stage(installer, storage, corrupt);
-  EXPECT_FALSE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
-  EXPECT_EQ(error, InstallError::CRC_MISMATCH);
-  EXPECT_EQ(storage.files.at(installedMeta), originalMeta);
-}
-
-TEST(DictionaryInstaller, RejectsManifestUuidMismatch) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture(OTHER_UUID));
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  EXPECT_FALSE(installer.validateStaged(UUID, scratch, sizeof(scratch), info, error));
-  EXPECT_EQ(error, InstallError::UUID_MISMATCH);
-}
-
-TEST(DictionaryInstaller, RestoresPreviousPackageWhenPublishFails) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture());
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
-
-  stage(installer, storage, fixture());
-  storage.failRenameCall = storage.renameCalls + 2;  // Old -> backup succeeds, stage -> final fails.
-  EXPECT_FALSE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
-  EXPECT_EQ(error, InstallError::RENAME_FAILED);
-  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
-  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.backup-") + UUID_HEX));
-}
-
-TEST(DictionaryInstaller, RecoversBothInterruptedReplacementPhases) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture());
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
-
-  const std::string final = std::string("/.crosspoint/dictionaries/") + UUID_HEX;
-  const std::string backup = std::string("/.crosspoint/dictionaries/.backup-") + UUID_HEX;
-  ASSERT_TRUE(renameTree(&storage, final.c_str(), backup.c_str()));
-  ASSERT_TRUE(installer.recover(UUID, error));
-  EXPECT_TRUE(storage.directories.contains(final));
-  EXPECT_FALSE(storage.directories.contains(backup));
-
-  storage.directories.emplace(backup);
-  ASSERT_TRUE(installer.recover(UUID, error));
-  EXPECT_TRUE(storage.directories.contains(final));
-  EXPECT_FALSE(storage.directories.contains(backup));
-}
-
-TEST(DictionaryInstaller, InspectsWithoutRescanningPayloadAndCancelsStaging) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture());
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
-  const int crcCallsAfterCommit = storage.validateCrcCalls;
-
-  PackageInfo inspected;
-  ASSERT_TRUE(installer.inspectInstalled(UUID, inspected, error));
-  EXPECT_EQ(inspected.lexemeCount, 1U);
-  EXPECT_EQ(storage.validateCrcCalls, crcCallsAfterCommit);
-
-  stage(installer, storage, fixture());
-  ASSERT_TRUE(installer.cancel(UUID, error));
-  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.installing-") + UUID_HEX));
-  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
-}
-
-TEST(DictionaryInstaller, RemovalCommitNeverRestoresPartialCleanup) {
-  MemoryStorage storage;
-  Installer installer = openedInstaller(storage);
-  stage(installer, storage, fixture());
-  uint8_t scratch[64]{};
-  PackageInfo info;
-  InstallError error;
-  ASSERT_TRUE(installer.commit(UUID, scratch, sizeof(scratch), info, error));
-
-  storage.failRemove = true;
-  ASSERT_TRUE(installer.remove(UUID, error));
-  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
-  EXPECT_TRUE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.removing-") + UUID_HEX));
-
-  storage.failRemove = false;
-  ASSERT_TRUE(installer.recover(UUID, error));
-  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/") + UUID_HEX));
-  EXPECT_FALSE(storage.directories.contains(std::string("/.crosspoint/dictionaries/.removing-") + UUID_HEX));
 }
 
 TEST(DictionaryInstaller, ValidatesAndPublishesCanonicalLexicon) {

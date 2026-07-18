@@ -44,8 +44,6 @@ class DictionaryActivity final : public Activity {
   std::unique_ptr<dictionary::definition::Page> definitionPage_;
   DefinitionCursor definitionPageStart_{};
   DefinitionCursor definitionPageNext_{};
-  dictionary::LexemeRecord lexeme_{};
-  dictionary::EntrySlice entry_{};
   std::array<dictionary::lookup::DefinitionIndexLookup, dictionary::contextual::kMaxAttachedSources>
       contextualIndexes_{};
   uint8_t contextualIndexCount_ = 0;
@@ -54,7 +52,7 @@ class DictionaryActivity final : public Activity {
   uint16_t selected_ = 0;
   uint32_t definitionPageIndex_ = 0;
   uint8_t statusSelection_ = 0;
-  char headword_[dictionary::kMaxHeadwordBytes + 1]{};
+  char headword_[dictionary::contextual::kMaxCanonicalHeadwordBytes + 1]{};
   char lineScratch_[dictionary::definition::kMaxLineBytes + 1]{};
   unsigned long lookupStartedAt_ = 0;
   bool definitionFailed_ = false;
@@ -66,7 +64,6 @@ class DictionaryActivity final : public Activity {
   bool loadDefinitionPage(const DefinitionCursor& start, uint32_t pageIndex);
   bool loadContextualDefinitionPage(const DefinitionCursor& start, uint32_t pageIndex,
                                     const dictionary::definition::WidthMeasurer& measurer, size_t maxLines);
-  bool openAnalysisEntry(uint8_t analysisIndex);
   bool loadContextualIndexes(uint8_t analysisIndex);
   void changeDefinitionPage(int delta);
   void saveSelectedStatus();

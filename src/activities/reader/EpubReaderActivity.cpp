@@ -3143,7 +3143,6 @@ void EpubReaderActivity::startDictionaryLookup() {
   enum class LookupOutcome : uint8_t {
     Ready,
     NoWords,
-    MissingDictionary,
     MissingCanonicalLexicon,
     InvalidCanonicalLexicon,
     Failed
@@ -3190,20 +3189,14 @@ void EpubReaderActivity::startDictionaryLookup() {
           } else {
             dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
             const unsigned long readersStartedAt = millis();
-            if (!session->openReaders(epub->getBookLanguageArtifactPath().c_str(), epub->getCachePath().c_str(),
-                                      epub->getDictionaryIdentityUuid(), sessionError)) {
+            if (!session->openReaders(epub->getBookLanguageArtifactPath().c_str(), epub->getCanonicalLexiconUuid(),
+                                      sessionError)) {
               LOG_ERR("DICT", "Lookup session failed: %s", dictionary::lookup::sessionErrorName(sessionError));
-              if (epub->hasContextualLanguageArtifact()) {
-                if (sessionError == dictionary::lookup::SessionError::DICTIONARY_MISSING) {
-                  outcome = LookupOutcome::MissingCanonicalLexicon;
-                } else if (sessionError == dictionary::lookup::SessionError::DICTIONARY_INVALID ||
-                           sessionError == dictionary::lookup::SessionError::IDENTITY_MISMATCH) {
-                  outcome = LookupOutcome::InvalidCanonicalLexicon;
-                }
-              } else {
-                outcome = sessionError == dictionary::lookup::SessionError::DICTIONARY_MISSING
-                              ? LookupOutcome::MissingDictionary
-                              : LookupOutcome::Failed;
+              if (sessionError == dictionary::lookup::SessionError::CANONICAL_MISSING) {
+                outcome = LookupOutcome::MissingCanonicalLexicon;
+              } else if (sessionError == dictionary::lookup::SessionError::CANONICAL_INVALID ||
+                         sessionError == dictionary::lookup::SessionError::IDENTITY_MISMATCH) {
+                outcome = LookupOutcome::InvalidCanonicalLexicon;
               }
             } else {
               LOG_INF("DICT", "Readers open: %lu ms total=%lu ms local=%lu global=%lu", millis() - readersStartedAt,
@@ -3255,7 +3248,6 @@ void EpubReaderActivity::startDictionaryLookup() {
 
   if (outcome != LookupOutcome::Ready) {
     const char* message = outcome == LookupOutcome::NoWords                   ? tr(STR_NO_UNKNOWN_WORDS)
-                          : outcome == LookupOutcome::MissingDictionary       ? tr(STR_DICTIONARY_NOT_INSTALLED)
                           : outcome == LookupOutcome::MissingCanonicalLexicon ? tr(STR_CANONICAL_LEXICON_NOT_INSTALLED)
                           : outcome == LookupOutcome::InvalidCanonicalLexicon ? tr(STR_CANONICAL_LEXICON_INVALID)
                                                                               : tr(STR_DICTIONARY_LOOKUP_FAILED);

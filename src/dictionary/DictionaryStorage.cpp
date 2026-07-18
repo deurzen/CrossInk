@@ -66,9 +66,9 @@ installer::StorageBackend backend() {
   return {nullptr, ensureDirectory, exists, removeTree, rename, fileSize, readAt, validateCrc};
 }
 
-bool parseUuid(const char* text, uint8_t (&uuid)[16]) { return installer::parseBundleUuid(text, uuid); }
+bool parseUuid(const char* text, uint8_t (&uuid)[16]) { return installer::parsePackageUuid(text, uuid); }
 
-void formatUuid(const uint8_t (&uuid)[16], char (&output)[37]) { installer::formatBundleUuid(uuid, output); }
+void formatUuid(const uint8_t (&uuid)[16], char (&output)[37]) { installer::formatPackageUuid(uuid, output); }
 
 bool collectPackageUuids(const char* rootPath, uint8_t* output, const size_t capacity, size_t& count) {
   count = 0;
@@ -97,10 +97,6 @@ bool collectPackageUuids(const char* rootPath, uint8_t* output, const size_t cap
     }
   }
   return true;
-}
-
-bool collectBundleUuids(uint8_t* output, const size_t capacity, size_t& count) {
-  return collectPackageUuids(ROOT_PATH, output, capacity, count);
 }
 
 }  // namespace dictionary::storage

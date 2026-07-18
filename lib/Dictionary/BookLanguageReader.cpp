@@ -6,8 +6,7 @@
 
 namespace dictionary::book_language {
 namespace {
-constexpr uint8_t kLegacyCandidateFlags = 0x0F;
-constexpr uint8_t kContextualCandidateFlags = 0x3F;
+constexpr uint8_t kKnownCandidateFlags = 0x3F;
 
 uint16_t readU16(const uint8_t* data) {
   return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8U);
@@ -161,10 +160,9 @@ bool BookLanguageReader::readCandidate(const ShardDirectoryRecord& shard, const 
   const uint32_t contentSize =
       kInlineCandidateHeaderSize + candidate_.analysisCount * sizeof(uint16_t) + candidate_.surfaceLength;
   const uint32_t expectedRecordSize = (contentSize + 3U) & ~3U;
-  const uint8_t knownFlags = header_.usesCanonicalIdentity() ? kContextualCandidateFlags : kLegacyCandidateFlags;
   if (candidate_.recordSize != expectedRecordSize || candidateCursor_ + candidate_.recordSize > blobEnd ||
       candidate_.surfaceLength == 0 || candidate_.analysisCount == 0 || candidate_.analysisCount > kMaxInlineAnalyses ||
-      (candidate_.flags & ~knownFlags) != 0 || candidate_.confidence > 1000) {
+      (candidate_.flags & ~kKnownCandidateFlags) != 0 || candidate_.confidence > 1000) {
     error = ReaderError::CANDIDATE_RECORD_INVALID;
     return false;
   }

@@ -1,4 +1,4 @@
-"""Pure host-side compiler for dictionary-aware XHTML spine documents."""
+"""Shared bounded parsing primitives for the contextual host compiler."""
 
 from __future__ import annotations
 
@@ -10,7 +10,12 @@ import struct
 import unicodedata
 import zlib
 
-from .compiler import _fnv1a64
+def _fnv1a64(data: bytes) -> int:
+    value = 0xCBF29CE484222325
+    for byte in data:
+        value ^= byte
+        value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return value
 
 LANGUAGE_HEADER_SIZE = 108
 SHARD_TOKEN_COUNT = 64
@@ -22,12 +27,7 @@ MAX_SHARDS = 65535
 MAX_RECORDS = 1_000_000
 MAX_LOCAL_LEMMAS = 32768
 MAX_SHARD_BLOB_BYTES = 24 * 1024
-LANGUAGE_FORMAT_VERSION = 3
 
-CANDIDATE_AMBIGUOUS = 0x01
-CANDIDATE_NORMALIZED_FALLBACK = 0x04
-CANDIDATE_ANALYSES_TRUNCATED = 0x08
-MAX_INLINE_ANALYSES = 8
 
 GERMAN_STOPWORDS = frozenset(
     "aber als am an auch auf aus bei bin bis bist da dadurch daher darum das dass dein deine dem den der des die "
@@ -82,21 +82,6 @@ class Token:
 class VisibleText:
     text: str
     raw_offsets: tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class Candidate:
-    surface: str
-    global_lexeme_ids: tuple[int, ...]
-    confidence: int
-    flags: int
-    difficulty: int
-
-
-@dataclass(frozen=True)
-class CompiledBook:
-    xhtml_spines: tuple[str, ...]
-    language_artifact: bytes
 
 
 def _crc32(data: bytes) -> int:
@@ -257,149 +242,3 @@ def tokenize_xhtml(xhtml: str) -> list[Token]:
     return tokens
 
 
-def _insert_markers(xhtml: str, tokens: list[Token], first_shard: int) -> str:
-    insertions = []
-    for token_index in range(0, len(tokens), SHARD_TOKEN_COUNT):
-        shard_id = first_shard + token_index // SHARD_TOKEN_COUNT
-        marker = f'<span data-crossink-lang-shard="{shard_id}"></span>'
-        insertions.append((tokens[token_index].raw_offset, marker))
-    output = xhtml
-    for offset, marker in reversed(insertions):
-        output = output[:offset] + marker + output[offset:]
-    return output
-
-
-def _analyze(surface: str, dictionary: CompilerDictionary) -> Candidate | None:
-    if surface.casefold() in GERMAN_STOPWORDS:
-        return None
-
-    exact = dictionary.forms.get(surface)
-    folded = dictionary.folded_forms.get(surface.casefold())
-    flags = 0
-    if exact is not None:
-        # Keep exact-case analyses first, but do not let capitalization hide a
-        # credible folded analysis (especially a sentence-initial German verb).
-        lexeme_ids = exact.lexeme_ids
-        if folded is not None:
-            folded_only = tuple(lexeme_id for lexeme_id in folded.lexeme_ids if lexeme_id not in lexeme_ids)
-            if folded_only:
-                lexeme_ids += folded_only
-                flags |= CANDIDATE_NORMALIZED_FALLBACK
-        confidence = exact.confidence
-        difficulty = exact.difficulty
-    elif folded is not None:
-        lexeme_ids = folded.lexeme_ids
-        confidence = min(folded.confidence, 900)
-        difficulty = folded.difficulty
-        flags |= CANDIDATE_NORMALIZED_FALLBACK
-    else:
-        return None
-
-    if len(lexeme_ids) > 1:
-        flags |= CANDIDATE_AMBIGUOUS
-    if len(lexeme_ids) > MAX_INLINE_ANALYSES:
-        flags |= CANDIDATE_ANALYSES_TRUNCATED
-    return Candidate(surface, lexeme_ids[:MAX_INLINE_ANALYSES], confidence, flags, difficulty)
-
-
-def compile_book(xhtml_spines: list[str], dictionary: CompilerDictionary) -> CompiledBook:
-    if not xhtml_spines or len(xhtml_spines) > MAX_SPINES:
-        raise BookCompileError(f"book must contain 1-{MAX_SPINES} XHTML spines")
-
-    spine_tokens = [tokenize_xhtml(xhtml) for xhtml in xhtml_spines]
-    transformed = []
-    spine_ranges = []
-    shard_candidates: list[list[Candidate]] = []
-    source_token_base = 0
-    for xhtml, tokens in zip(xhtml_spines, spine_tokens):
-        first_shard = len(shard_candidates)
-        shard_count = (len(tokens) + SHARD_TOKEN_COUNT - 1) // SHARD_TOKEN_COUNT
-        transformed.append(_insert_markers(xhtml, tokens, first_shard))
-        for shard_index in range(shard_count):
-            start = shard_index * SHARD_TOKEN_COUNT
-            end = min(start + SHARD_TOKEN_COUNT, len(tokens))
-            by_surface: dict[str, Candidate] = {}
-            for token in tokens[start:end]:
-                candidate = _analyze(token.surface, dictionary)
-                if candidate is not None:
-                    by_surface.setdefault(candidate.surface, candidate)
-            ordered_surfaces = sorted(
-                by_surface,
-                key=lambda value: (_fnv1a64(value.encode("utf-8")), value.encode("utf-8")),
-            )
-            shard_candidates.append([by_surface[key] for key in ordered_surfaces])
-        spine_ranges.append((first_shard, shard_count, source_token_base, len(tokens)))
-        source_token_base += len(tokens)
-
-    if len(shard_candidates) > MAX_SHARDS:
-        raise BookCompileError(f"book exceeds {MAX_SHARDS} source shards")
-    record_count = sum(len(items) for items in shard_candidates)
-    if record_count > MAX_RECORDS:
-        raise BookCompileError(f"book exceeds {MAX_RECORDS} shard candidates")
-
-    actionable_shards = shard_candidates
-    record_count = sum(len(items) for items in actionable_shards)
-    global_ids = {global_id for candidates in actionable_shards for candidate in candidates
-                  for global_id in candidate.global_lexeme_ids}
-    if len(global_ids) > MAX_LOCAL_LEMMAS:
-        raise BookCompileError(f"book exceeds {MAX_LOCAL_LEMMAS} local lemmas")
-
-    ordered_global_ids = sorted(global_ids)
-    local_by_global = {global_id: local_id for local_id, global_id in enumerate(ordered_global_ids)}
-    spine_directory = b"".join(struct.pack("<II", first_shard, shard_count)
-                               for first_shard, shard_count, _, _ in spine_ranges)
-    shard_directory = bytearray()
-    shard_blobs = bytearray()
-    for spine_index, (_, shard_count, source_start, token_count) in enumerate(spine_ranges):
-        spine_first_shard = spine_ranges[spine_index][0]
-        for local_shard in range(shard_count):
-            candidates = actionable_shards[spine_first_shard + local_shard]
-            blob = bytearray()
-            for candidate in candidates:
-                encoded = candidate.surface.encode("utf-8")
-                local_ids = [local_by_global[item] for item in candidate.global_lexeme_ids]
-                if not 1 <= len(local_ids) <= 8:
-                    raise BookCompileError("surface analysis count exceeds version-2 limit")
-                record_start = len(blob)
-                blob.extend(struct.pack("<QHBBBBH", _fnv1a64(encoded), 0, len(encoded), len(local_ids),
-                                        candidate.flags, candidate.difficulty, candidate.confidence))
-                blob.extend(struct.pack(f"<{len(local_ids)}H", *local_ids))
-                blob.extend(encoded)
-                _align4(blob)
-                struct.pack_into("<H", blob, record_start + 8, len(blob) - record_start)
-            if len(blob) > MAX_SHARD_BLOB_BYTES:
-                raise BookCompileError(f"shard blob exceeds {MAX_SHARD_BLOB_BYTES} bytes")
-            token_start = source_start + local_shard * SHARD_TOKEN_COUNT
-            token_end = min(source_start + token_count, token_start + SHARD_TOKEN_COUNT)
-            shard_directory.extend(struct.pack("<IHHIII", len(shard_blobs), len(blob), len(candidates),
-                                               token_start, token_end, 0))
-            shard_blobs.extend(blob)
-
-    local_lemmas = b"".join(struct.pack("<I", global_id) for global_id in ordered_global_ids)
-    metadata_json = json.dumps(
-        {"analyzer": "crossink-exact-forms-de", "analyzerVersion": ANALYZER_VERSION,
-         "ranking": "wordfreq" if any(item.difficulty for shard in actionable_shards for item in shard) else "none",
-         "languageFormatVersion": LANGUAGE_FORMAT_VERSION, "shardTokenCount": SHARD_TOKEN_COUNT,
-         "tokenizerVersion": TOKENIZER_VERSION}, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    metadata = struct.pack("<4sHHII", b"CXLM", 1, 16, len(metadata_json), 0) + metadata_json
-
-    artifact = bytearray(LANGUAGE_HEADER_SIZE)
-    sections = []
-    for section in (spine_directory, bytes(shard_directory), bytes(shard_blobs), local_lemmas, metadata):
-        _align4(artifact)
-        sections.append(len(artifact))
-        artifact.extend(section)
-    file_size = len(artifact)
-    if file_size > 64 * 1024 * 1024:
-        raise BookCompileError("language artifact exceeds 64 MiB")
-
-    struct.pack_into("<4sHHIHH16s8s8sHHIIIIIIIIIIIII", artifact, 0,
-                     b"CXLG", LANGUAGE_FORMAT_VERSION, LANGUAGE_HEADER_SIZE, 0, TOKENIZER_VERSION, ANALYZER_VERSION,
-                     dictionary.bundle_uuid, _language_field(dictionary.source_language),
-                     _language_field(dictionary.target_language), len(xhtml_spines), 0,
-                     len(shard_candidates), record_count, len(ordered_global_ids), 0,
-                     sections[0], sections[1], sections[2], sections[3], sections[4], 0, 0, file_size, 0)
-    struct.pack_into("<I", artifact, 100, _crc32(artifact[LANGUAGE_HEADER_SIZE:]))
-    struct.pack_into("<I", artifact, 104, _crc32(artifact[:104]))
-    return CompiledBook(tuple(transformed), bytes(artifact))

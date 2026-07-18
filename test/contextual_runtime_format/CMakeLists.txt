@@ -1,7 +1,7 @@
 add_executable(contextual_runtime_format_test
   ContextualRuntimeFormatTest.cpp
   ${REPO_ROOT}/lib/Dictionary/ContextualRuntimeFormat.cpp
-  ${REPO_ROOT}/lib/Dictionary/DictionaryPackage.cpp
+  ${REPO_ROOT}/lib/Dictionary/DictionaryRuntime.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
 )
 

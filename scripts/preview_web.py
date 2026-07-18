@@ -109,7 +109,6 @@ ASSETS = {
     "/style.css": (os.path.join(WEB, "assets", "style.css"), "text/css"),
     "/logo.png": (os.path.join(WEB, "assets", "logo.png"), "image/png"),
     "/js/jszip.min.js": (JSZIP, "application/javascript"),
-    "/js/dictionary-worker.js": (os.path.join(WEB, "assets", "dictionary-worker.js"), "application/javascript"),
 }
 
 class Handler(BaseHTTPRequestHandler):

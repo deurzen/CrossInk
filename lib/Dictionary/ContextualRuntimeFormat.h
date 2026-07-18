@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "DictionaryPackage.h"
+#include "DictionaryRuntime.h"
 
 namespace dictionary::contextual {
 

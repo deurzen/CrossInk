@@ -21,9 +21,8 @@ struct FileInfo {
   bool isDirectory;
 };
 
-enum class DictionaryPackageKind : uint8_t {
-  Legacy = 0,
-  Canonical,
+enum class ContextualPackageKind : uint8_t {
+  Canonical = 0,
   Definition,
 };
 
@@ -101,7 +100,6 @@ class CrossPointWebServer {
   // Request handlers
   void handleRoot() const;
   void handleJszip() const;
-  void handleDictionaryWorker() const;
   void handleDictionariesPage() const;
   void handleStyleCss() const;
   void handleLogo() const;
@@ -127,7 +125,6 @@ class CrossPointWebServer {
   void handleWordInboxDeleteBook() const;
 
   // Dictionary management handlers
-  void handleDictionaryList();
   void handleContextualDictionaryList();
   void handleDictionaryInstallStart();
   void handleDictionaryInstallUpload();
@@ -136,8 +133,6 @@ class CrossPointWebServer {
   void handleDictionaryInstallCommit();
   void handleDictionaryInstallCancel();
   void handleDictionaryRemove();
-  void handleDictionaryLearningList();
-  void handleDictionaryLearningStatus();
   void handleContextualAttachments();
   bool flushDictionaryUpload();
   void abortDictionaryUpload();
@@ -171,9 +166,9 @@ class CrossPointWebServer {
 
   struct DictionaryUploadState {
     HalFile file;
-    uint8_t bundleUuid[16]{};
+    uint8_t packageUuid[16]{};
     dictionary::installer::RuntimeFile runtimeFile = dictionary::installer::RuntimeFile::Meta;
-    DictionaryPackageKind packageKind = DictionaryPackageKind::Legacy;
+    ContextualPackageKind packageKind = ContextualPackageKind::Canonical;
     char filePath[dictionary::installer::kMaxInstallPath]{};
     bool valid = false;
     size_t baseOffset = 0;
@@ -184,17 +179,15 @@ class CrossPointWebServer {
     std::array<uint8_t, 2048> buffer{};
   } dictionaryUpload;
 
-  dictionary::installer::Installer dictionaryInstaller;
   // About 1 KB of fixed, reusable state in the already network-only server
   // allocation. This avoids oversized request-handler stack objects, is freed
   // when network mode exits, and never contributes to reader-session RAM.
   dictionary::installer::Installer contextualInstaller;
   dictionary::contextual::AttachmentStore contextualAttachmentStore;
-  bool dictionaryStorageReady = false;
   bool contextualStorageReady = false;
 
-  bool openInstallerForKind(DictionaryPackageKind kind, dictionary::installer::InstallError& error);
-  dictionary::installer::Installer& installerForKind(DictionaryPackageKind kind);
+  bool openInstallerForKind(ContextualPackageKind kind, dictionary::installer::InstallError& error);
+  dictionary::installer::Installer& installerForKind(ContextualPackageKind kind);
 
   // OPDS server handlers
   void handleGetOpdsServers() const;

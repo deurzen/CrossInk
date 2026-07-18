@@ -186,8 +186,8 @@ record remains authoritative after an interrupted write.
 
 ## EPUB `language.bin` version 4
 
-Version 4 keeps version 3's 108-byte header, directory layouts and bounded shard
-encoding. This minimizes firmware risk. The semantic changes are:
+Version 4 uses a 108-byte header, fixed directory layouts, and bounded shard
+encoding. Its identity contract is:
 
 - bytes `[16,32)` identify the canonical lexicon rather than a definition
   package;
@@ -198,12 +198,10 @@ encoding. This minimizes firmware risk. The semantic changes are:
 - candidate flags record contextual/fallback provenance;
 - metadata pins model and policy identities.
 
-The header fields, offsets and caps remain those documented for version 3 in
-[`file-formats.md`](file-formats.md), except format version is `4` and the UUID
-field is named `canonicalLexiconUuid`. The contextual path accepts only frozen
-version 4; unreleased v4 drafts receive no compatibility branch. During the C24
-migration window, legacy version 3 remains readable through its separate bundle
-identity path and is never reinterpreted as contextual data.
+The header fields, offsets, and caps are documented in
+[`file-formats.md`](file-formats.md). The format version is `4` and the UUID
+field is `canonicalLexiconUuid`. Firmware accepts only this frozen contract;
+older artifacts and unreleased drafts must be recompiled.
 
 ### Candidate flags and confidence
 

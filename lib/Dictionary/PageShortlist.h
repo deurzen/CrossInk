@@ -87,7 +87,7 @@ class Generator {
 static_assert(sizeof(Generator) <= 6656, "Shortlist generator exceeds its transient memory budget");
 static_assert(sizeof(Shortlist) <= 4096, "Shortlist output exceeds its transient memory budget");
 
-uint8_t learningIdentityCount(const Item& item, bool canonicalIdentity);
+uint8_t learningIdentityCount(const Item& item);
 void sortForDisplay(Shortlist& shortlist);
 const char* generateErrorName(GenerateError error);
 

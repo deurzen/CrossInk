@@ -100,7 +100,7 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
   out.flags = readU32(data + 8);
   out.tokenizerVersion = readU16(data + 12);
   out.analyzerVersion = readU16(data + 14);
-  std::memcpy(out.dictionaryIdentityUuid, data + 16, sizeof(out.dictionaryIdentityUuid));
+  std::memcpy(out.canonicalLexiconUuid, data + 16, sizeof(out.canonicalLexiconUuid));
   std::memcpy(out.sourceLanguage, data + 32, sizeof(out.sourceLanguage));
   std::memcpy(out.targetLanguage, data + 40, sizeof(out.targetLanguage));
   out.spineCount = readU16(data + 48);
@@ -120,7 +120,7 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
   out.payloadCrc32 = readU32(data + 100);
   out.headerCrc32 = readU32(data + kHeaderCrcOffset);
 
-  if (out.formatVersion != kLegacyFormatVersion && out.formatVersion != kContextualFormatVersion) {
+  if (out.formatVersion != kFormatVersion) {
     error = FormatError::UNSUPPORTED_VERSION;
     return false;
   }
@@ -140,16 +140,16 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
     error = FormatError::RESERVED_FIELD_NONZERO;
     return false;
   }
-  if (!hasNonzeroByte(out.dictionaryIdentityUuid, sizeof(out.dictionaryIdentityUuid))) {
-    error = FormatError::INVALID_DICTIONARY_UUID;
+  if (!hasNonzeroByte(out.canonicalLexiconUuid, sizeof(out.canonicalLexiconUuid))) {
+    error = FormatError::INVALID_CANONICAL_UUID;
     return false;
   }
   if (!isLanguageCodeValid(out.sourceLanguage) || !isLanguageCodeValid(out.targetLanguage)) {
     error = FormatError::INVALID_LANGUAGE;
     return false;
   }
-  if (out.usesCanonicalIdentity() && (out.analyzerVersion != 1 || std::strcmp(out.targetLanguage, "und") != 0)) {
-    error = FormatError::INVALID_CONTEXTUAL_CONTRACT;
+  if (out.analyzerVersion != 1 || std::strcmp(out.targetLanguage, "und") != 0) {
+    error = FormatError::INVALID_LANGUAGE;
     return false;
   }
   if (out.spineCount == 0 || out.spineCount > kMaxSpineCount || out.shardCount > kMaxShardCount ||
@@ -182,9 +182,9 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
   return true;
 }
 
-bool matchesIdentity(const Header& header, const uint8_t* expectedIdentityUuid) {
-  return expectedIdentityUuid != nullptr &&
-         std::memcmp(header.dictionaryIdentityUuid, expectedIdentityUuid, sizeof(header.dictionaryIdentityUuid)) == 0;
+bool matchesCanonicalLexicon(const Header& header, const uint8_t* expectedCanonicalUuid) {
+  return expectedCanonicalUuid != nullptr &&
+         std::memcmp(header.canonicalLexiconUuid, expectedCanonicalUuid, sizeof(header.canonicalLexiconUuid)) == 0;
 }
 
 bool validatePayload(const uint8_t* fileData, const size_t dataSize, const Header& header, FormatError& error) {
@@ -256,12 +256,10 @@ const char* formatErrorName(const FormatError error) {
       return "unsupported flags";
     case FormatError::RESERVED_FIELD_NONZERO:
       return "reserved field nonzero";
-    case FormatError::INVALID_DICTIONARY_UUID:
-      return "invalid dictionary uuid";
+    case FormatError::INVALID_CANONICAL_UUID:
+      return "invalid canonical uuid";
     case FormatError::INVALID_LANGUAGE:
       return "invalid language";
-    case FormatError::INVALID_CONTEXTUAL_CONTRACT:
-      return "invalid contextual contract";
     case FormatError::COUNT_OUT_OF_RANGE:
       return "count out of range";
     case FormatError::FILE_SIZE_OUT_OF_RANGE:

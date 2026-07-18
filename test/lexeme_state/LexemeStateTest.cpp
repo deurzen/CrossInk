@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "LexemeStateStore.h"
-#include "LocalSuppressionProjection.h"
 
 namespace {
 using dictionary::lexeme_state::StateError;
@@ -92,17 +91,6 @@ bool collectStatus(void* context, const uint32_t lexemeId, const Status status) 
   return collector.items.size() < collector.limit;
 }
 
-bool readLocalLemma(void* context, const uint16_t localId, uint32_t& globalId) {
-  const auto& ids = *static_cast<const std::vector<uint32_t>*>(context);
-  if (localId >= ids.size()) return false;
-  globalId = ids[localId];
-  return true;
-}
-
-dictionary::suppression::LocalLemmaSource lemmaSource(std::vector<uint32_t>& ids) {
-  return {&ids, static_cast<uint32_t>(ids.size()), readLocalLemma};
-}
-
 }  // namespace
 
 TEST(LexemeState, InitializesPackedStatusesAndPersistsUpdates) {
@@ -130,12 +118,12 @@ TEST(LexemeState, InitializesPackedStatusesAndPersistsUpdates) {
   EXPECT_TRUE(dictionary::lexeme_state::isSuppressed(status));
 }
 
-TEST(LexemeState, CanonicalIdentityDoesNotReuseLegacyExplicitState) {
+TEST(LexemeState, CanonicalIdentitiesKeepExplicitStateIsolated) {
   MemoryStorage storage;
   StateError error;
-  Store legacy;
-  ASSERT_TRUE(legacy.open(backend(storage), "/state", UUID, 5, error));
-  ASSERT_TRUE(legacy.set(2, Status::Known, error));
+  Store first;
+  ASSERT_TRUE(first.open(backend(storage), "/state", UUID, 5, error));
+  ASSERT_TRUE(first.set(2, Status::Known, error));
 
   Store canonical;
   ASSERT_TRUE(canonical.open(backend(storage), "/state", CANONICAL_UUID, 5, error));
@@ -144,7 +132,7 @@ TEST(LexemeState, CanonicalIdentityDoesNotReuseLegacyExplicitState) {
   EXPECT_EQ(status, Status::Unseen);
   ASSERT_TRUE(canonical.set(2, Status::Learning, error));
 
-  ASSERT_TRUE(legacy.get(2, status, error));
+  ASSERT_TRUE(first.get(2, status, error));
   EXPECT_EQ(status, Status::Known);
   EXPECT_NE(std::memcmp(UUID, CANONICAL_UUID, 16), 0);
 }
@@ -260,87 +248,6 @@ TEST(LexemeState, ReplaysWalWhenCleanupWasInterrupted) {
   Status status;
   ASSERT_TRUE(recovered.get(2, status, error));
   EXPECT_EQ(status, Status::Learning);
-}
-
-TEST(LocalSuppressionProjection, RebuildsOnGenerationMismatchAndFiltersConservatively) {
-  MemoryStorage storage;
-  Store state;
-  StateError stateError;
-  ASSERT_TRUE(state.open(backend(storage), "/state", UUID, 30, stateError));
-  ASSERT_TRUE(state.set(10, Status::Known, stateError));
-  ASSERT_TRUE(state.set(20, Status::Learning, stateError));
-
-  std::vector<uint32_t> globalIds = {10, 20, 21};
-  uint8_t bits[1]{};
-  dictionary::suppression::Projection projection;
-  dictionary::suppression::ProjectionError error;
-  ASSERT_TRUE(projection.loadOrRebuild(backend(storage), "/book-cache", UUID, lemmaSource(globalIds), state, bits,
-                                       sizeof(bits), error));
-  EXPECT_TRUE(projection.isSuppressed(0));
-  EXPECT_TRUE(projection.isSuppressed(1));
-  EXPECT_FALSE(projection.isSuppressed(2));
-  EXPECT_EQ(projection.generation(), 2U);
-
-  dictionary::page_shortlist::Shortlist shortlist;
-  shortlist.count = 2;
-  shortlist.items[0].analysisCount = 2;
-  shortlist.items[0].localLemmaIds[0] = 0;
-  shortlist.items[0].localLemmaIds[1] = 2;  // One plausible analysis remains unseen.
-  shortlist.items[1].analysisCount = 2;
-  shortlist.items[1].localLemmaIds[0] = 0;
-  shortlist.items[1].localLemmaIds[1] = 1;
-  projection.filter(shortlist);
-  ASSERT_EQ(shortlist.count, 1);
-  EXPECT_EQ(shortlist.items[0].localLemmaIds[1], 2);
-
-  ASSERT_TRUE(state.set(21, Status::Ignored, stateError));
-  uint8_t rebuiltBits[1]{};
-  dictionary::suppression::Projection rebuilt;
-  ASSERT_TRUE(rebuilt.loadOrRebuild(backend(storage), "/book-cache", UUID, lemmaSource(globalIds), state, rebuiltBits,
-                                    sizeof(rebuiltBits), error));
-  EXPECT_TRUE(rebuilt.isSuppressed(2));
-  EXPECT_EQ(rebuilt.generation(), state.generation());
-}
-
-TEST(LocalSuppressionProjection, SurvivesBookCacheDeletionAndPatchesCurrentBook) {
-  MemoryStorage storage;
-  Store state;
-  StateError stateError;
-  ASSERT_TRUE(state.open(backend(storage), "/state", UUID, 8, stateError));
-  std::vector<uint32_t> globalIds = {2, 5};
-  uint8_t bits[1]{};
-  dictionary::suppression::Projection projection;
-  dictionary::suppression::ProjectionError error;
-  ASSERT_TRUE(projection.loadOrRebuild(backend(storage), "/book-cache", UUID, lemmaSource(globalIds), state, bits,
-                                       sizeof(bits), error));
-
-  ASSERT_TRUE(state.set(5, Status::Known, stateError));
-  storage.failWriteAtCall = storage.writeAtCalls + 2;  // Projection bit succeeds; generation write fails.
-  EXPECT_FALSE(projection.patch(1, Status::Known, state.generation(), error));
-  EXPECT_EQ(error, dictionary::suppression::ProjectionError::IO_FAILED);
-  storage.failWriteAtCall = -1;
-
-  uint8_t recoveredBits[1]{};
-  dictionary::suppression::Projection recovered;
-  ASSERT_TRUE(recovered.loadOrRebuild(backend(storage), "/book-cache", UUID, lemmaSource(globalIds), state,
-                                      recoveredBits, sizeof(recoveredBits), error));
-  EXPECT_TRUE(recovered.isSuppressed(1));
-
-  for (auto it = storage.files.begin(); it != storage.files.end();) {
-    if (it->first.starts_with("/book-cache/")) {
-      it = storage.files.erase(it);
-    } else {
-      ++it;
-    }
-  }
-  uint8_t rebuiltBits[1]{};
-  dictionary::suppression::Projection rebuilt;
-  ASSERT_TRUE(rebuilt.loadOrRebuild(backend(storage), "/book-cache", UUID, lemmaSource(globalIds), state, rebuiltBits,
-                                    sizeof(rebuiltBits), error));
-  EXPECT_TRUE(rebuilt.isSuppressed(1));
-  Status persisted;
-  ASSERT_TRUE(state.get(5, persisted, stateError));
-  EXPECT_EQ(persisted, Status::Known);
 }
 
 TEST(LexemeState, RejectsIdentityAndWalCorruption) {

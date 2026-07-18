@@ -16,7 +16,7 @@ import zipfile
 import zlib
 from typing import Callable
 
-from dictionary.book_compiler import (
+from dictionary.contextual.compiler_support import (
     GERMAN_STOPWORDS,
     LANGUAGE_HEADER_SIZE,
     MAX_LOCAL_LEMMAS,

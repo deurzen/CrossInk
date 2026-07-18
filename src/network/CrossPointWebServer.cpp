@@ -30,9 +30,7 @@
 #include "WebDAVHandler.h"
 #include "WifiCredentialStore.h"
 #include "dictionary/AttachmentStorage.h"
-#include "dictionary/DictionaryReviewSession.h"
 #include "dictionary/DictionaryStorage.h"
-#include "dictionary/LanguageStateStorage.h"
 #include "html/DictionariesPageHtml.generated.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/FontsPageHtml.generated.h"
@@ -41,7 +39,6 @@
 #include "html/SettingsPageHtml.generated.h"
 #include "html/StyleCss.generated.h"
 #include "html/WordInboxPageHtml.generated.h"
-#include "html/js/dictionary_workerJs.generated.h"
 #include "html/js/jszip_minJs.generated.h"
 #include "util/BookCacheUtils.h"
 #include "util/StringUtils.h"
@@ -130,17 +127,6 @@ bool prewarmUploadedDictionaryEpub(const String& filePath, String& error) {
   return true;
 }
 
-bool prepareDictionaryLearningState(void*, const uint8_t (&uuid)[16], const uint32_t lexemeCount) {
-  dictionary::lexeme_state::Store state;
-  dictionary::lexeme_state::StateError error = dictionary::lexeme_state::StateError::NONE;
-  if (!state.open(dictionary::language_state_storage::backend(), dictionary::language_state_storage::ROOT_PATH, uuid,
-                  lexemeCount, error)) {
-    LOG_ERR("WEB", "Dictionary learning-state preparation failed: %s", dictionary::lexeme_state::stateErrorName(error));
-    return false;
-  }
-  return true;
-}
-
 bool dictionaryUuidArg(WebServer& server, uint8_t (&uuid)[16]) {
   return server.hasArg("uuid") && dictionary::storage::parseUuid(server.arg("uuid").c_str(), uuid);
 }
@@ -149,33 +135,31 @@ bool namedUuidArg(WebServer& server, const char* name, uint8_t (&uuid)[16]) {
   return server.hasArg(name) && dictionary::storage::parseUuid(server.arg(name).c_str(), uuid);
 }
 
-bool dictionaryPackageKindArg(WebServer& server, DictionaryPackageKind& kind) {
-  if (!server.hasArg("kind") || server.arg("kind") == "legacy") {
-    kind = DictionaryPackageKind::Legacy;
-  } else if (server.arg("kind") == "canonical") {
-    kind = DictionaryPackageKind::Canonical;
+bool dictionaryPackageKindArg(WebServer& server, ContextualPackageKind& kind) {
+  if (server.hasArg("kind") && server.arg("kind") == "canonical") {
+    kind = ContextualPackageKind::Canonical;
   } else if (server.arg("kind") == "definition") {
-    kind = DictionaryPackageKind::Definition;
+    kind = ContextualPackageKind::Definition;
   } else {
     return false;
   }
   return true;
 }
 
-bool dictionaryRuntimeFile(const String& name, const DictionaryPackageKind kind,
+bool dictionaryRuntimeFile(const String& name, const ContextualPackageKind kind,
                            dictionary::installer::RuntimeFile& file) {
   using dictionary::installer::RuntimeFile;
   if (name == "meta.bin") {
     file = RuntimeFile::Meta;
   } else if (name == "licenses.txt") {
     file = RuntimeFile::Licenses;
-  } else if (name == "lexemes.bin" && kind != DictionaryPackageKind::Definition) {
+  } else if (name == "lexemes.bin" && kind == ContextualPackageKind::Canonical) {
     file = RuntimeFile::Lexemes;
-  } else if (name == "headwords.bin" && kind != DictionaryPackageKind::Definition) {
+  } else if (name == "headwords.bin" && kind == ContextualPackageKind::Canonical) {
     file = RuntimeFile::Headwords;
-  } else if (name == "entries.bin" && kind != DictionaryPackageKind::Canonical) {
+  } else if (name == "entries.bin" && kind == ContextualPackageKind::Definition) {
     file = RuntimeFile::Entries;
-  } else if (name == "entry-index.bin" && kind == DictionaryPackageKind::Definition) {
+  } else if (name == "entry-index.bin" && kind == ContextualPackageKind::Definition) {
     file = RuntimeFile::EntryIndex;
   } else {
     return false;
@@ -198,24 +182,19 @@ bool unsignedArg(WebServer& server, const char* name, const uint32_t maximum, ui
   return true;
 }
 
-uint64_t dictionaryRuntimeFileLimit(const DictionaryPackageKind kind, const dictionary::installer::RuntimeFile file) {
+uint64_t dictionaryRuntimeFileLimit(const ContextualPackageKind kind, const dictionary::installer::RuntimeFile file) {
   using dictionary::installer::RuntimeFile;
   switch (file) {
     case RuntimeFile::Meta:
-      if (kind == DictionaryPackageKind::Canonical) return dictionary::contextual::kCanonicalMetaSize;
-      if (kind == DictionaryPackageKind::Definition) return dictionary::contextual::kDefinitionMetaSize;
-      return dictionary::kDictionaryMetaSize;
+      return kind == ContextualPackageKind::Canonical ? dictionary::contextual::kCanonicalMetaSize
+                                                      : dictionary::contextual::kDefinitionMetaSize;
     case RuntimeFile::Lexemes:
-      return kind == DictionaryPackageKind::Canonical
-                 ? static_cast<uint64_t>(dictionary::contextual::kMaxCanonicalLexemes) *
-                       dictionary::contextual::kCanonicalLexemeRecordSize
-                 : static_cast<uint64_t>(dictionary::kMaxLexemeCount) * dictionary::kLexemeRecordSize;
+      return static_cast<uint64_t>(dictionary::contextual::kMaxCanonicalLexemes) *
+             dictionary::contextual::kCanonicalLexemeRecordSize;
     case RuntimeFile::Headwords:
-      return kind == DictionaryPackageKind::Canonical ? dictionary::contextual::kMaxCanonicalHeadwordsSize
-                                                      : dictionary::kMaxHeadwordsFileSize;
+      return dictionary::contextual::kMaxCanonicalHeadwordsSize;
     case RuntimeFile::Entries:
-      return kind == DictionaryPackageKind::Definition ? dictionary::contextual::kMaxDefinitionEntriesSize
-                                                       : dictionary::kMaxEntriesFileSize;
+      return dictionary::contextual::kMaxDefinitionEntriesSize;
     case RuntimeFile::Licenses:
       return dictionary::installer::kMaxLicenseBytes;
     case RuntimeFile::EntryIndex:
@@ -565,7 +544,6 @@ void CrossPointWebServer::begin() {
   server->on("/dictionaries", HTTP_GET, [this] { handleDictionariesPage(); });
   server->on("/word-inbox", HTTP_GET, [this] { handleWordInboxPage(); });
   server->on("/js/jszip.min.js", HTTP_GET, [this] { handleJszip(); });
-  server->on("/js/dictionary-worker.js", HTTP_GET, [this] { handleDictionaryWorker(); });
   server->on("/style.css", HTTP_GET, [this] { handleStyleCss(); });
   server->on("/logo.png", HTTP_GET, [this] { handleLogo(); });
 
@@ -574,11 +552,6 @@ void CrossPointWebServer::begin() {
   server->on("/download", HTTP_GET, [this] { handleDownload(); });
 
   dictionary::installer::InstallError dictionaryError;
-  dictionaryStorageReady =
-      dictionaryInstaller.open(dictionary::storage::backend(), dictionary::storage::ROOT_PATH, dictionaryError);
-  if (!dictionaryStorageReady) {
-    LOG_ERR("WEB", "Dictionary storage unavailable: %s", dictionary::installer::installErrorName(dictionaryError));
-  }
   contextualStorageReady = contextualInstaller.open(dictionary::storage::backend(),
                                                     dictionary::storage::CANONICAL_ROOT_PATH, dictionaryError) &&
                            Storage.ensureDirectoryExists(dictionary::storage::DEFINITION_SOURCE_ROOT_PATH);
@@ -594,7 +567,6 @@ void CrossPointWebServer::begin() {
 
   // Dictionary management endpoints. Runtime filenames and destination paths
   // are selected by firmware, never accepted as arbitrary client paths.
-  server->on("/api/dictionaries", HTTP_GET, [this] { handleDictionaryList(); });
   server->on("/api/dictionaries/contextual", HTTP_GET, [this] { handleContextualDictionaryList(); });
   server->on("/api/dictionaries/contextual/attachments", HTTP_POST, [this] { handleContextualAttachments(); });
   server->on("/api/dictionaries/install/start", HTTP_POST, [this] { handleDictionaryInstallStart(); });
@@ -605,8 +577,6 @@ void CrossPointWebServer::begin() {
   server->on("/api/dictionaries/install/commit", HTTP_POST, [this] { handleDictionaryInstallCommit(); });
   server->on("/api/dictionaries/install/cancel", HTTP_POST, [this] { handleDictionaryInstallCancel(); });
   server->on("/api/dictionaries/remove", HTTP_POST, [this] { handleDictionaryRemove(); });
-  server->on("/api/dictionaries/learning", HTTP_GET, [this] { handleDictionaryLearningList(); });
-  server->on("/api/dictionaries/learning/status", HTTP_POST, [this] { handleDictionaryLearningStatus(); });
 
   // Upload endpoint with special handling for multipart form data
   server->on("/upload", HTTP_POST, [this] { handleUploadPost(upload); }, [this] { handleUpload(upload); });
@@ -817,13 +787,6 @@ void CrossPointWebServer::handleJszip() const {
   server->sendHeader("Content-Encoding", "gzip");
   server->send_P(200, "application/javascript", jszip_minJs, jszip_minJsCompressedSize);
   LOG_DBG("WEB", "Served jszip.min.js");
-}
-
-void CrossPointWebServer::handleDictionaryWorker() const {
-  server->sendHeader("Content-Encoding", "gzip");
-  server->sendHeader("Cache-Control", "no-cache");
-  server->send_P(200, "application/javascript", dictionary_workerJs, dictionary_workerJsCompressedSize);
-  LOG_DBG("WEB", "Served dictionary-worker.js");
 }
 
 void CrossPointWebServer::handleDictionariesPage() const {
@@ -2390,74 +2353,15 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
 
 // --- Dictionary management handlers ---
 
-dictionary::installer::Installer& CrossPointWebServer::installerForKind(const DictionaryPackageKind kind) {
-  return kind == DictionaryPackageKind::Legacy ? dictionaryInstaller : contextualInstaller;
+dictionary::installer::Installer& CrossPointWebServer::installerForKind(const ContextualPackageKind) {
+  return contextualInstaller;
 }
 
-bool CrossPointWebServer::openInstallerForKind(const DictionaryPackageKind kind,
+bool CrossPointWebServer::openInstallerForKind(const ContextualPackageKind kind,
                                                dictionary::installer::InstallError& error) {
-  if (kind == DictionaryPackageKind::Legacy) return dictionaryStorageReady;
-  const char* root = kind == DictionaryPackageKind::Canonical ? dictionary::storage::CANONICAL_ROOT_PATH
+  const char* root = kind == ContextualPackageKind::Canonical ? dictionary::storage::CANONICAL_ROOT_PATH
                                                               : dictionary::storage::DEFINITION_SOURCE_ROOT_PATH;
   return contextualStorageReady && contextualInstaller.open(dictionary::storage::backend(), root, error);
-}
-
-void CrossPointWebServer::handleDictionaryList() {
-  if (!dictionaryStorageReady) {
-    server->send(503, "application/json", "{\"error\":\"Dictionary storage unavailable\"}");
-    return;
-  }
-
-  // 64 bundle UUIDs plus one JSON chunk need 1280 bytes. This cold-path
-  // allocation is bounded and cannot safely use the web task stack; it is
-  // released after this response.
-  constexpr size_t uuidBytes = dictionary::storage::MAX_INSTALLED_BUNDLES * 16;
-  auto uuids = makeUniqueNoThrow<uint8_t[]>(uuidBytes + 256);
-  if (!uuids) {
-    LOG_ERR("WEB", "OOM allocating dictionary inventory UUIDs");
-    server->send(503, "application/json", "{\"error\":\"Insufficient memory\"}");
-    return;
-  }
-  size_t count = 0;
-  if (!dictionary::storage::collectBundleUuids(uuids.get(), dictionary::storage::MAX_INSTALLED_BUNDLES, count)) {
-    LOG_ERR("WEB", "Failed to scan dictionary directory");
-    server->send(500, "application/json", "{\"error\":\"Dictionary scan failed\"}");
-    return;
-  }
-
-  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server->send(200, "application/json", "");
-  server->sendContent("[");
-  bool first = true;
-  for (size_t index = 0; index < count; ++index) {
-    uint8_t uuid[16]{};
-    std::memcpy(uuid, uuids.get() + index * 16, sizeof(uuid));
-    dictionary::installer::PackageInfo info;
-    dictionary::installer::InstallError error;
-    const bool valid = dictionaryInstaller.inspectInstalled(uuid, info, error);
-    // A .removing-* candidate is collected only so recovery can finish its
-    // best-effort cleanup; it is not an installed or invalid package.
-    if (!valid && error == dictionary::installer::InstallError::PACKAGE_MISSING) continue;
-    char uuidText[37]{};
-    dictionary::storage::formatUuid(uuid, uuidText);
-    char* output = reinterpret_cast<char*>(uuids.get() + uuidBytes);
-    output[0] = '\0';
-    if (valid) {
-      std::snprintf(output, 256,
-                    "%s{\"uuid\":\"%s\",\"valid\":true,\"sourceLanguage\":\"%s\","
-                    "\"targetLanguage\":\"%s\",\"lexemeCount\":%lu,\"runtimeBytes\":%llu}",
-                    first ? "" : ",", uuidText, info.sourceLanguage, info.targetLanguage,
-                    static_cast<unsigned long>(info.lexemeCount), static_cast<unsigned long long>(info.runtimeBytes));
-    } else {
-      std::snprintf(output, 256, "%s{\"uuid\":\"%s\",\"valid\":false,\"error\":\"%s\"}", first ? "" : ",", uuidText,
-                    dictionary::installer::installErrorName(error));
-    }
-    server->sendContent(output);
-    first = false;
-    esp_task_wdt_reset();
-  }
-  server->sendContent("]");
-  server->sendContent("");
 }
 
 void CrossPointWebServer::handleContextualDictionaryList() {
@@ -2598,7 +2502,7 @@ void CrossPointWebServer::handleContextualDictionaryList() {
 
 void CrossPointWebServer::handleDictionaryInstallStart() {
   uint8_t uuid[16]{};
-  DictionaryPackageKind kind;
+  ContextualPackageKind kind;
   dictionary::installer::InstallError error;
   if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
       !openInstallerForKind(kind, error)) {
@@ -2655,16 +2559,16 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
         }
         dictionaryUpload.file.close();
       }
-      std::memset(dictionaryUpload.bundleUuid, 0, sizeof(dictionaryUpload.bundleUuid));
+      std::memset(dictionaryUpload.packageUuid, 0, sizeof(dictionaryUpload.packageUuid));
       dictionaryUpload.runtimeFile = RuntimeFile::Meta;
-      dictionaryUpload.packageKind = DictionaryPackageKind::Legacy;
+      dictionaryUpload.packageKind = ContextualPackageKind::Canonical;
       dictionaryUpload.filePath[0] = '\0';
       dictionaryUpload.valid = false;
       dictionaryUpload.baseOffset = 0;
       dictionaryUpload.bytesWritten = 0;
       dictionaryUpload.bufferPos = 0;
       InstallError error;
-      if (!dictionaryUuidArg(*server, dictionaryUpload.bundleUuid) ||
+      if (!dictionaryUuidArg(*server, dictionaryUpload.packageUuid) ||
           !dictionaryPackageKindArg(*server, dictionaryUpload.packageKind) ||
           !openInstallerForKind(dictionaryUpload.packageKind, error) || !server->hasArg("name") ||
           !dictionaryRuntimeFile(server->arg("name"), dictionaryUpload.packageKind, dictionaryUpload.runtimeFile)) {
@@ -2682,7 +2586,7 @@ void CrossPointWebServer::handleDictionaryInstallUploadData() {
       dictionaryUpload.baseOffset = requestedOffset;
 
       if (!installerForKind(dictionaryUpload.packageKind)
-               .stagingFilePath(dictionaryUpload.bundleUuid, dictionaryUpload.runtimeFile, dictionaryUpload.filePath,
+               .stagingFilePath(dictionaryUpload.packageUuid, dictionaryUpload.runtimeFile, dictionaryUpload.filePath,
                                 sizeof(dictionaryUpload.filePath), error)) {
         LOG_ERR("WEB", "Could not build staged dictionary path: %s", dictionary::installer::installErrorName(error));
         dictionaryUpload.filePath[0] = '\0';
@@ -2768,7 +2672,7 @@ void CrossPointWebServer::handleDictionaryInstallUpload() {
 
 void CrossPointWebServer::handleDictionaryInstallProgress() {
   uint8_t uuid[16]{};
-  DictionaryPackageKind kind;
+  ContextualPackageKind kind;
   dictionary::installer::RuntimeFile runtimeFile;
   dictionary::installer::InstallError error;
   if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
@@ -2797,7 +2701,7 @@ void CrossPointWebServer::handleDictionaryInstallProgress() {
 
 void CrossPointWebServer::handleDictionaryInstallCommit() {
   uint8_t uuid[16]{};
-  DictionaryPackageKind kind;
+  ContextualPackageKind kind;
   dictionary::installer::InstallError error;
   if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
       !openInstallerForKind(kind, error)) {
@@ -2815,13 +2719,7 @@ void CrossPointWebServer::handleDictionaryInstallCommit() {
   bool committed = false;
   // Reuse the network-only upload buffer for full-file CRC streaming. This
   // avoids a second allocation and keeps validation reads at 2 KB per chunk.
-  if (kind == DictionaryPackageKind::Legacy) {
-    dictionary::installer::PackageInfo info;
-    committed = dictionaryInstaller.commit(uuid, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), info,
-                                           error, prepareDictionaryLearningState, nullptr);
-    lexemeCount = info.lexemeCount;
-    runtimeBytes = info.runtimeBytes;
-  } else if (kind == DictionaryPackageKind::Canonical) {
+  if (kind == ContextualPackageKind::Canonical) {
     dictionary::installer::CanonicalPackageInfo info;
     committed = contextualInstaller.commitCanonical(uuid, dictionaryUpload.buffer.data(),
                                                     dictionaryUpload.buffer.size(), info, error);
@@ -2862,7 +2760,7 @@ void CrossPointWebServer::handleDictionaryInstallCommit() {
 
 void CrossPointWebServer::handleDictionaryInstallCancel() {
   uint8_t uuid[16]{};
-  DictionaryPackageKind kind;
+  ContextualPackageKind kind;
   dictionary::installer::InstallError error;
   if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
       !openInstallerForKind(kind, error)) {
@@ -2880,7 +2778,7 @@ void CrossPointWebServer::handleDictionaryInstallCancel() {
 
 void CrossPointWebServer::handleDictionaryRemove() {
   uint8_t uuid[16]{};
-  DictionaryPackageKind kind;
+  ContextualPackageKind kind;
   dictionary::installer::InstallError error;
   if (!dictionaryUuidArg(*server, uuid) || !dictionaryPackageKindArg(*server, kind) ||
       !openInstallerForKind(kind, error)) {
@@ -2956,98 +2854,6 @@ void CrossPointWebServer::handleContextualAttachments() {
   std::snprintf(dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), "{\"ok\":true,\"generation\":%lu}",
                 static_cast<unsigned long>(updated.generation));
   server->send(200, "application/json", dictionaryUpload.filePath);
-}
-
-void CrossPointWebServer::handleDictionaryLearningList() {
-  uint8_t uuid[16]{};
-  uint32_t cursor = 0;
-  uint32_t scan = dictionary::lexeme_state::kMaxReviewScanLexemes;
-  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid) ||
-      (server->hasArg("cursor") && !unsignedArg(*server, "cursor", dictionary::kMaxLexemeCount, cursor)) ||
-      (server->hasArg("scan") &&
-       !unsignedArg(*server, "scan", dictionary::lexeme_state::kMaxReviewScanLexemes, scan)) ||
-      scan == 0) {
-    server->send(400, "application/json", "{\"error\":\"Invalid review request\"}");
-    return;
-  }
-
-  // Session (~1.5 KB retained paths/state) and page (~400 B) are bounded
-  // cold-path allocations; neither is safe on the web task stack.
-  auto session = makeUniqueNoThrow<dictionary::review::Session>();
-  auto page = makeUniqueNoThrow<dictionary::review::Page>();
-  if (!session || !page) {
-    LOG_ERR("WEB", "OOM allocating dictionary review session");
-    server->send(503, "application/json", "{\"error\":\"Insufficient memory\"}");
-    return;
-  }
-  dictionary::review::ReviewError error;
-  if (!session->open(uuid, error) ||
-      !session->readPage(cursor, scan, dictionaryUpload.buffer.data(), dictionaryUpload.buffer.size(), *page, error)) {
-    LOG_ERR("WEB", "Dictionary review failed: %s", dictionary::review::reviewErrorName(error));
-    server->send(400, "application/json", "{\"error\":\"Could not read learning state\"}");
-    return;
-  }
-
-  char fields[160]{};
-  std::snprintf(fields, sizeof(fields), "{\"generation\":%lu,\"nextCursor\":%lu,\"done\":%s,\"items\":[",
-                static_cast<unsigned long>(session->generation()), static_cast<unsigned long>(page->nextLexemeId),
-                page->done ? "true" : "false");
-  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server->send(200, "application/json", "");
-  server->sendContent(fields);
-  for (size_t index = 0; index < page->count; ++index) {
-    const auto& item = page->items[index];
-    uint8_t partOfSpeech = 0;
-    char headword[dictionary::kMaxHeadwordBytes + 1]{};
-    size_t length = 0;
-    const bool headwordOk =
-        session->readHeadword(item.lexemeId, headword, sizeof(headword), length, partOfSpeech, error);
-    std::snprintf(fields, sizeof(fields),
-                  "%s{\"lexemeId\":%lu,\"status\":%u,\"partOfSpeech\":%u,\"headword\":", index == 0 ? "" : ",",
-                  static_cast<unsigned long>(item.lexemeId), static_cast<unsigned>(item.status),
-                  static_cast<unsigned>(partOfSpeech));
-    server->sendContent(fields);
-    if (headwordOk) {
-      sendJsonString(server.get(), std::string_view(headword, length));
-    } else {
-      LOG_ERR("WEB", "Could not read review headword %lu", static_cast<unsigned long>(item.lexemeId));
-      server->sendContent("null");
-    }
-    server->sendContent("}");
-    esp_task_wdt_reset();
-  }
-  server->sendContent("]}");
-  server->sendContent("");
-}
-
-void CrossPointWebServer::handleDictionaryLearningStatus() {
-  uint8_t uuid[16]{};
-  uint32_t lexemeId = 0;
-  uint32_t statusValue = 0;
-  if (!dictionaryStorageReady || !dictionaryUuidArg(*server, uuid) ||
-      !unsignedArg(*server, "id", dictionary::kMaxLexemeCount - 1U, lexemeId) ||
-      !unsignedArg(*server, "status", static_cast<uint32_t>(dictionary::lexeme_state::Status::ImplicitlyFamiliar),
-                   statusValue)) {
-    server->send(400, "application/json", "{\"error\":\"Invalid status request\"}");
-    return;
-  }
-  auto session = makeUniqueNoThrow<dictionary::review::Session>();
-  if (!session) {
-    LOG_ERR("WEB", "OOM allocating dictionary status session");
-    server->send(503, "application/json", "{\"error\":\"Insufficient memory\"}");
-    return;
-  }
-  dictionary::review::ReviewError error;
-  if (!session->open(uuid, error) ||
-      !session->setStatus(lexemeId, static_cast<dictionary::lexeme_state::Status>(statusValue), error)) {
-    LOG_ERR("WEB", "Dictionary status update failed: %s", dictionary::review::reviewErrorName(error));
-    server->send(400, "application/json", "{\"error\":\"Status update failed\"}");
-    return;
-  }
-  char response[64]{};
-  std::snprintf(response, sizeof(response), "{\"ok\":true,\"generation\":%lu}",
-                static_cast<unsigned long>(session->generation()));
-  server->send(200, "application/json", response);
 }
 
 // --- Font management handlers ---

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "DictionaryPackage.h"
+#include "DictionaryRuntime.h"
 
 namespace dictionary::installer {
 
@@ -31,14 +31,6 @@ struct StorageBackend {
   bool (*readAt)(void* context, const char* path, uint32_t offset, void* output, size_t length) = nullptr;
   bool (*validateCrc)(void* context, const char* path, uint32_t expectedCrc, uint8_t* scratch,
                       size_t scratchSize) = nullptr;
-};
-
-struct PackageInfo {
-  uint8_t bundleUuid[16]{};
-  char sourceLanguage[8]{};
-  char targetLanguage[8]{};
-  uint32_t lexemeCount = 0;
-  uint64_t runtimeBytes = 0;
 };
 
 struct CanonicalPackageInfo {
@@ -72,7 +64,6 @@ enum class InstallError : uint8_t {
   PACKAGE_INVALID,
   UUID_MISMATCH,
   CRC_MISMATCH,
-  PREPARE_FAILED,
   RENAME_FAILED,
   REMOVE_FAILED,
 };
@@ -81,23 +72,15 @@ enum class InstallError : uint8_t {
 // returned by stagingFilePath(); commit validates every runtime file before a
 // directory rename publishes it. A same-UUID replacement retains the previous
 // directory as a recoverable backup until the new directory is visible.
-using PrepareCallback = bool (*)(void* context, const uint8_t (&bundleUuid)[16], uint32_t lexemeCount);
-
 class Installer {
  public:
   bool open(const StorageBackend& storage, const char* rootPath, InstallError& error);
 
-  bool begin(const uint8_t (&bundleUuid)[16], InstallError& error);
-  bool stagingFilePath(const uint8_t (&bundleUuid)[16], RuntimeFile file, char* output, size_t capacity,
+  bool begin(const uint8_t (&packageUuid)[16], InstallError& error);
+  bool stagingFilePath(const uint8_t (&packageUuid)[16], RuntimeFile file, char* output, size_t capacity,
                        InstallError& error);
-  bool installedDirectoryPath(const uint8_t (&bundleUuid)[16], char* output, size_t capacity,
+  bool installedDirectoryPath(const uint8_t (&packageUuid)[16], char* output, size_t capacity,
                               InstallError& error) const;
-  bool validateStaged(const uint8_t (&bundleUuid)[16], uint8_t* scratch, size_t scratchSize, PackageInfo& info,
-                      InstallError& error);
-  bool inspectInstalled(const uint8_t (&bundleUuid)[16], PackageInfo& info, InstallError& error);
-  bool commit(const uint8_t (&bundleUuid)[16], uint8_t* scratch, size_t scratchSize, PackageInfo& info,
-              InstallError& error, PrepareCallback prepare = nullptr, void* prepareContext = nullptr);
-
   bool validateStagedCanonical(const uint8_t (&canonicalUuid)[16], uint8_t* scratch, size_t scratchSize,
                                CanonicalPackageInfo& info, InstallError& error);
   bool inspectInstalledCanonical(const uint8_t (&canonicalUuid)[16], CanonicalPackageInfo& info, InstallError& error);
@@ -115,14 +98,14 @@ class Installer {
   bool commitDefinition(const uint8_t (&sourceUuid)[16], const uint8_t (&expectedCanonicalUuid)[16],
                         uint32_t expectedCanonicalCount, uint8_t* scratch, size_t scratchSize,
                         DefinitionSourcePackageInfo& info, InstallError& error);
-  bool cancel(const uint8_t (&bundleUuid)[16], InstallError& error);
-  bool remove(const uint8_t (&bundleUuid)[16], InstallError& error);
-  bool recover(const uint8_t (&bundleUuid)[16], InstallError& error);
+  bool cancel(const uint8_t (&packageUuid)[16], InstallError& error);
+  bool remove(const uint8_t (&packageUuid)[16], InstallError& error);
+  bool recover(const uint8_t (&packageUuid)[16], InstallError& error);
 
  private:
   struct SourceContext {
     Installer* installer = nullptr;
-    const uint8_t* bundleUuid = nullptr;
+    const uint8_t* packageUuid = nullptr;
     const char* prefix = nullptr;
     RuntimeFile file = RuntimeFile::Meta;
   };
@@ -134,14 +117,12 @@ class Installer {
   mutable char pathScratch3_[kMaxInstallPath]{};
   bool open_ = false;
 
-  bool directoryPath(const uint8_t (&bundleUuid)[16], const char* prefix, char* output, size_t capacity,
+  bool directoryPath(const uint8_t (&packageUuid)[16], const char* prefix, char* output, size_t capacity,
                      InstallError& error) const;
-  bool filePath(const uint8_t (&bundleUuid)[16], const char* prefix, RuntimeFile file, char* output, size_t capacity,
+  bool filePath(const uint8_t (&packageUuid)[16], const char* prefix, RuntimeFile file, char* output, size_t capacity,
                 InstallError& error) const;
-  bool makeSource(SourceContext& context, const uint8_t (&bundleUuid)[16], const char* prefix, RuntimeFile file,
+  bool makeSource(SourceContext& context, const uint8_t (&packageUuid)[16], const char* prefix, RuntimeFile file,
                   RandomAccessSource& source, InstallError& error);
-  bool validatePackage(const uint8_t (&bundleUuid)[16], const char* prefix, uint8_t* scratch, size_t scratchSize,
-                       bool verifyCrc, PackageInfo& info, InstallError& error);
   bool validateCanonicalPackage(const uint8_t (&canonicalUuid)[16], const char* prefix, uint8_t* scratch,
                                 size_t scratchSize, bool verifyPayload, CanonicalPackageInfo& info,
                                 InstallError& error);
@@ -153,8 +134,8 @@ class Installer {
   static bool sourceReadAt(void* context, uint32_t offset, void* output, size_t length);
 };
 
-bool parseBundleUuid(const char* text, uint8_t (&uuid)[16]);
-void formatBundleUuid(const uint8_t (&uuid)[16], char (&output)[37]);
+bool parsePackageUuid(const char* text, uint8_t (&uuid)[16]);
+void formatPackageUuid(const uint8_t (&uuid)[16], char (&output)[37]);
 const char* runtimeFileName(RuntimeFile file);
 const char* installErrorName(InstallError error);
 

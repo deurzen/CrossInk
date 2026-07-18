@@ -23,6 +23,11 @@ Keep this file focused on repo-specific gotchas that are worth reusing in future
 - Kindle EPUBs may contain paired high-res and old-Kindle fallback images. `ChapterHtmlSlimParser` should skip `<img>` nodes with `data-AmznRemoved-M8` to avoid duplicate stacked images.
 - After image/layout pipeline changes that affect cached EPUB output, clear the affected `.crosspoint/epub_<hash>/` cache if behavior looks stale.
 
+## Dictionary
+
+- Firmware accepts only contextual `language.bin` version 4 and resolves canonical packages under `/.crosspoint/lexicons/`; there is no monolithic package fallback or state migration.
+- The WebUI installs only `.cplex` and `.cpdef` packages. Contextual EPUB compilation is host-only and independent from the browser EPUB optimizer.
+
 ## Misc Repo Gotchas
 
 - POSIX TZ signs are inverted from ISO 8601 in `TimeStore::applyTimezone()`: `"UTC-1"` means UTC+1.

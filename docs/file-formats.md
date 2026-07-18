@@ -7,7 +7,7 @@ fixed-size char buffer.
 
 ## EPUB `META-INF/crossink/language.bin`
 
-### Versions 3 and 4
+### Version 4
 
 Version 3 retains the version-2 108-byte header and self-contained shard blobs, and assigns the former candidate reserved byte to an optional language-neutral difficulty score. All integers are unsigned little-endian; offsets are absolute and four-byte aligned.
 
@@ -67,24 +67,13 @@ surface:u8[surfaceLength]
 padding:u8[]         // zero, to four-byte record alignment
 ```
 
-Candidate flag bit 0 marks ambiguity, bit 2 marks that case-folded analysis contributed to the match, and bit 3 records that a pathological surface had more than eight analyses and was deterministically capped. Other bits are invalid. The first and second inline analysis IDs are the primary and alternate analyses. Compound-only guesses with no whole-word analysis are not
-emitted. A record must fit completely inside its shard blob; all local IDs must
-be below the header's local-lemma count. Firmware processes one shard
-sequentially through bounded scratch storage and never allocates `blobLength`.
+Candidate flag bit 0 marks ambiguity, bit 2 marks that case-folded analysis contributed to the match, bit 3 records that a pathological surface had more than eight analyses and was deterministically capped, bit 4 marks low-confidence fallback morphology, and bit 5 marks proper-noun classification. Other bits are invalid. The first and second inline analysis IDs are the primary and alternate analyses. Compound-only guesses with no whole-word analysis are not emitted. A record must fit completely inside its shard blob; all local IDs must be below the header's local-lemma count. Firmware processes one shard sequentially through bounded scratch storage and never allocates `blobLength`.
 
-The local-lemma table remains `globalLexemeId:u32` indexed by local ID and
-sorted by global ID. Version 3 retains version 2's removal of the global-to-local table and the entire
-surface-detail section. The metadata section retains the `CXLM` envelope and
-records shard size plus compiler/tokenizer/analyzer versions. The same 64 MiB
-file cap, 4096-spine cap, 65535-shard cap, 32768-local-lemma cap, payload CRC,
-and header CRC apply. Version-3 compilers fail on oversized records/blobs rather
-than truncating structural data.
+The local-lemma table is `canonicalLexemeId:u32` indexed by local ID and sorted by canonical ID. Bytes `[16,32)` of the 108-byte header are the canonical lexicon UUID, target language must be `und`, analyzer version must be `1`, and candidate analyses resolve directly to canonical lexeme IDs. The metadata section uses the `CXLM` envelope and records shard size plus compiler/tokenizer/analyzer versions. The 64 MiB file cap, 4096-spine cap, 65535-shard cap, 32768-local-lemma cap, payload CRC, and header CRC apply. Oversized records or blobs fail compilation rather than truncating structural data.
 
-Version 4 is the contextual artifact contract. It keeps the same 108-byte header and table layout, but bytes `[16,32)` are the canonical lexicon UUID, target language must be `und`, analyzer version must be `1`, and local-lemma entries resolve directly to canonical lexeme IDs. Candidate flag bits 4 and 5 additionally mark separable-verb recombination and proper-noun classification. Firmware resolves v4 packages only under `/.crosspoint/lexicons/<canonical-uuid>/`; it never falls back to a legacy dictionary package with the same UUID.
+Firmware accepts only version 4 and resolves its canonical lexicon only under `/.crosspoint/lexicons/<canonical-uuid>/`. Scored candidates sort hardest-first using confidence and original page order as deterministic tie-breakers.
 
-During the explicit migration window, firmware accepts legacy version 3 and contextual version 4. Version 3 continues to use bundle-keyed learning state and version 4 uses canonical-UUID-keyed learning state, so legacy statuses cannot leak into the canonical namespace. Both versions stream shards sequentially into the same bounded `Shortlist`. Scored candidates sort hardest-first using confidence and original page order as deterministic tie-breakers; unscored artifacts preserve page order. Older formats must be recompiled.
-
-After full extraction validation, firmware writes a 44-byte `language.valid` receipt: `CXLR`, version/header size (`u16`, `u16`), embedded size (`u32`), ZIP central-directory CRC (`u32`), payload CRC (`u32`), header CRC (`u32`), artifact identity UUID (bundle UUID for v3, canonical lexicon UUID for v4; 16 bytes), and receipt CRC32 over the first 40 bytes. On later opens, matching ZIP identity plus the cached artifact's size and validated 108-byte header avoids rereading the full payload. Missing, stale, or corrupt receipts fall back to full streaming validation and are replaced atomically through `language.valid.tmp`.
+After full extraction validation, firmware writes a 44-byte `language.valid` receipt: `CXLR`, version/header size (`u16`, `u16`), embedded size (`u32`), ZIP central-directory CRC (`u32`), payload CRC (`u32`), header CRC (`u32`), canonical lexicon UUID (16 bytes), and receipt CRC32 over the first 40 bytes. On later opens, matching ZIP identity plus the cached artifact's size and validated 108-byte header avoids rereading the full payload. Missing, stale, or corrupt receipts fall back to full streaming validation and are replaced atomically through `language.valid.tmp`.
 
 A deterministically invalid embedded artifact creates `<book-cache>/language.invalid`:
 magic `CXLI` followed by its `fileSize:u32`. This prevents repeated extraction
@@ -96,157 +85,23 @@ the marker and can therefore recover on the next open.
 ## Dictionary learning state
 
 Global learning state is stored outside EPUB caches under
-`/.crosspoint/language-state/<bundle-uuid>/`. `state.meta` is 36 bytes:
-`CXSM`, version/header size (`u16`, `u16`), bundle UUID (16 bytes), global
+`/.crosspoint/language-state/<canonical-uuid>/`. `state.meta` is 36 bytes:
+`CXSM`, version/header size (`u16`, `u16`), canonical UUID (16 bytes), global
 lexeme count (`u32`), reserved zero (`u32`), and CRC32 over the first 32 bytes.
 
 `status.bin` starts with a 32-byte `CXST` header containing version/header size,
-bundle UUID, global lexeme count, and generation (`u32`). Four-bit statuses are
+canonical UUID, global lexeme count, and generation (`u32`). Four-bit statuses are
 packed low nibble first: 0 unseen, 1 known, 2 learning, 3 ignored, and 4
 implicitly familiar. All nonzero states suppress a lexeme from ordinary
 shortlists.
 
-A 40-byte `status.wal` (`CXWL`) records bundle UUID, lexeme ID, target
+A 40-byte `status.wal` (`CXWL`) records canonical UUID, lexeme ID, target
 generation, new status, three reserved bytes, and CRC32. Updates sync the WAL,
 status byte, and generation in that order. Recovery idempotently replays the WAL
 before removing it.
 
 Explicit lookup filters only the bounded visible shortlist against this global
-state. Legacy `dictionary-suppress.bin` files from earlier builds are ignored;
-they are reproducible cache data and may be removed with the EPUB cache. Global
-learning state is never stored under an EPUB cache.
-
-## `/.crosspoint/dictionaries/<bundle-uuid>/`
-
-### Native dictionary package version 1
-
-An installed runtime dictionary is a directory committed under its lowercase,
-32-digit 128-bit bundle UUID. Installation first writes only to
-`.installing-<bundle-uuid>`, then validates required files, exact sizes,
-`meta.bin`, the requested UUID, and all three payload CRCs with caller-owned
-bounded scratch storage. A directory rename publishes the final name only after
-validation succeeds. Same-UUID replacement renames the prior package to
-`.backup-<bundle-uuid>` until the new directory is visible. Recovery restores
-the backup when the final directory is absent, or removes it when the final
-directory already exists. Removal instead renames the final package to
-`.removing-<bundle-uuid>` as its commit point, then deletes that hidden tree
-best-effort. Interrupted or partially failed cleanup is retried but never made
-visible as an installed package. The runtime package contains no morphology
-tables; those remain in the desktop compiler half of the `.cpdict` distribution.
-
-```text
-meta.bin
-lexemes.bin
-headwords.bin
-entries.bin
-licenses.txt
-```
-
-`meta.bin` is exactly 80 bytes:
-
-| Offset | Size | Field |
-| ---: | ---: | --- |
-| 0 | 4 | Magic `CXDM` |
-| 4 | 2 | Package version (`1`) |
-| 6 | 2 | Metadata size (`80`) |
-| 8 | 4 | Flags; version 1 requires zero |
-| 12 | 16 | Nonzero dictionary bundle UUID |
-| 28 | 8 | Zero-padded source-language tag, maximum 7 ASCII bytes |
-| 36 | 8 | Zero-padded target-language tag, maximum 7 ASCII bytes |
-| 44 | 4 | Dense lexeme count |
-| 48 | 2 | Lexeme record size (`24`) |
-| 50 | 2 | Reserved; must be zero |
-| 52 | 4 | Exact `lexemes.bin` size |
-| 56 | 4 | Exact `headwords.bin` size |
-| 60 | 4 | Exact `entries.bin` size |
-| 64 | 4 | `lexemes.bin` CRC32 |
-| 68 | 4 | `headwords.bin` CRC32 |
-| 72 | 4 | `entries.bin` CRC32 |
-| 76 | 4 | Metadata CRC32 over bytes `[0, 76)` |
-
-Lexeme IDs are zero-based indexes into `lexemes.bin`. Each 24-byte record is:
-
-| Offset | Size | Field |
-| ---: | ---: | --- |
-| 0 | 4 | Headword offset into `headwords.bin` |
-| 4 | 4 | Entry offset into `entries.bin` |
-| 8 | 4 | Entry byte length |
-| 12 | 8 | Stable lexeme-key hash used as a future migration hint |
-| 20 | 2 | Headword byte length, excluding any terminator |
-| 22 | 1 | Coarse part of speech |
-| 23 | 1 | Lexeme flags |
-
-`headwords.bin` is a packed UTF-8 string pool with no terminators. Headwords are
-NFC-composed and limited to 96 bytes. The lexeme-key hash is FNV-1a-64 over the
-exact NFC headword bytes, followed by byte `0x1f` and the one-byte part-of-speech
-value. A hash is not a dictionary identity and must never be accepted without
-comparing the associated headword and part of speech during migration.
-
-Part-of-speech values are `0` unknown, `1` noun, `2` verb, `3` adjective, `4`
-adverb, `5` pronoun, `6` article/determiner, `7` preposition, `8` conjunction,
-`9` numeral, `10` particle, `11` interjection, `12` proper noun, `13` phrase,
-`14` abbreviation, and `15` other. Lexeme flag bit 0 marks a compound with
-component details; bit 1 marks a generated rather than source-authored entry.
-Other bits are invalid in version 1.
-
-Each entry slice in `entries.bin` begins with `entryVersion:u8` (`1`),
-`flags:u8`, and `fieldCount:u16`. It is followed by `fieldCount` fields encoded
-as `type:u8`, `flags:u8`, `byteLength:u16`, and UTF-8 payload bytes. Version-1
-field types are definition (`1`), part-of-speech label (`2`), example (`3`),
-usage note (`4`), etymology (`5`), cross-reference (`6`), and compound component
-(`7`). Unknown field types can be skipped by length. Definitions are rendered
-by streaming one field at a time; firmware does not materialize the full entry.
-An individual entry is limited to 1 MiB even though its fields are individually
-limited to 65535 bytes.
-
-Firmware caps packages at 500,000 lexemes, 64 MiB of headwords, and 1 GiB of
-entries. `lib/Dictionary/DictionaryPackage.*` performs dense-ID lookup with
-caller-owned headword and entry buffers. It retains callback descriptors, not
-open files or dictionary contents, so a HAL adapter can open and close only the
-single SD file needed for an operation.
-
-`licenses.txt` is UTF-8 attribution displayed by the dictionary management UI.
-It is required by the installer but is deliberately outside the hot-path binary
-metadata.
-
-### Compiler `forms.bin`
-
-The desktop half of a `.cpdict` archive contains `compiler/forms.bin`. This file
-is not uploaded to the reader. It provides exact NFC surface-form analyses to
-the browser book compiler and uses the same bundle UUID and global lexeme IDs as
-the runtime package.
-
-Its fixed 64-byte header is:
-
-| Offset | Size | Field |
-| ---: | ---: | --- |
-| 0 | 4 | Magic `CXDF` |
-| 4 | 2 | Format version (`2`) |
-| 6 | 2 | Header size (`64`) |
-| 8 | 16 | Dictionary bundle UUID |
-| 24 | 4 | Form count |
-| 28 | 4 | Analysis count |
-| 32 | 4 | Form-directory offset |
-| 36 | 4 | Analysis-table offset |
-| 40 | 4 | UTF-8 string-pool offset |
-| 44 | 4 | String-pool size |
-| 48 | 4 | Exact file size |
-| 52 | 4 | Reserved; must be zero |
-| 56 | 4 | Payload CRC32 over bytes `[64, fileSize)` |
-| 60 | 4 | Header CRC32 over bytes `[0, 60)` |
-
-Each 20-byte form-directory record contains `surfaceHash:u64`,
-`stringOffset:u32`, `firstAnalysis:u32`, `stringLength:u16`,
-`analysisCount:u8`, and `difficulty:u8`. Difficulty is zero when unavailable,
-otherwise 1 (easiest) through 255 (hardest). Records are ordered by FNV-1a-64 hash and
-then exact UTF-8 bytes; hash matches must therefore still compare the string.
-Each 8-byte analysis contains `globalLexemeId:u32`, `confidence:u16` in the
-range 0–1000, and `flags:u16`. Version 2 emits confidence 1000 for explicit
-source forms and zero analysis flags. A form can retain up to 255 analyses.
-
-Compiler caps are 2,000,000 forms, 4,000,000 analyses, 255 UTF-8 bytes per form,
-and a 512 MiB string pool. These are desktop bounds; none of these tables are
-loaded by firmware.
+state. Global learning state is never stored under an EPUB cache.
 
 ## `book.bin`
 

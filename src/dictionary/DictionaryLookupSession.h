@@ -4,7 +4,6 @@
 #include <ContextualRuntimeFormat.h>
 #include <ContextualSourceCatalog.h>
 #include <DefinitionPager.h>
-#include <DictionaryPackage.h>
 #include <HalStorage.h>
 #include <LexemeStateStore.h>
 #include <PageShortlist.h>
@@ -18,7 +17,6 @@
 
 namespace dictionary::lookup {
 
-inline constexpr char DICTIONARY_ROOT_PATH[] = "/.crosspoint/dictionaries";
 inline constexpr char CANONICAL_ROOT_PATH[] = "/.crosspoint/lexicons";
 inline constexpr char DEFINITION_SOURCE_ROOT_PATH[] = "/.crosspoint/definition-sources";
 constexpr size_t kMaxLookupPath = 256;
@@ -48,8 +46,8 @@ enum class SessionError : uint8_t {
   PATH_TOO_LONG,
   BOOK_ARTIFACT_UNAVAILABLE,
   BOOK_ARTIFACT_INVALID,
-  DICTIONARY_MISSING,
-  DICTIONARY_INVALID,
+  CANONICAL_MISSING,
+  CANONICAL_INVALID,
   IDENTITY_MISMATCH,
   STATE_FAILED,
   PROJECTION_FAILED,
@@ -63,11 +61,10 @@ class Session {
  public:
   Session();
 
-  bool openReaders(const char* languageArtifactPath, const char* bookCachePath,
-                   const std::array<uint8_t, 16>& expectedIdentityUuid, SessionError& error);
+  bool openReaders(const char* languageArtifactPath, const std::array<uint8_t, 16>& expectedCanonicalUuid,
+                   SessionError& error);
   bool openLearningState(SessionError& error);
   bool filterShortlist(page_shortlist::Shortlist& shortlist, SessionError& error);
-  bool openDefinitionPackage(SessionError& error);
   bool readDefinitionIndexes(uint32_t canonicalId,
                              std::array<DefinitionIndexLookup, contextual::kMaxAttachedSources>& output,
                              uint8_t& outputCount, SessionError& error);
@@ -79,9 +76,7 @@ class Session {
   void closeSourceFile() { sourceReader_.close(); }
 
   const book_language::BookLanguageReader& book() const { return book_; }
-  const DictionaryPackage& package() const { return package_; }
   const contextual::CanonicalLexiconReader& canonical() const { return canonical_; }
-  bool usesCanonicalIdentity() const { return contextualIdentity_; }
   SourceDiscoveryStatus sourceDiscoveryStatus() const { return definitionSources_.status; }
   uint8_t definitionSourceCount() const { return definitionSources_.catalog.sourceCount; }
   uint8_t skippedDefinitionSourceCount() const { return definitionSources_.catalog.skippedCount; }
@@ -121,12 +116,9 @@ class Session {
   SourceContext metaSource_{};
   SourceContext lexemesSource_{};
   SourceContext headwordsSource_{};
-  SourceContext entriesSource_{};
-  char cachePath_[kMaxLookupPath]{};
-  uint8_t identityUuid_[16]{};
+  uint8_t canonicalUuid_[16]{};
   uint32_t runtimeLexemeCount_ = 0;
   book_language::BookLanguageReader book_{};
-  DictionaryPackage package_{};
   contextual::CanonicalLexiconReader canonical_{};
   DefinitionSources definitionSources_{};
   lexeme_state::Store state_{};
@@ -137,20 +129,18 @@ class Session {
   io::SwitchingFileReader<HalFile> sourceReader_;
   bool readersOpen_ = false;
   bool stateOpen_ = false;
-  bool contextualIdentity_ = false;
 
   static bool openForRead(void* context, const char* path, HalFile& file);
   static bool readAt(void* context, uint32_t offset, void* output, size_t length);
   bool initializeSource(SourceContext& context, const char* path, uint8_t sourceToken);
   bool setSourcePath(SourceContext& context, const char* path, uint8_t sourceToken);
-  bool validateLegacyRuntimeMetadata(SessionError& error);
   bool openCanonicalRuntime(const char* directory, SessionError& error);
   void discoverDefinitionSources(const char* canonicalDirectory);
   static bool loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[16],
                                      contextual::DefinitionMetadata& output);
   bool prepareDefinitionRuntimeSources(uint8_t sourceIndex);
   static bool readContextualEntryChunk(void* context, const EntrySlice& entry, uint32_t relativeOffset, void* output,
-                                       size_t capacity, size_t& bytesRead, PackageError& error);
+                                       size_t capacity, size_t& bytesRead, RuntimeError& error);
 };
 
 const char* sessionErrorName(SessionError error);

@@ -129,11 +129,11 @@ bool decodeCanonicalLexeme(const uint8_t* data, const uint32_t headwordsFileSize
 
 bool validateRuntimeCrc(const RandomAccessSource& source, const uint32_t expectedCrc, uint8_t* scratch,
                         const size_t scratchSize, RuntimeFormatError& error) {
-  PackageError packageError;
-  if (validateSourceCrc(source, expectedCrc, scratch, scratchSize, packageError)) return true;
-  if (packageError == PackageError::OUTPUT_BUFFER_TOO_SMALL) {
+  RuntimeError runtimeError;
+  if (validateSourceCrc(source, expectedCrc, scratch, scratchSize, runtimeError)) return true;
+  if (runtimeError == RuntimeError::OUTPUT_BUFFER_TOO_SMALL) {
     error = RuntimeFormatError::OUTPUT_BUFFER_TOO_SMALL;
-  } else if (packageError == PackageError::BAD_FILE_CRC) {
+  } else if (runtimeError == RuntimeError::BAD_FILE_CRC) {
     error = RuntimeFormatError::BAD_FILE_CRC;
   } else {
     error = RuntimeFormatError::PAYLOAD_READ_FAILED;

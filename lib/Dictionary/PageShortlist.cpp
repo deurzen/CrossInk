@@ -269,9 +269,8 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
   return true;
 }
 
-uint8_t learningIdentityCount(const Item& item, const bool canonicalIdentity) {
-  if (item.analysisCount == 0 || item.analysisCount > kMaxAnalysesPerItem) return 0;
-  return canonicalIdentity ? 1 : item.analysisCount;
+uint8_t learningIdentityCount(const Item& item) {
+  return item.analysisCount > 0 && item.analysisCount <= kMaxAnalysesPerItem ? 1 : 0;
 }
 
 void sortForDisplay(Shortlist& shortlist) {

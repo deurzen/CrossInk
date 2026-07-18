@@ -58,33 +58,6 @@
             </span>
           </div>
 
-          <div class="dictionary-support-row">
-            <label class="convert-checkbox">
-              <input type="checkbox" id="dictionaryCompileEnabled" onchange="toggleDictionaryCompilation()" />
-              <span>Add dictionary support</span>
-            </label>
-            <span class="setting-desc" id="dictionaryBundleStatus">No compiler bundle selected</span>
-            <div class="dictionary-compiler-controls">
-              <button type="button" class="dictionary-bundle-btn" onclick="chooseDictionaryBundle()">Select .cpdict</button>
-              <button
-                type="button"
-                class="dictionary-bundle-clear"
-                id="clearDictionaryBundleBtn"
-                onclick="clearDictionaryBundle()"
-                style="display: none"
-              >
-                Clear
-              </button>
-              <input
-                type="file"
-                id="dictionaryBundleInput"
-                accept=".cpdict,application/zip"
-                onchange="handleDictionaryBundleSelected()"
-                hidden
-              />
-            </div>
-          </div>
-
           <div id="convertInfo" style="display: none; margin-bottom: 10px; font-size: 0.9em"></div>
 
           <div class="convert-settings" id="convertSettings" style="display: block">

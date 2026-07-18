@@ -1,7 +1,7 @@
 add_executable(SwitchingFileReaderTest
   SwitchingFileReaderTest.cpp
   ${REPO_ROOT}/lib/Dictionary/ContextualRuntimeFormat.cpp
-  ${REPO_ROOT}/lib/Dictionary/DictionaryPackage.cpp
+  ${REPO_ROOT}/lib/Dictionary/DictionaryRuntime.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
 )
 

@@ -1,19 +1,8 @@
 <div class="card">
   <div class="section-heading">
     <div>
-      <h2>Legacy Dictionaries</h2>
-      <p class="hint">Exact-form <code>.cpdict</code> runtime bundles. Learning state is retained when a dictionary is removed.</p>
-    </div>
-    <button class="btn btn-secondary" type="button" onclick="loadDictionaries()">Refresh</button>
-  </div>
-  <div id="dictionaryList"><p class="empty">Loading…</p></div>
-</div>
-
-<div class="card">
-  <div class="section-heading">
-    <div>
       <h2>Contextual Dictionaries</h2>
-      <p class="hint">Canonical learning identity with independently installed and ordered definition sources.</p>
+      <p class="hint">Install one canonical lexicon, then attach up to three independently managed definition sources.</p>
     </div>
     <button class="btn btn-secondary" type="button" onclick="loadContextualInventory()">Refresh</button>
   </div>
@@ -24,45 +13,13 @@
 </div>
 
 <div class="card">
-  <h2>Install Contextual Package</h2>
-  <p class="hint">Select a <code>.cplex</code> canonical lexicon or <code>.cpdef</code> definition source. Only runtime files are uploaded; morphology models and compiler metadata stay on this computer.</p>
+  <h2>Install Dictionary Package</h2>
+  <p class="hint">Select a <code>.cplex</code> canonical lexicon or <code>.cpdef</code> definition source. Compiler models and metadata remain on the computer.</p>
   <div class="install-row">
     <input type="file" id="contextualBundleInput" accept=".cplex,.cpdef,application/zip" />
-    <button class="btn btn-primary" id="contextualInstallBtn" type="button" onclick="installContextualBundle()">Install contextual package</button>
-  </div>
-</div>
-
-<div class="card">
-  <h2>Install Legacy Dictionary Bundle</h2>
-  <p class="hint">Select a <code>.cpdict</code> bundle. Runtime files are installed on the reader; compiler forms stay only in this browser for EPUB optimization.</p>
-  <div class="install-row">
-    <input type="file" id="bundleInput" accept=".cpdict,application/zip" />
-    <button class="btn btn-primary" id="installBtn" type="button" onclick="installSelectedBundle()">Install</button>
+    <button class="btn btn-primary" id="contextualInstallBtn" type="button" onclick="installContextualBundle()">Install package</button>
     <button class="btn btn-danger" id="cancelBtn" type="button" onclick="cancelInstall()" hidden>Cancel</button>
   </div>
   <div class="progress-track" id="progressTrack" hidden><div id="progressBar"></div></div>
   <div id="installStatus"></div>
-</div>
-
-<div class="card">
-  <div class="section-heading">
-    <div>
-      <h2>Learning List</h2>
-      <p class="hint">Review words marked known, learning, ignored, or implicitly familiar.</p>
-    </div>
-    <select id="reviewDictionary" onchange="resetReview()"></select>
-  </div>
-  <div class="review-actions">
-    <button class="btn btn-secondary" type="button" onclick="resetReview()">Reload</button>
-    <button class="btn btn-secondary" type="button" onclick="exportLearningList('csv')">Export CSV</button>
-    <button class="btn btn-secondary" type="button" onclick="exportLearningList('tsv')">Export TSV</button>
-  </div>
-  <div id="learningList"><p class="empty">Select an installed dictionary</p></div>
-  <button class="btn btn-secondary" id="loadMoreBtn" type="button" onclick="loadMoreReview()" hidden>Load more</button>
-</div>
-
-<div class="card">
-  <h2>Browser Compiler Cache</h2>
-  <div id="compilerStatus"><p class="empty">Checking this browser…</p></div>
-  <p class="hint">Compiler data is stored in IndexedDB on this computer. It never crosses the reader’s network connection.</p>
 </div>

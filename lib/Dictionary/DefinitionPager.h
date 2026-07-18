@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "DictionaryPackage.h"
+#include "DictionaryRuntime.h"
 
 namespace dictionary::definition {
 
@@ -44,7 +44,7 @@ struct Page {
 struct EntryReader {
   void* context = nullptr;
   bool (*readChunk)(void* context, const EntrySlice& entry, uint32_t relativeOffset, void* output, size_t capacity,
-                    size_t& bytesRead, PackageError& error) = nullptr;
+                    size_t& bytesRead, RuntimeError& error) = nullptr;
 };
 
 constexpr size_t contentLineLimit(const size_t visualLineLimit, const size_t currentContentLines,
@@ -62,7 +62,7 @@ struct WidthMeasurer {
 enum class PagerError : uint8_t {
   NONE = 0,
   INVALID_INPUT,
-  PACKAGE_READ_FAILED,
+  ENTRY_READ_FAILED,
   CURSOR_INVALID,
   INVALID_UTF8,
   LINE_TOO_WIDE,
@@ -73,10 +73,6 @@ enum class PagerError : uint8_t {
 // task's safe stack budget. Entry payloads are never materialized in full.
 class Pager {
  public:
-  bool load(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
-            const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
-  bool append(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
-              const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
   bool load(const EntryReader& reader, const EntrySlice& entry, const Cursor& start, const WidthMeasurer& measurer,
             int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
   bool append(const EntryReader& reader, const EntrySlice& entry, const Cursor& start, const WidthMeasurer& measurer,

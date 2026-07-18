@@ -110,20 +110,14 @@ repairs such as safer SVG handling. Advanced Mode lets you pick the target
 device, JPEG quality, image split or rotation handling, split overlap, and
 stable reference-page sizing.
 
-**Add dictionary support** is a separate upload option from image optimization.
-Select a `.cpdict` bundle once; the browser validates it and keeps only its
-compiler metadata in IndexedDB. A Web Worker analyzes the EPUB's spine off the
-UI thread, inserts 64-token source-shard markers, and embeds an uncompressed
-`META-INF/crossink/language.bin`. When image optimization is disabled, all
-images and auxiliary package files remain unchanged. Compiler data stays in the
-desktop browser and is not sent over the reader's network connection. The EPUB
-requires the matching runtime dictionary package on the reader.
+Dictionary compilation is intentionally separate from EPUB optimization. Use
+the contextual host compiler before upload; optimization preserves an existing
+`META-INF/crossink/language.bin` and does not run morphology or analysis.
 
 Optimization changes the EPUB contents and therefore breaks hash-based KOReader
-sync. Conversion is transactional: if image repair or dictionary compilation
-fails or is cancelled, the original EPUB is not silently uploaded. Fix the
-reported error, disable the failing option, or explicitly upload without
-optimization.
+sync. Conversion is transactional: if image repair fails or is cancelled, the
+original EPUB is not silently uploaded. Fix the reported error, disable
+optimization, or explicitly upload the original file.
 
 ### Settings
 
@@ -154,16 +148,13 @@ under `/.crosspoint/word_inbox/` when ordinary render caches are cleared.
 
 ### Dictionaries
 
-The Dictionaries page installs `.cpdict` bundles and reports whether each
-reader runtime has matching compiler data cached in the current desktop
-browser. It extracts and uploads only the five runtime files; `forms.bin` stays
-in IndexedDB for EPUB optimization. Files are uploaded into a hidden staging
-directory and the package becomes visible only after exact-size, UUID, and CRC
-validation. Installation can be cancelled, and replacing a bundle preserves
-the previous runtime until commit. Removing a runtime deliberately retains its
-global learning state. The same page reviews known, learning, ignored, and
-implicitly familiar words, updates statuses through the WAL-protected store,
-and exports the complete list as CSV or TSV in the desktop browser.
+The Dictionaries page installs `.cplex` canonical lexicons and `.cpdef`
+definition sources. Files are uploaded into a hidden staging directory and a
+package becomes visible only after exact-size, identity, and CRC validation.
+Installation can be cancelled, same-UUID replacement preserves the previous
+package until commit, and up to three compatible definition sources can be
+attached and reordered atomically. Compiler models and metadata never upload to
+the reader.
 
 ### Fonts
 
