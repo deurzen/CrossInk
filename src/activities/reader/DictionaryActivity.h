@@ -27,6 +27,7 @@ class DictionaryActivity final : public Activity {
     dictionary::definition::Cursor entry{};
     uint8_t analysisIndex = 0;
     uint8_t sourceIndex = 0;
+    bool analysisLabelShown = false;
   };
 
   enum class AnalysisLabelState : uint8_t { Empty = 0, Ready, Failed };
@@ -61,6 +62,7 @@ class DictionaryActivity final : public Activity {
   uint32_t definitionPageIndex_ = 0;
   uint8_t statusSelection_ = 0;
   char headword_[dictionary::contextual::kMaxCanonicalHeadwordBytes + 1]{};
+  char grammarLine_[192]{};
   // The activity is heap-owned. Eight fixed cache slots retain labels only for
   // the selected word; loading uses the session's single switching SD reader.
   std::array<AnalysisLabelCacheEntry, dictionary::page_shortlist::kMaxAnalysesPerItem> analysisLabels_{};
@@ -85,6 +87,9 @@ class DictionaryActivity final : public Activity {
   int definitionContentWidth() const;
   void contentMargins(int& top, int& right, int& bottom, int& left) const;
   static int measureDefinitionText(void* context, std::string_view text);
+  static int measureSmallText(void* context, std::string_view text);
+  static int measureSmallBoldText(void* context, std::string_view text);
+  void preparePrimaryGrammarLine();
   const char* definitionFailureMessage() const;
 
   void renderShortlist();

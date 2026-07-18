@@ -236,8 +236,8 @@ bool Pager::loadInternal(const EntryReader& reader, const EntrySlice& entry, con
       outLine.textOffset = output.textBytesUsed;
       outLine.textLength = static_cast<uint16_t>(lineLength);
       outLine.fieldType = field.type;
-      outLine.fieldStart = lineStartInField == 0;
-      outLine.gapBefore = output.lineCount > 1 && (outLine.fieldStart || gapBeforeNextLine);
+      const bool fieldStart = lineStartInField == 0;
+      outLine.gapBefore = output.lineCount > 1 && (fieldStart || gapBeforeNextLine);
       gapBeforeNextLine = endedByNewline && lineLength > 0;
       if (lineLength > 0) {
         std::memcpy(output.text + output.textBytesUsed, line_, lineLength);

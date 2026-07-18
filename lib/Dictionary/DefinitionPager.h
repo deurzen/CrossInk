@@ -23,11 +23,11 @@ struct Line {
   uint16_t textOffset = 0;
   uint16_t textLength = 0;
   uint8_t fieldType = 0;
-  uint8_t fieldStart : 1 = 0;
   uint8_t gapBefore : 1 = 0;
   uint8_t analysisStart : 1 = 0;
   uint8_t sourceStart : 1 = 0;
   uint8_t sourceIndex : 2 = 0;
+  uint8_t analysisIndex : 3 = 0;
 };
 
 struct Page {

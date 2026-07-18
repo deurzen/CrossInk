@@ -211,7 +211,7 @@ and primary-ranking errors rather than adding guesses.
 | U09 | Done | Replace v4 parser with strict v5 parser | Host tests reject v4 and every malformed grammar bit/combination before out-of-range reads |
 | U10 | Done | Carry primary grammar into the shortlist | Fixed item growth stays within the 4 KiB shortlist and 192-byte incremental budget |
 | U11 | Done | Add bounded canonical analysis-label loading | Labels use the switching reader, lazy fixed cache and no render-time I/O or second handle |
-| U12 | Planned | Render primary grammar and labeled alternatives | Primary line and every alternative boundary are translated, pagination-safe and orientation-safe |
+| U12 | Done | Render primary grammar and labeled alternatives | Primary line and every alternative boundary are translated, pagination-safe and orientation-safe |
 | U13 | Planned | Add direct previous/next word navigation | Side buttons switch sorted words, reuse buffers, reset cursors, handle saved-status filtering and work from failures |
 | U14 | Planned | Update button hints and position feedback | Front hints remain accurate; current/total feedback fits bezel-safe bounds in all orientations |
 
@@ -235,6 +235,14 @@ slots containing a UTF-8-safe 48-byte display headword, POS and state. The
 Primary is loaded on definition open; alternatives load only when a present
 entry is about to be paged. All reads switch through the existing single handle,
 failed alternative labels are skipped explicitly, and render performs no I/O.
+
+U12 adds complete English/German POS and grammar translations, a pure fixed-
+buffer formatter with POS-aware order and deterministic width omission, and a
+192-byte retained primary line. Alternative boundaries now render centered
+`lemma · POS` labels with independently fitted rules. A reclaimed pager bit
+stores the 3-bit analysis index without growing the 6-byte line or definition
+page; the cursor carries label state so page-start and reverse replay labels are
+stable. Retained activity growth through U12 is 511 bytes, below 768.
 
 ## Phase D — tests, cutover and qualification
 

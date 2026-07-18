@@ -1,5 +1,6 @@
 #include "DictionaryActivity.h"
 
+#include <GrammarPresentation.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -16,15 +17,72 @@
 namespace {
 constexpr int kSideMargin = 20;
 constexpr int kHeaderY = 15;
+constexpr int kGrammarY = 37;
 constexpr int kListTop = 58;
 constexpr int kRowHeight = 34;
 constexpr int kDefinitionLineGap = 3;
 constexpr int kDefinitionMeaningGap = 4;
-constexpr int kAnalysisDividerWidth = 72;
-constexpr int kAnalysisDividerHeight = 16;
+constexpr int kAnalysisDividerHeight = 22;
+constexpr int kAnalysisDividerGap = 8;
 constexpr int kSourceDividerHeight = 22;
 constexpr int kSourceDividerGap = 8;
 constexpr int kBottomReserved = 48;
+
+constexpr StrId kGrammarStringIds[] = {
+    StrId::STR_GRAMMAR_POS_UNKNOWN,
+    StrId::STR_GRAMMAR_POS_NOUN,
+    StrId::STR_GRAMMAR_POS_VERB,
+    StrId::STR_GRAMMAR_POS_ADJECTIVE,
+    StrId::STR_GRAMMAR_POS_ADVERB,
+    StrId::STR_GRAMMAR_POS_PRONOUN,
+    StrId::STR_GRAMMAR_POS_DETERMINER,
+    StrId::STR_GRAMMAR_POS_ADPOSITION,
+    StrId::STR_GRAMMAR_POS_CONJUNCTION,
+    StrId::STR_GRAMMAR_POS_NUMERAL,
+    StrId::STR_GRAMMAR_POS_PARTICLE,
+    StrId::STR_GRAMMAR_POS_INTERJECTION,
+    StrId::STR_GRAMMAR_POS_PROPER_NOUN,
+    StrId::STR_GRAMMAR_POS_PHRASE,
+    StrId::STR_GRAMMAR_POS_ABBREVIATION,
+    StrId::STR_GRAMMAR_POS_OTHER,
+    StrId::STR_GRAMMAR_CASE_NOMINATIVE,
+    StrId::STR_GRAMMAR_CASE_ACCUSATIVE,
+    StrId::STR_GRAMMAR_CASE_DATIVE,
+    StrId::STR_GRAMMAR_CASE_GENITIVE,
+    StrId::STR_GRAMMAR_DEGREE_POSITIVE,
+    StrId::STR_GRAMMAR_DEGREE_COMPARATIVE,
+    StrId::STR_GRAMMAR_DEGREE_SUPERLATIVE,
+    StrId::STR_GRAMMAR_GENDER_MASCULINE,
+    StrId::STR_GRAMMAR_GENDER_FEMININE,
+    StrId::STR_GRAMMAR_GENDER_NEUTER,
+    StrId::STR_GRAMMAR_MOOD_INDICATIVE,
+    StrId::STR_GRAMMAR_MOOD_SUBJUNCTIVE,
+    StrId::STR_GRAMMAR_MOOD_IMPERATIVE,
+    StrId::STR_GRAMMAR_NUMBER_SINGULAR,
+    StrId::STR_GRAMMAR_NUMBER_PLURAL,
+    StrId::STR_GRAMMAR_PERSON_FIRST,
+    StrId::STR_GRAMMAR_PERSON_SECOND,
+    StrId::STR_GRAMMAR_PERSON_THIRD,
+    StrId::STR_GRAMMAR_TENSE_PRESENT,
+    StrId::STR_GRAMMAR_TENSE_PAST,
+    StrId::STR_GRAMMAR_TENSE_PERFECT,
+    StrId::STR_GRAMMAR_VERB_FORM_FINITE,
+    StrId::STR_GRAMMAR_VERB_FORM_INFINITIVE,
+    StrId::STR_GRAMMAR_VERB_FORM_PARTICIPLE,
+    StrId::STR_GRAMMAR_FIRST_SINGULAR,
+    StrId::STR_GRAMMAR_FIRST_PLURAL,
+    StrId::STR_GRAMMAR_SECOND_SINGULAR,
+    StrId::STR_GRAMMAR_SECOND_PLURAL,
+    StrId::STR_GRAMMAR_THIRD_SINGULAR,
+    StrId::STR_GRAMMAR_THIRD_PLURAL,
+};
+static_assert(sizeof(kGrammarStringIds) / sizeof(kGrammarStringIds[0]) ==
+              static_cast<size_t>(dictionary::grammar_presentation::Label::Count));
+
+const char* grammarTranslation(void*, const dictionary::grammar_presentation::Label label) {
+  const size_t index = static_cast<size_t>(label);
+  return index < sizeof(kGrammarStringIds) / sizeof(kGrammarStringIds[0]) ? I18N.get(kGrammarStringIds[index]) : "";
+}
 
 const char* statusLabel(const uint8_t index) {
   switch (index) {
@@ -152,6 +210,36 @@ int DictionaryActivity::measureDefinitionText(void* context, const std::string_v
   return activity.renderer.getTextAdvanceX(UI_10_FONT_ID, activity.lineScratch_, EpdFontFamily::REGULAR);
 }
 
+int DictionaryActivity::measureSmallText(void* context, const std::string_view text) {
+  auto& activity = *static_cast<DictionaryActivity*>(context);
+  if (text.size() >= sizeof(activity.lineScratch_)) return INT_MAX;
+  std::memcpy(activity.lineScratch_, text.data(), text.size());
+  activity.lineScratch_[text.size()] = '\0';
+  return activity.renderer.getTextAdvanceX(SMALL_FONT_ID, activity.lineScratch_, EpdFontFamily::REGULAR);
+}
+
+int DictionaryActivity::measureSmallBoldText(void* context, const std::string_view text) {
+  auto& activity = *static_cast<DictionaryActivity*>(context);
+  if (text.size() >= sizeof(activity.lineScratch_)) return INT_MAX;
+  std::memcpy(activity.lineScratch_, text.data(), text.size());
+  activity.lineScratch_[text.size()] = '\0';
+  return activity.renderer.getTextAdvanceX(SMALL_FONT_ID, activity.lineScratch_, EpdFontFamily::BOLD);
+}
+
+void DictionaryActivity::preparePrimaryGrammarLine() {
+  grammarLine_[0] = '\0';
+  if (!shortlist_ || selected_ >= shortlist_->count || analysisLabels_[0].state != AnalysisLabelState::Ready) return;
+  const dictionary::grammar_presentation::LabelProvider labels{nullptr, grammarTranslation};
+  const dictionary::grammar_presentation::TextMeasurer measurer{this, measureSmallText};
+  size_t length = 0;
+  if (!dictionary::grammar_presentation::formatGrammarLine(
+          analysisLabels_[0].label.partOfSpeech, shortlist_->items[selected_].grammarDescriptor, labels, measurer,
+          definitionContentWidth(), grammarLine_, sizeof(grammarLine_), length)) {
+    grammarLine_[0] = '\0';
+    LOG_ERR("DICT", "Primary grammar presentation failed");
+  }
+}
+
 void DictionaryActivity::resetAnalysisLabels() {
   for (auto& cached : analysisLabels_) cached = {};
 }
@@ -200,6 +288,7 @@ bool DictionaryActivity::openDefinition() {
   std::memcpy(headword_, surface.data(), headwordLength);
   headword_[headwordLength] = '\0';
   loadAnalysisLabel(0);
+  preparePrimaryGrammarLine();
 
   if (session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::ATTACHMENTS_INVALID) {
     definitionFailed_ = true;
@@ -285,7 +374,6 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
   const uint8_t analysisCount = shortlist_->items[selected_].analysisCount;
   DefinitionCursor cursor = start;
   definitionPageNext_ = start;
-  uint8_t appendedAnalysis = UINT8_MAX;
   size_t dividerSlots = 0;
   bool firstEntry = true;
   *definitionPage_ = {};
@@ -300,6 +388,7 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
       ++cursor.analysisIndex;
       cursor.sourceIndex = 0;
       cursor.entry = {};
+      cursor.analysisLabelShown = false;
       definitionPageNext_ = cursor;
       continue;
     }
@@ -316,6 +405,7 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
       ++cursor.analysisIndex;
       cursor.sourceIndex = 0;
       cursor.entry = {};
+      cursor.analysisLabelShown = false;
       definitionPageNext_ = cursor;
       continue;
     }
@@ -333,7 +423,7 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
     const uint8_t oldLineCount = definitionPage_->lineCount;
     const uint16_t oldTextBytes = definitionPage_->textBytesUsed;
     const bool startsSource = entryCursorAtStart(cursor.entry);
-    const bool startsAnalysis = !firstEntry && appendedAnalysis != cursor.analysisIndex;
+    const bool startsAnalysis = cursor.analysisIndex > 0 && !cursor.analysisLabelShown && startsSource;
     const size_t pendingDividers = (startsSource ? 1U : 0U) + (startsAnalysis ? 1U : 0U);
     const size_t contentLineLimit =
         dictionary::definition::contentLineLimit(maxLines, definitionPage_->lineCount, dividerSlots, pendingDividers);
@@ -366,12 +456,13 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
       firstLine.analysisStart = startsAnalysis;
       firstLine.sourceStart = startsSource;
       firstLine.sourceIndex = sourceIndex;
+      firstLine.analysisIndex = cursor.analysisIndex;
       dividerSlots += pendingDividers;
-      appendedAnalysis = cursor.analysisIndex;
+      if (startsAnalysis) cursor.analysisLabelShown = true;
       firstEntry = false;
     }
     if (definitionPage_->hasNext) {
-      definitionPageNext_ = {definitionPage_->next, cursor.analysisIndex, sourceIndex};
+      definitionPageNext_ = {definitionPage_->next, cursor.analysisIndex, sourceIndex, cursor.analysisLabelShown};
       break;
     }
     ++cursor.sourceIndex;
@@ -582,6 +673,9 @@ void DictionaryActivity::renderDefinition() {
     std::snprintf(header, sizeof(header), "%s", headword_);
   }
   renderer.drawText(UI_12_FONT_ID, left + kSideMargin, top + kHeaderY, header, true, EpdFontFamily::BOLD);
+  if (grammarLine_[0] != '\0') {
+    renderer.drawText(SMALL_FONT_ID, left + kSideMargin, top + kGrammarY, grammarLine_, true, EpdFontFamily::REGULAR);
+  }
 
   if (definitionFailed_) {
     renderer.drawText(UI_10_FONT_ID, left + kSideMargin, top + kListTop, definitionFailureMessage());
@@ -591,10 +685,31 @@ void DictionaryActivity::renderDefinition() {
     for (uint8_t index = 0; index < definitionPage_->lineCount; ++index) {
       const auto& line = definitionPage_->lines[index];
       if (line.analysisStart) {
-        y += kAnalysisDividerHeight / 2;
-        const int centerX = left + (renderer.getScreenWidth() - left - right) / 2;
-        renderer.fillRect(centerX - kAnalysisDividerWidth / 2, y, kAnalysisDividerWidth, 1, true);
-        y += kAnalysisDividerHeight / 2;
+        const int contentLeft = left + kSideMargin;
+        const int contentRight = renderer.getScreenWidth() - right - kSideMargin;
+        const auto& cached = analysisLabels_[line.analysisIndex];
+        const dictionary::grammar_presentation::LabelProvider labels{nullptr, grammarTranslation};
+        const dictionary::grammar_presentation::TextMeasurer measurer{this, measureSmallBoldText};
+        size_t labelLength = 0;
+        if (cached.state == AnalysisLabelState::Ready &&
+            dictionary::grammar_presentation::formatAnalysisLabel(
+                std::string_view(cached.label.headword, cached.label.headwordLength), cached.label.partOfSpeech, labels,
+                measurer, contentRight - contentLeft, lineScratch_, sizeof(lineScratch_), labelLength)) {
+          const int centerX = (contentLeft + contentRight) / 2;
+          const int labelWidth = renderer.getTextAdvanceX(SMALL_FONT_ID, lineScratch_, EpdFontFamily::BOLD);
+          const int labelLeft = centerX - labelWidth / 2;
+          const int labelRight = labelLeft + labelWidth;
+          const int lineY = y + renderer.getLineHeight(SMALL_FONT_ID) / 2;
+          if (labelLeft - kAnalysisDividerGap > contentLeft) {
+            renderer.fillRect(contentLeft, lineY, labelLeft - kAnalysisDividerGap - contentLeft, 1, true);
+          }
+          if (contentRight > labelRight + kAnalysisDividerGap) {
+            renderer.fillRect(labelRight + kAnalysisDividerGap, lineY, contentRight - labelRight - kAnalysisDividerGap,
+                              1, true);
+          }
+          renderer.drawText(SMALL_FONT_ID, labelLeft, y, lineScratch_, true, EpdFontFamily::BOLD);
+        }
+        y += kAnalysisDividerHeight;
       } else if (line.gapBefore && !line.sourceStart) {
         y += kDefinitionMeaningGap;
       }
