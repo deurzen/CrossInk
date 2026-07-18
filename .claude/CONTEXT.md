@@ -25,7 +25,7 @@ Keep this file focused on repo-specific gotchas that are worth reusing in future
 
 ## Dictionary
 
-- Host compiler and firmware accept only contextual `language.bin` version 5; v4 has no fallback. Do not replace production EPUBs until U17 recompilation after the remaining v5 UI work.
+- Host compiler and firmware accept only contextual `language.bin` version 5; v4 has no fallback. The Homma and Klein production EPUB paths are v5, with adjacent byte-identical `.pre-contextual-v5.epub` backups of the former v4 files.
 - Runtime resolves canonical packages under `/.crosspoint/lexicons/`; there is no monolithic package fallback or state migration.
 - The WebUI installs only `.cplex` and `.cpdef` packages. Contextual EPUB compilation is host-only and independent from the browser EPUB optimizer.
 

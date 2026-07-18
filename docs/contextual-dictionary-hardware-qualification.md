@@ -16,7 +16,7 @@ runtime assets:
 | dict.cc de-en source | `122f8887-ab1b-574b-9026-ced568335fc0` |
 | Kaikki de-en source | `84546eba-7af7-53e3-8f0c-a9e79414cc9c` |
 
-Attach the sources in Wiktionary, dict.cc, Kaikki order. Upload a validated v4
+Attach the sources in Wiktionary, dict.cc, Kaikki order. Upload the validated v5
 production EPUB after deleting or overwriting its previous device copy. The
 Christian Homma novel contains `knipste`; its primary canonical lemma `knipsen`
 is covered by all three installed sources.

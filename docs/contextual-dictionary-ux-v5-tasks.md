@@ -264,7 +264,7 @@ existing bottom definition-page indicator remains independent.
 | --- | --- | --- | --- |
 | U15 | Done | Add focused host and simulator interaction tests | Grammar omission, alternatives, pagination, all button modes, edge wrap and post-status removal are covered |
 | U16 | Done | Run complete automated qualification | Host, contextual Python, WebUI, simulator smoke, firmware, format, static analysis and generated-file checks pass |
-| U17 | Planned | Recompile the two production German EPUBs | Adjacent byte-identical pre-v5 backups are preserved; outputs validate as v5 with the existing canonical UUID |
+| U17 | Done | Recompile the two production German EPUBs | Adjacent byte-identical pre-v5 backups are preserved; outputs validate as v5 with the existing canonical UUID |
 | U18 | Planned | Validate UX and resources on X3/X4 | `knipste · knipsen` grammar, alternative labels, direct word navigation, orientations, heap, largest block, stack and one-reader behavior pass |
 | U19 | Planned | Run updated 100-cycle endurance gate | Word changes, definition paging, status removals, source reorder and reboot show no decline or stale state |
 
@@ -283,6 +283,14 @@ fixtures, i18n and WebUI regeneration, Python byte-compilation, tracked C++
 formatting, zero-defect static analysis, the four-orientation simulator smoke
 test and the default firmware build. Static RAM remains 50,964 bytes and the
 firmware retains 948,576 bytes of OTA app-partition headroom.
+
+U17 creates adjacent `.pre-contextual-v5.epub` copies that are byte-identical to
+the formerly installed v4 books, recompiles from the untouched pre-v4 originals
+and atomically installs the validated v5 outputs. Homma reproduces EPUB SHA
+`7f48cc6f…` and `language.bin` SHA `496c33d1…`; Klein reproduces `8c5d2a32…`
+and `bcd1a674…`. ZIP integrity, version 5, canonical UUID, file size, both CRCs
+and unchanged package-document bytes pass before replacement. Full paths and
+backup hashes are recorded in `contextual-grammar-production-evaluation.md`.
 
 ## Phase E — measurement-gated optimization
 

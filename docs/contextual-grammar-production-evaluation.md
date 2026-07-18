@@ -36,9 +36,10 @@ listed in `.claude/CONTEXT.md`.
 
 ## Production-book dry runs
 
-Both byte-identical pre-v4 backups were compiled to temporary v5 EPUBs. The
-installed/current v4 books and their backups were not modified; U17 performs the
-later production replacement.
+U08 compiled both byte-identical pre-v4 backups to temporary v5 EPUBs without
+modifying the installed v4 books. U17 reproduced those exact v5 bytes, created
+adjacent byte-identical backups of the formerly installed v4 books, and then
+atomically replaced the production paths.
 
 | Measurement | Homma novel | Klein collection |
 | --- | ---: | ---: |
@@ -67,10 +68,21 @@ counts.
 
 | Artifact | SHA-256 |
 | --- | --- |
-| Homma temporary v5 EPUB | `7f48cc6fe957c0fa95c63c66d1f1941db99656ab7a9e95df4fe90f0dd48af818` |
+| Homma production v5 EPUB | `7f48cc6fe957c0fa95c63c66d1f1941db99656ab7a9e95df4fe90f0dd48af818` |
 | Homma v5 `language.bin` | `496c33d142512c2dc8b9ab818453993a0f9db9c896849b227734e92e6c75371c` |
-| Klein temporary v5 EPUB | `8c5d2a324a2ead714ab7c3c6f8cfb0ffc987f24ea2b9be22a1057038dc2618b0` |
+| Klein production v5 EPUB | `8c5d2a324a2ead714ab7c3c6f8cfb0ffc987f24ea2b9be22a1057038dc2618b0` |
 | Klein v5 `language.bin` | `bcd1a674e79a18bd21bd28dbb5afd5fbc49aa7dfb9db1550eef27d388000e56f` |
+
+The adjacent pre-v5 backups are:
+
+| Backup | Former installed v4 SHA-256 |
+| --- | --- |
+| `/home/deurzen/documents/calibre/Christian Homma/Vino, Mord und Bella Italia! (26)/Vino, Mord und Bella Italia! - Christian Homma.pre-contextual-v5.epub` | `10e7a63d83a3de659e128744382e8df1a1a6b76f5ff653845245e011ecd89ea6` |
+| `/home/deurzen/documents/calibre/Andre Klein/Learn German with Stories (14)/Learn German with Stories - Andre Klein.pre-contextual-v5.epub` | `8579834247435d3d3297d01bfaddd8287a5433039877609593312620c444e224` |
+
+Both production ZIPs pass `ZipFile.testzip()`. Their v5 headers use canonical
+UUID `c6246d63-38eb-5df8-9d83-ab0d812503f9`; file size, payload CRC and header
+CRC validate, and package-document bytes match the pre-v4 inputs.
 
 ## Manual descriptor review
 

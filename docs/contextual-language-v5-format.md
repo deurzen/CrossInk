@@ -234,8 +234,8 @@ v5 extraction. Clearing the EPUB cache also removes receipts and invalid
 markers; global canonical learning state remains outside that cache.
 
 Compilation writes a sibling temporary EPUB and atomically replaces output only
-after the v5 artifact and ZIP close successfully. The two production EPUBs are
-recompiled separately in U17 with adjacent pre-v5 backups.
+after the v5 artifact and ZIP close successfully. U17 recompiled the two
+production EPUBs separately and retained adjacent byte-identical pre-v5 backups.
 
 ## Size and memory effects
 
