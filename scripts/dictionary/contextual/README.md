@@ -74,6 +74,24 @@ exact top-level Python, spaCy, and model versions and regenerate only
 platform-specific transitive wheels; do not change `zdl-model.json` without a
 new reference run and review.
 
+## Canonical and EPUB builds
+
+Build the deterministic canonical identity bundle and then compile an EPUB with
+the pinned contextual providers:
+
+```sh
+scripts/build_canonical_lexicon.py \
+  --de-de-bundle tmp.local/german-wiktionary.cpdict \
+  --output tmp.local/german-canonical.cplex
+.cache/contextual/.venv/bin/python scripts/compile_contextual_epub.py \
+  input.epub output.epub \
+  --canonical tmp.local/german-canonical.cplex \
+  --form-inventory tmp.local/german-wiktionary.cpdict
+```
+
+The EPUB build is transactional and leaves the canonical OPF untouched. See
+[`docs/contextual-epub-compiler.md`](../../../docs/contextual-epub-compiler.md).
+
 ## Transformer benchmark environment
 
 `de-zdl-dist` is pinned only to reproduce C10. Install

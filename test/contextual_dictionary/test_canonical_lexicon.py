@@ -21,6 +21,7 @@ from dictionary.contextual.canonical_lexicon import (  # noqa: E402
     CanonicalLexiconError,
     compile_canonical_bundle,
     compile_de_de_canonical_bundle,
+    load_canonical_lexicon_index,
     load_de_de_seed,
 )
 
@@ -143,6 +144,19 @@ class CanonicalLexiconTest(unittest.TestCase):
         zdl = json.loads(bundle.files["compiler/zdl-model.json"])
         self.assertEqual(dwdsmor["package"]["version"], "0.18.0")
         self.assertEqual(zdl["model"]["version"], "4.0.0")
+
+    def test_compiler_index_resolves_canonical_identity(self):
+        bundle = compile_de_de_canonical_bundle(self.seed_path)
+        path = Path(self.temporary.name) / "canonical.cplex"
+        path.write_bytes(bundle.archive_bytes)
+        index = load_canonical_lexicon_index(path)
+        self.assertEqual(index.canonical_uuid, bundle.canonical_uuid)
+        self.assertEqual(index.lexeme_count, 3)
+        self.assertEqual(index.resolve("Goethe", CanonicalPos.PROPER_NOUN), 0)
+        self.assertEqual(index.resolve("Laden", CanonicalPos.NOUN), 1)
+        self.assertEqual(index.resolve("laden", CanonicalPos.VERB), 2)
+        self.assertIsNone(index.resolve("Laden", CanonicalPos.VERB))
+        self.assertEqual(index.analyzer_metadata["analysisPolicyVersion"], 2)
 
     def test_archive_manifest_covers_all_files_and_has_reproducible_metadata(self):
         bundle = compile_de_de_canonical_bundle(self.seed_path)

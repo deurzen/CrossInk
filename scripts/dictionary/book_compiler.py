@@ -75,6 +75,13 @@ class CompilerDictionary:
 class Token:
     surface: str
     raw_offset: int
+    text_offset: int
+
+
+@dataclass(frozen=True)
+class VisibleText:
+    text: str
+    raw_offsets: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -202,7 +209,7 @@ def _append_visible_text(raw: str, raw_start: int, flattened: list[str], raw_off
     raw_offsets.extend(range(raw_start + cursor, raw_start + len(raw)))
 
 
-def tokenize_xhtml(xhtml: str) -> list[Token]:
+def extract_visible_text(xhtml: str) -> VisibleText:
     flattened: list[str] = []
     raw_offsets: list[int] = []
     hidden_depth = 0
@@ -229,19 +236,24 @@ def tokenize_xhtml(xhtml: str) -> list[Token]:
                 elif not self_closing:
                     hidden_depth += 1
             if hidden_depth == 0 and (not has_body or body_depth > 0) and tag_name in BLOCK_TAGS:
-                flattened.append(" ")
+                flattened.append("\n")
                 raw_offsets.append(tag_match.end())
         cursor = tag_match.end()
     if hidden_depth == 0 and (not has_body or body_depth > 0):
         _append_visible_text(xhtml[cursor:], cursor, flattened, raw_offsets)
 
-    text = "".join(flattened)
+    return VisibleText("".join(flattened), tuple(raw_offsets))
+
+
+def tokenize_xhtml(xhtml: str) -> list[Token]:
+    visible = extract_visible_text(xhtml)
+    text = visible.text
     tokens = []
     for match in TOKEN_PATTERN.finditer(text):
         surface = unicodedata.normalize("NFC", match.group(0))
         encoded = surface.encode("utf-8")
         if encoded and len(encoded) <= 255:
-            tokens.append(Token(surface, raw_offsets[match.start()]))
+            tokens.append(Token(surface, visible.raw_offsets[match.start()], match.start()))
     return tokens
 
 

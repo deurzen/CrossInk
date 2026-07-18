@@ -412,3 +412,115 @@ def compile_de_de_canonical_bundle(
         dwdsmor_manifest_path,
         zdl_manifest_path,
     )
+
+
+@dataclass(frozen=True)
+class CanonicalLexiconIndex:
+    canonical_uuid: uuid.UUID
+    lexeme_count: int
+    by_key: dict[tuple[str, CanonicalPos], int]
+    analyzer_metadata: dict
+    dwdsmor_manifest: dict
+    zdl_manifest: dict
+
+    def resolve(self, headword: str, part_of_speech: CanonicalPos) -> int | None:
+        return self.by_key.get((unicodedata.normalize("NFC", headword.strip()), part_of_speech))
+
+
+def load_canonical_lexicon_index(path: Path) -> CanonicalLexiconIndex:
+    required = (
+        "compiler/analyzer.json",
+        "compiler/dwdsmor-open.json",
+        "compiler/zdl-model.json",
+        "runtime/headwords.bin",
+        "runtime/lexemes.bin",
+        "runtime/meta.bin",
+    )
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            if len(names) != len(set(names)):
+                raise CanonicalLexiconError("canonical bundle contains duplicate paths")
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+            files = {name: archive.read(name) for name in required}
+    except CanonicalLexiconError:
+        raise
+    except (OSError, KeyError, UnicodeDecodeError, json.JSONDecodeError, zipfile.BadZipFile) as error:
+        raise CanonicalLexiconError(f"cannot read canonical bundle: {error}") from error
+    if not isinstance(manifest, dict) or manifest.get("packageType") != "canonical-lexicon":
+        raise CanonicalLexiconError("unsupported canonical bundle manifest")
+    for name, data in files.items():
+        record = manifest.get("files", {}).get(name)
+        if (
+            not isinstance(record, dict)
+            or record.get("bytes") != len(data)
+            or record.get("sha256") != hashlib.sha256(data).hexdigest()
+        ):
+            raise CanonicalLexiconError(f"canonical bundle hash mismatch for {name}")
+
+    meta = files["runtime/meta.bin"]
+    records = files["runtime/lexemes.bin"]
+    headwords = files["runtime/headwords.bin"]
+    if len(meta) != META_SIZE or meta[:4] != b"CXCL":
+        raise CanonicalLexiconError("invalid canonical metadata")
+    if struct.unpack_from("<HHI", meta, 4) != (FORMAT_VERSION, META_SIZE, 0):
+        raise CanonicalLexiconError("unsupported canonical metadata version")
+    if _crc32(meta[:108]) != struct.unpack_from("<I", meta, 108)[0]:
+        raise CanonicalLexiconError("canonical metadata CRC mismatch")
+    canonical_uuid = uuid.UUID(bytes=meta[12:28])
+    lexeme_count, record_size, pos_version = struct.unpack_from("<IHH", meta, 36)
+    records_size, headwords_size, records_crc, headwords_crc = struct.unpack_from("<IIII", meta, 44)
+    if canonical_uuid.int == 0 or str(canonical_uuid) != manifest.get("canonicalUuid"):
+        raise CanonicalLexiconError("canonical UUID mismatch")
+    if record_size != LEXEME_RECORD_SIZE or pos_version != CANONICAL_POS_VERSION:
+        raise CanonicalLexiconError("canonical record contract mismatch")
+    if lexeme_count != manifest.get("lexemeCount") or len(records) != lexeme_count * record_size:
+        raise CanonicalLexiconError("canonical lexeme count mismatch")
+    if records_size != len(records) or headwords_size != len(headwords):
+        raise CanonicalLexiconError("canonical lexical file size mismatch")
+    if _crc32(records) != records_crc or _crc32(headwords) != headwords_crc:
+        raise CanonicalLexiconError("canonical lexical payload CRC mismatch")
+    fingerprint = hashlib.sha256(records + headwords).digest()
+    if meta[60:92] != fingerprint or manifest.get("payloadSha256") != fingerprint.hex():
+        raise CanonicalLexiconError("canonical payload fingerprint mismatch")
+
+    by_key = {}
+    previous_key = None
+    for lexeme_id in range(lexeme_count):
+        offset = lexeme_id * record_size
+        headword_offset, key_hash, length, raw_pos, flags = struct.unpack_from("<IQHBB", records, offset)
+        if length == 0 or headword_offset + length > len(headwords) or flags & ~LEXEME_FLAGS_MASK:
+            raise CanonicalLexiconError(f"canonical lexeme {lexeme_id} is malformed")
+        encoded = headwords[headword_offset : headword_offset + length]
+        try:
+            headword = encoded.decode("utf-8")
+            part_of_speech = CanonicalPos(raw_pos)
+        except (UnicodeDecodeError, ValueError) as error:
+            raise CanonicalLexiconError(f"canonical lexeme {lexeme_id} has invalid identity") from error
+        key = (encoded, raw_pos)
+        if previous_key is not None and key <= previous_key:
+            raise CanonicalLexiconError("canonical lexemes are not strictly sorted")
+        previous_key = key
+        if unicodedata.normalize("NFC", headword) != headword:
+            raise CanonicalLexiconError(f"canonical lexeme {lexeme_id} is not NFC")
+        if key_hash != _fnv1a64(encoded + b"\x1f" + bytes((raw_pos,))):
+            raise CanonicalLexiconError(f"canonical lexeme {lexeme_id} key hash mismatch")
+        by_key[(headword, part_of_speech)] = lexeme_id
+
+    def decode_compiler_json(name: str) -> dict:
+        try:
+            value = json.loads(files[name].decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise CanonicalLexiconError(f"canonical compiler metadata {name} is invalid") from error
+        if not isinstance(value, dict):
+            raise CanonicalLexiconError(f"canonical compiler metadata {name} is not an object")
+        return value
+
+    return CanonicalLexiconIndex(
+        canonical_uuid,
+        lexeme_count,
+        by_key,
+        decode_compiler_json("compiler/analyzer.json"),
+        decode_compiler_json("compiler/dwdsmor-open.json"),
+        decode_compiler_json("compiler/zdl-model.json"),
+    )
