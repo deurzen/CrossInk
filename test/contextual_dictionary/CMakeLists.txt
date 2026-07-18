@@ -69,3 +69,8 @@ add_test(
   NAME ContextualDictionary.EpubCompiler
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_contextual_epub_compiler.py
 )
+
+add_test(
+  NAME ContextualDictionary.DefinitionSource
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_definition_source.py
+)

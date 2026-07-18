@@ -112,6 +112,8 @@ The initial editions are:
 Source compilers normalize headword/POS keys offline, preserve provenance per
 field where useful, deduplicate exact text, cap pathological entries, and leave
 missing index records empty. Missing coverage never produces placeholder text.
+C14's generic compiler and validation rules are documented in
+[`definition-source-compiler.md`](definition-source-compiler.md).
 
 ### 3. Compiled EPUB artifact (`language.bin`)
 

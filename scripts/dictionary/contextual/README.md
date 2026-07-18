@@ -91,6 +91,14 @@ scripts/build_canonical_lexicon.py \
 
 The EPUB build is transactional and leaves the canonical OPF untouched. See
 [`docs/contextual-epub-compiler.md`](../../../docs/contextual-epub-compiler.md).
+Definition JSON can be aligned independently with:
+
+```sh
+scripts/build_definition_source.py source.json output.cpdef \
+  --canonical tmp.local/german-canonical.cplex
+```
+
+See [`docs/definition-source-compiler.md`](../../../docs/definition-source-compiler.md).
 
 ## Transformer benchmark environment
 

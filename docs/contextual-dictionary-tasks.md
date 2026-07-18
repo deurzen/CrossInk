@@ -54,7 +54,7 @@ committed.
 
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
-| C14 | Planned | Implement deterministic `.cpdef` compiler and fixed canonical entry index | Missing entries use zero-length records; caps/CRC/UUID corruption tests pass |
+| C14 | Done | Implement deterministic `.cpdef` compiler and fixed canonical entry index | Missing entries use zero-length records; caps/CRC/UUID corruption tests pass |
 | C15 | Planned | Compile current de-DE Wiktionary definitions against canonical IDs | Coverage report emitted; definitions/examples preserve provenance; no morphology ownership |
 | C16 | Planned | Import and compile private dict.cc de→en source | 1.3M-line TSV streams without whole-file allocation; annotations/POS normalized; duplicate translations capped and reported |
 | C17 | Planned | Import and compile Kaikki German de→en source | 1 GB JSONL streams line-by-line; senses/qualifiers/POS mapped; malformed records counted, not fatal |
@@ -132,6 +132,6 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Build the deterministic definition-source compiler in C14 against the C11 canonical UUID.
-2. Compile the current de-DE definitions in C15 and report canonical coverage.
+1. Compile the current de-DE definitions in C15 and report canonical coverage.
+2. Import the private dict.cc source in C16 without whole-file allocation.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

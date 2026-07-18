@@ -7,7 +7,7 @@
 - Dictionary-optimized EPUBs now retain source-shard ranges in each rendered page, allowing lookups to stay correct across font, layout, and orientation changes.
 - Compatible EPUBs can open a bounded unknown-word shortlist through a configurable shortcut, stream definitions from SD, and mark words as learning, known, or ignored.
 - The Dictionaries WebUI installs, inspects, replaces, and removes runtime packages transactionally, reviews WAL-protected learning states, and exports CSV/TSV while keeping compiler data in the desktop browser.
-- A pinned host compiler can build deterministic canonical German lexicons and contextually analyzed EPUB artifacts from DWDSmor, ZDL, and the de-DE form inventory while preserving the canonical OPF.
+- A pinned host compiler can build deterministic canonical German lexicons, independently aligned definition-source bundles, and contextually analyzed EPUB artifacts from DWDSmor, ZDL, and the de-DE form inventory while preserving the canonical OPF.
 
 ### Changed
 
