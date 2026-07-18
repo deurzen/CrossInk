@@ -76,6 +76,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.HardwareQualificationLog
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_hardware_qualification_log.py
+)
+
+add_test(
   NAME ContextualDictionary.DefinitionSource
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_definition_source.py
 )

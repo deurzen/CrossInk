@@ -2851,6 +2851,8 @@ void CrossPointWebServer::handleContextualAttachments() {
     server->send(400, "application/json", dictionaryUpload.filePath);
     return;
   }
+  LOG_INF("DICT", "Attachment order saved: generation=%lu sources=%u", static_cast<unsigned long>(updated.generation),
+          static_cast<unsigned>(updated.sourceCount));
   std::snprintf(dictionaryUpload.filePath, sizeof(dictionaryUpload.filePath), "{\"ok\":true,\"generation\":%lu}",
                 static_cast<unsigned long>(updated.generation));
   server->send(200, "application/json", dictionaryUpload.filePath);

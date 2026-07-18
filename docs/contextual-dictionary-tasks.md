@@ -374,6 +374,22 @@ These host and simulator checks do not claim ESP32 heap, largest-block, stack or
 physical one-reader behavior; those measurements remain the C35-C36 hardware
 gates.
 
+## C35-C36 qualification preparation
+
+[`contextual-dictionary-hardware-qualification.md`](contextual-dictionary-hardware-qualification.md)
+defines the X3/X4 production lookup matrix and 100-cycle endurance sequence.
+Lookup, definition, status and attachment logs now expose the existing bounded
+I/O counters together with free heap, largest block and the ESP-IDF stack
+high-water mark in bytes. The companion `qualify_contextual_dictionary_log.py`
+parser rejects incomplete cycles, dictionary/DIN errors, low stack margin,
+non-monotonic generations and warm heap/largest-block decline; focused tests
+cover passing and failing captures.
+
+The additional metrics retain no allocation or global counter: I/O counters
+remain inside the existing heap-owned session and the stack value is sampled
+directly from the current FreeRTOS task. C35 and C36 remain Planned until real
+X3 and X4 logs satisfy the documented gates.
+
 ## Immediate next work
 
 1. Complete C35 production-novel measurements on X3/X4.

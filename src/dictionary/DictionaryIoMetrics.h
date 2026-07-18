@@ -3,7 +3,21 @@
 #include <cstddef>
 #include <cstdint>
 
+#if defined(ARDUINO) && !defined(SIMULATOR)
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#endif
+
 namespace dictionary::io_metrics {
+
+inline uint32_t currentTaskStackHighWaterBytes() {
+#if defined(ARDUINO) && !defined(SIMULATOR)
+  // ESP-IDF reports this value in bytes, unlike standard FreeRTOS ports.
+  return static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr));
+#else
+  return 0;
+#endif
+}
 
 // Per-session counters for locating SD access amplification. They are retained
 // inside the heap-owned lookup session, so instrumentation adds no static DRAM.

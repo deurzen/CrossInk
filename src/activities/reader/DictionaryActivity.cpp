@@ -95,6 +95,9 @@ void DictionaryActivity::onExit() {
   pager_.reset();
   shortlist_.reset();
   session_.reset();
+  LOG_INF("DICT", "Activity resources released: total=%lu ms free=%u maxAlloc=%u stackHwm=%lu",
+          millis() - lookupStartedAt_, ESP.getFreeHeap(), ESP.getMaxAllocHeap(),
+          static_cast<unsigned long>(dictionary::io_metrics::currentTaskStackHighWaterBytes()));
   Activity::onExit();
 }
 
@@ -225,11 +228,11 @@ bool DictionaryActivity::openDefinition() {
   const auto io = dictionary::io_metrics::difference(session_->sourceIoMetrics(), ioBefore);
   LOG_INF("DICT",
           "Definition prepared: %lu ms opens=%lu switches=%lu seeks=%lu reads=%lu bytes=%llu free=%u "
-          "maxAlloc=%u",
+          "maxAlloc=%u stackHwm=%lu",
           millis() - startedAt, static_cast<unsigned long>(io.openAttempts),
           static_cast<unsigned long>(io.sourceSwitches), static_cast<unsigned long>(io.seekAttempts),
           static_cast<unsigned long>(io.readCalls), static_cast<unsigned long long>(io.bytesRead), ESP.getFreeHeap(),
-          ESP.getMaxAllocHeap());
+          ESP.getMaxAllocHeap(), static_cast<unsigned long>(dictionary::io_metrics::currentTaskStackHighWaterBytes()));
   return loaded;
 }
 
@@ -412,6 +415,10 @@ void DictionaryActivity::saveSelectedStatus() {
     requestUpdate();
     return;
   }
+  LOG_INF("DICT", "Status saved: value=%u generation=%lu free=%u maxAlloc=%u stackHwm=%lu",
+          static_cast<unsigned>(statusSelection_), static_cast<unsigned long>(session_->stateGeneration()),
+          ESP.getFreeHeap(), ESP.getMaxAllocHeap(),
+          static_cast<unsigned long>(dictionary::io_metrics::currentTaskStackHighWaterBytes()));
   statusSaved_ = true;
   mode_ = Mode::Definition;
   requestUpdate();
