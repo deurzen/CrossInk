@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "language": "de",
+  "cases": [
+    {
+      "id": "sentence-initial-verb-laden",
+      "category": "sentence-initial-verb",
+      "sentence": "Laden wir zuerst die schweren Kisten ein.",
+      "target": {"surface": "Laden", "occurrence": 0, "lemma": "laden", "pos": "verb"}
+    },
+    {
+      "id": "homograph-laden-noun",
+      "category": "noun-verb-homograph",
+      "sentence": "Der Laden schließt erst am Abend.",
+      "target": {"surface": "Laden", "occurrence": 0, "lemma": "Laden", "pos": "noun"}
+    },
+    {
+      "id": "homograph-laden-verb",
+      "category": "noun-verb-homograph",
+      "sentence": "Wir laden die Kisten in den Wagen.",
+      "target": {"surface": "laden", "occurrence": 0, "lemma": "laden", "pos": "verb"}
+    },
+    {
+      "id": "imperative-liebe",
+      "category": "sentence-initial-verb",
+      "sentence": "Liebe deinen Nächsten wie dich selbst.",
+      "target": {"surface": "Liebe", "occurrence": 0, "lemma": "lieben", "pos": "verb"}
+    },
+    {
+      "id": "homograph-liebe-noun",
+      "category": "noun-verb-homograph",
+      "sentence": "Die Liebe bleibt ein Rätsel.",
+      "target": {"surface": "Liebe", "occurrence": 0, "lemma": "Liebe", "pos": "noun"}
+    },
+    {
+      "id": "verbal-participle-geschrieben",
+      "category": "participle",
+      "sentence": "Sie hat den Brief geschrieben.",
+      "target": {"surface": "geschrieben", "occurrence": 0, "lemma": "schreiben", "pos": "verb"}
+    },
+    {
+      "id": "adjectival-participle-geschriebene",
+      "category": "participle",
+      "sentence": "Der geschriebene Brief lag auf dem Tisch.",
+      "target": {"surface": "geschriebene", "occurrence": 0, "lemma": "geschrieben", "pos": "adjective"}
+    },
+    {
+      "id": "finite-separable-aufstehen",
+      "category": "separable-verb",
+      "sentence": "Er steht jeden Morgen früh auf.",
+      "target": {
+        "surface": "steht",
+        "occurrence": 0,
+        "lemma": "aufstehen",
+        "pos": "verb",
+        "linkedSurface": "auf"
+      }
+    },
+    {
+      "id": "infinitive-separable-aufstehen",
+      "category": "separable-verb",
+      "sentence": "Sie möchte morgen früh aufstehen.",
+      "target": {"surface": "aufstehen", "occurrence": 0, "lemma": "aufstehen", "pos": "verb"}
+    },
+    {
+      "id": "nominalized-infinitive-lesen",
+      "category": "nominalization",
+      "sentence": "Das Lesen fällt ihm leicht.",
+      "target": {"surface": "Lesen", "occurrence": 0, "lemma": "Lesen", "pos": "noun"}
+    },
+    {
+      "id": "compound-altbauten",
+      "category": "compound",
+      "sentence": "Viele Altbauten wurden renoviert.",
+      "target": {"surface": "Altbauten", "occurrence": 0, "lemma": "Altbau", "pos": "noun"}
+    },
+    {
+      "id": "compound-lebensversicherung",
+      "category": "compound",
+      "sentence": "Die Lebensversicherung wurde gekündigt.",
+      "target": {
+        "surface": "Lebensversicherung",
+        "occurrence": 0,
+        "lemma": "Lebensversicherung",
+        "pos": "noun"
+      }
+    },
+    {
+      "id": "proper-name-goethe",
+      "category": "proper-name",
+      "sentence": "Goethe lebte lange in Weimar.",
+      "target": {"surface": "Goethe", "occurrence": 0, "lemma": "Goethe", "pos": "proper-noun"}
+    },
+    {
+      "id": "archaic-verb-hub",
+      "category": "archaic-form",
+      "sentence": "Er hub langsam die Hand.",
+      "target": {"surface": "hub", "occurrence": 0, "lemma": "heben", "pos": "verb"}
+    },
+    {
+      "id": "morgen-adverb",
+      "category": "noun-adverb-homograph",
+      "sentence": "Morgen laden wir die Kisten.",
+      "target": {"surface": "Morgen", "occurrence": 0, "lemma": "morgen", "pos": "adverb"}
+    },
+    {
+      "id": "morgen-noun",
+      "category": "noun-adverb-homograph",
+      "sentence": "Der Morgen war ungewöhnlich kalt.",
+      "target": {"surface": "Morgen", "occurrence": 0, "lemma": "Morgen", "pos": "noun"}
+    }
+  ]
+}

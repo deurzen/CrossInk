@@ -36,6 +36,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.AmbiguityCorpus
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_ambiguity_corpus.py
+)
+
+add_test(
   NAME ContextualDictionary.Formats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_contextual_formats.py
 )

@@ -152,9 +152,11 @@ hashes are pinned in the canonical manifest.
 The Open Edition uses the comprehensive DWDSmor grammar with a sample lexicon,
 so its inflection behavior is suitable but open-class lexical coverage is lower
 than the unavailable private DWDS Edition. Contextual inference cannot recover
-a candidate absent from morphology. C09/C10 therefore measure coverage as well
-as disambiguation, and a later bounded fallback may contribute candidates from
-the retained definition lexicons without changing the on-device architecture.
+a candidate absent from morphology. The measured C09 baseline in
+[`contextual-german-baseline.md`](contextual-german-baseline.md) therefore
+requires an offline fallback from the retained Wiktionary/de-DE form inventory.
+The same contextual policy ranks that candidate union, so this adds no device
+model, search, or runtime allocation.
 
 ### Contextual selector
 

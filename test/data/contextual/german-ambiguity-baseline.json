@@ -1,0 +1,444 @@
+{
+  "cases": [
+    {
+      "category": "sentence-initial-verb",
+      "context": {
+        "lemma": "Laden",
+        "pos": "verb"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "laden",
+        "pos": "verb"
+      },
+      "fused": [
+        {
+          "lemma": "laden",
+          "pos": "verb"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "sentence-initial-verb-laden",
+      "morphology": [
+        {
+          "lemma": "Laden",
+          "pos": "noun"
+        },
+        {
+          "lemma": "laden",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "noun-verb-homograph",
+      "context": {
+        "lemma": "Laden",
+        "pos": "noun"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "Laden",
+        "pos": "noun"
+      },
+      "fused": [
+        {
+          "lemma": "Laden",
+          "pos": "noun"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "homograph-laden-noun",
+      "morphology": [
+        {
+          "lemma": "Laden",
+          "pos": "noun"
+        },
+        {
+          "lemma": "laden",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "noun-verb-homograph",
+      "context": {
+        "lemma": "laden",
+        "pos": "verb"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "laden",
+        "pos": "verb"
+      },
+      "fused": [
+        {
+          "lemma": "laden",
+          "pos": "verb"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "homograph-laden-verb",
+      "morphology": [
+        {
+          "lemma": "laden",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "sentence-initial-verb",
+      "context": {
+        "lemma": "lieb",
+        "pos": "noun"
+      },
+      "contextCorrect": false,
+      "expected": {
+        "lemma": "lieben",
+        "pos": "verb"
+      },
+      "fused": [
+        {
+          "lemma": "Liebe",
+          "pos": "noun"
+        }
+      ],
+      "fusedPrimaryCorrect": false,
+      "id": "imperative-liebe",
+      "morphology": [
+        {
+          "lemma": "lieb",
+          "pos": "adjective"
+        },
+        {
+          "lemma": "Liebe",
+          "pos": "noun"
+        },
+        {
+          "lemma": "lieben",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "noun-verb-homograph",
+      "context": {
+        "lemma": "Liebe",
+        "pos": "noun"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "Liebe",
+        "pos": "noun"
+      },
+      "fused": [
+        {
+          "lemma": "Liebe",
+          "pos": "noun"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "homograph-liebe-noun",
+      "morphology": [
+        {
+          "lemma": "lieb",
+          "pos": "adjective"
+        },
+        {
+          "lemma": "Liebe",
+          "pos": "noun"
+        },
+        {
+          "lemma": "lieben",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "participle",
+      "context": {
+        "lemma": "schreiben",
+        "pos": "verb"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "schreiben",
+        "pos": "verb"
+      },
+      "fused": [],
+      "fusedPrimaryCorrect": false,
+      "id": "verbal-participle-geschrieben",
+      "morphology": [],
+      "morphologyCovered": false
+    },
+    {
+      "category": "participle",
+      "context": {
+        "lemma": "geschrieben",
+        "pos": "adjective"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "geschrieben",
+        "pos": "adjective"
+      },
+      "fused": [],
+      "fusedPrimaryCorrect": false,
+      "id": "adjectival-participle-geschriebene",
+      "morphology": [],
+      "morphologyCovered": false
+    },
+    {
+      "category": "separable-verb",
+      "context": {
+        "lemma": "stehen",
+        "pos": "verb"
+      },
+      "contextCorrect": false,
+      "expected": {
+        "lemma": "aufstehen",
+        "pos": "verb"
+      },
+      "fused": [
+        {
+          "lemma": "stehen",
+          "pos": "verb"
+        }
+      ],
+      "fusedPrimaryCorrect": false,
+      "id": "finite-separable-aufstehen",
+      "morphology": [
+        {
+          "lemma": "stehen",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": false
+    },
+    {
+      "category": "separable-verb",
+      "context": {
+        "lemma": "aufstehen",
+        "pos": "verb"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "aufstehen",
+        "pos": "verb"
+      },
+      "fused": [
+        {
+          "lemma": "aufstehen",
+          "pos": "verb"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "infinitive-separable-aufstehen",
+      "morphology": [
+        {
+          "lemma": "aufstehen",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "nominalization",
+      "context": {
+        "lemma": "Lesen",
+        "pos": "noun"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "Lesen",
+        "pos": "noun"
+      },
+      "fused": [
+        {
+          "lemma": "Lesen",
+          "pos": "noun"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "nominalized-infinitive-lesen",
+      "morphology": [
+        {
+          "lemma": "Lesen",
+          "pos": "noun"
+        },
+        {
+          "lemma": "lesen",
+          "pos": "verb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "compound",
+      "context": {
+        "lemma": "Altbau",
+        "pos": "noun"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "Altbau",
+        "pos": "noun"
+      },
+      "fused": [
+        {
+          "lemma": "Altbau",
+          "pos": "noun"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "compound-altbauten",
+      "morphology": [
+        {
+          "lemma": "Altbau",
+          "pos": "noun"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "compound",
+      "context": {
+        "lemma": "Lebensversicherung",
+        "pos": "noun"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "Lebensversicherung",
+        "pos": "noun"
+      },
+      "fused": [
+        {
+          "lemma": "Lebensversicherung",
+          "pos": "noun"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "compound-lebensversicherung",
+      "morphology": [
+        {
+          "lemma": "Lebensversicherung",
+          "pos": "noun"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "proper-name",
+      "context": {
+        "lemma": "goethe",
+        "pos": "proper-noun"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "Goethe",
+        "pos": "proper-noun"
+      },
+      "fused": [],
+      "fusedPrimaryCorrect": false,
+      "id": "proper-name-goethe",
+      "morphology": [],
+      "morphologyCovered": false
+    },
+    {
+      "category": "archaic-form",
+      "context": {
+        "lemma": "hub",
+        "pos": "other"
+      },
+      "contextCorrect": false,
+      "expected": {
+        "lemma": "heben",
+        "pos": "verb"
+      },
+      "fused": [],
+      "fusedPrimaryCorrect": false,
+      "id": "archaic-verb-hub",
+      "morphology": [],
+      "morphologyCovered": false
+    },
+    {
+      "category": "noun-adverb-homograph",
+      "context": {
+        "lemma": "morgen",
+        "pos": "adverb"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "morgen",
+        "pos": "adverb"
+      },
+      "fused": [
+        {
+          "lemma": "morgen",
+          "pos": "adverb"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "morgen-adverb",
+      "morphology": [
+        {
+          "lemma": "Morgen",
+          "pos": "noun"
+        },
+        {
+          "lemma": "morgen",
+          "pos": "adverb"
+        }
+      ],
+      "morphologyCovered": true
+    },
+    {
+      "category": "noun-adverb-homograph",
+      "context": {
+        "lemma": "Morgen",
+        "pos": "noun"
+      },
+      "contextCorrect": true,
+      "expected": {
+        "lemma": "Morgen",
+        "pos": "noun"
+      },
+      "fused": [
+        {
+          "lemma": "Morgen",
+          "pos": "noun"
+        }
+      ],
+      "fusedPrimaryCorrect": true,
+      "id": "morgen-noun",
+      "morphology": [
+        {
+          "lemma": "Morgen",
+          "pos": "noun"
+        },
+        {
+          "lemma": "morgen",
+          "pos": "adverb"
+        }
+      ],
+      "morphologyCovered": true
+    }
+  ],
+  "providers": {
+    "dwdsmor": "0.18.0-open",
+    "spacy": "3.8.14",
+    "zdl": "de-zdl-lg-4.0.0"
+  },
+  "schemaVersion": 1,
+  "summary": {
+    "cases": 16,
+    "contextCorrect": 13,
+    "fusedPrimaryCorrect": 10,
+    "morphologyCovered": 11
+  }
+}
