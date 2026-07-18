@@ -138,7 +138,7 @@ divider slot before loading content so labels cannot clip the final line.
 | ID | Status | Work item | Completion gate |
 | --- | --- | --- | --- |
 | U00 | Done | Freeze [grammatical descriptor semantics and merge policy](contextual-grammar-descriptor-v1.md) | Bit layout, allowed values, conflict-to-unavailable behavior and examples are documented |
-| U01 | Planned | Specify contextual `language.bin` v5 | Header/version, 20-byte candidate header, record alignment, CRC coverage and strict rejection order are frozen |
+| U01 | Done | Specify [contextual `language.bin` v5](contextual-language-v5-format.md) | Header/version, 20-byte candidate header, record alignment, CRC coverage and strict rejection order are frozen |
 | U02 | Planned | Define translated presentation policy | POS/feature labels, ordering, omission rules, width fallback and UTF-8 truncation are specified |
 | U03 | Planned | Freeze definition-mode input behavior | All three modes, wrap/filter behavior, failure-state navigation and orientation-aware logical buttons have test cases |
 
@@ -147,6 +147,11 @@ It freezes a 17-bit payload inside a 32-bit word, strict structural validation,
 POS compatibility, and conservative within-shard/page conflict handling. This
 keeps grammatical display truthful when a surface has multiple occurrences or a
 separable lemma is recombined.
+
+U01 keeps the 108-byte artifact header and every identity contract stable while
+moving to version 5 and a 20-byte candidate header. The four-byte grammar word
+sits before local IDs, so every aligned candidate grows by exactly four bytes;
+v4 is rejected before payload or package access after cutover.
 
 ## Phase B — host grammatical pipeline
 
