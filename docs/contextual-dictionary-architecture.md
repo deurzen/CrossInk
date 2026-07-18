@@ -76,9 +76,12 @@ They are not uploaded to the reader. Runtime lexical files contain only enough
 data to review learning state and validate definition-source alignment.
 
 Canonical IDs are assigned deterministically by normalized `(lemma, coarse
-POS)` key. The manifest records source/model versions and SHA-256 hashes. A
-change that renumbers IDs creates a new canonical UUID and requires an explicit
-state migration map.
+POS)` key. C11 seeds the initial identity set from the verified 181,609 de-DE
+lexical records and embeds pinned DWDSmor/ZDL provenance without copying forms,
+definitions, or models. The reproducible build and current UUID are documented
+in [`canonical-lexicon-compiler.md`](canonical-lexicon-compiler.md). A change
+that renumbers IDs creates a new canonical UUID and requires an explicit state
+migration map.
 
 ### 2. Definition-source bundle (`.cpdef`)
 

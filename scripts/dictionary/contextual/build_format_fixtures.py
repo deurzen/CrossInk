@@ -176,7 +176,7 @@ def build_language(canonical_uuid: uuid.UUID) -> bytes:
     local_lemmas = struct.pack("<II", 0, 2)
     metadata_json = json.dumps(
         {
-            "analysisPolicyVersion": 1,
+            "analysisPolicyVersion": 2,
             "canonicalUuid": str(canonical_uuid),
             "compilerVersion": 1,
             "dwdsmor": {"edition": "fixture-open", "sha256": "0" * 64, "version": "fixture"},

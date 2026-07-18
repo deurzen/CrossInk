@@ -109,7 +109,7 @@ class ContextualFormatTest(unittest.TestCase):
         json_length = struct.unpack_from("<I", language, metadata_offset + 8)[0]
         metadata = json.loads(language[metadata_offset + 16 : metadata_offset + 16 + json_length])
         self.assertEqual(metadata["canonicalUuid"], str(uuid.UUID(bytes=canonical_uuid)))
-        self.assertEqual(metadata["analysisPolicyVersion"], 1)
+        self.assertEqual(metadata["analysisPolicyVersion"], 2)
 
     def test_checksum_manifest_covers_every_binary(self):
         manifest = json.loads((FIXTURES / "checksums.json").read_text(encoding="utf-8"))

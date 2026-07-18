@@ -57,6 +57,10 @@ python3.12 -m venv .venv-zdl
 
 The verifier rejects another Python minor, spaCy version, model version,
 pipeline component set, installed wheel file digest, or reference inference.
+Upstream code is GPL-3.0-or-later, but the wheel metadata leaves the model
+license blank and upstream notes separate training-dataset terms. The pinned
+manifest therefore records the model license as `NOASSERTION`; the wheel stays
+an external compiler asset and is not redistributed in `.cplex` bundles.
 The reference fixture is intentionally a reproducibility snapshot rather than
 the linguistic gold corpus planned in C09.
 

@@ -59,3 +59,8 @@ add_test(
   NAME ContextualDictionary.Formats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_contextual_formats.py
 )
+
+add_test(
+  NAME ContextualDictionary.CanonicalLexicon
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_canonical_lexicon.py
+)

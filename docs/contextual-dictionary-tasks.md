@@ -46,7 +46,7 @@ committed.
 | C08b | Done | Recombine finite separable verbs from sentence context | Particle + finite base can resolve lexical separable lemma without changing unrelated token offsets |
 | C09 | Done | Build contextual German ambiguity corpus | Gold cases cover sentence-initial verbs, noun/verb homographs, participles, separable verbs, nominalization, compounds and names; policy 2 measures 16/16 coverage and 14/16 primary accuracy |
 | C10 | Done | Benchmark static versus transformer ZDL models | Accuracy, wall time and peak host RAM measured on the same corpus; production selector chosen from evidence |
-| C11 | Planned | Build deterministic canonical lexicon and compiler bundle | Dense IDs stable across input order; canonical UUID/fingerprint and model provenance emitted |
+| C11 | Done | Build deterministic canonical lexicon and compiler bundle | Dense IDs stable across input order; canonical UUID/fingerprint and model provenance emitted |
 | C12 | Planned | Add full-EPUB host compiler using the contextual provider | Canonical OPF preserved; XHTML markers and `language.bin` transactional; two builds are byte-identical |
 | C13 | Done | Retire exact-case-first misranking in the legacy browser compiler | Exact and folded credible analyses are merged; regression tests prevent noun-only sentence-start errors |
 
@@ -132,6 +132,6 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Begin canonical lexicon C11.
-2. Carry both canonical POS version 1 and analysis policy version 2 into compiler metadata.
+1. Build the full-EPUB contextual host compiler in C12.
+2. Start the deterministic definition-source compiler in C14 against the C11 canonical UUID.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

@@ -255,7 +255,9 @@ json:utf8[jsonLength]
 Canonical JSON uses sorted keys and no insignificant whitespace. Required keys
 are canonical UUID, DWDSmor edition/version/SHA-256, ZDL model/version/SHA-256,
 spaCy version, tokenizer version, analysis policy version, compiler version,
-frequency provider/version, and shard token count. Firmware may ignore JSON
+frequency provider/version, and shard token count. The current v4 compiler
+records canonical POS layout version 1 and analysis policy version 2; these are
+separate because C08b changed ranking without renumbering POS classes. Firmware may ignore JSON
 content after bounds/UTF-8 validation; the fixed header UUID controls runtime
 compatibility.
 

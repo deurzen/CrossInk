@@ -47,6 +47,8 @@ class ZdlModelPinTest(unittest.TestCase):
         self.assertIn(f"{model['url']}#sha256={digest}", lock)
         self.assertIn(f"spacy=={self.manifest['spacyVersion']}", lock)
         self.assertIn("click==8.3.1", lock)
+        self.assertEqual(self.manifest["license"]["codeSpdx"], "GPL-3.0-or-later")
+        self.assertEqual(self.manifest["license"]["modelSpdx"], "NOASSERTION")
 
     def test_reference_offsets_select_token_text(self):
         for sentence in self.fixture["sentences"]:
