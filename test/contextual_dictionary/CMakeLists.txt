@@ -11,6 +11,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.DwdsmorAdapter
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_dwdsmor_adapter.py
+)
+
+add_test(
   NAME ContextualDictionary.AnalysisPolicy
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_analysis_policy.py
 )
