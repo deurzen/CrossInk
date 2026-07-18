@@ -99,6 +99,14 @@ scripts/build_definition_source.py source.json output.cpdef \
 ```
 
 See [`docs/definition-source-compiler.md`](../../../docs/definition-source-compiler.md).
+The retained German Wiktionary source has a direct verified importer:
+
+```sh
+scripts/build_de_de_definition_source.py \
+  --dictionary tmp.local/german-wiktionary.cpdict \
+  --canonical tmp.local/german-canonical.cplex \
+  --output tmp.local/german-wiktionary.cpdef
+```
 
 ## Transformer benchmark environment
 

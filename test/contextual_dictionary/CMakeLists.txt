@@ -74,3 +74,8 @@ add_test(
   NAME ContextualDictionary.DefinitionSource
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_definition_source.py
 )
+
+add_test(
+  NAME ContextualDictionary.DeDeDefinitions
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_de_de_definitions.py
+)

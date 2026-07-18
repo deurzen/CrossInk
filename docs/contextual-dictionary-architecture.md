@@ -105,7 +105,7 @@ The initial editions are:
 
 | Source | Direction | Role |
 | --- | --- | --- |
-| Current German Wiktionary extraction | de→de | Native-language definitions and examples |
+| Current German Wiktionary extraction | de→de | Native-language definitions and examples; C15 aligns all 181,609 canonical records ([report](de-de-definition-source.md)) |
 | dict.cc private export | de→en | Concise, practical and colloquial translations |
 | Kaikki English-Wiktionary German extraction | de→en | Structured senses, qualifiers and explanatory glosses |
 
