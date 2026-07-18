@@ -64,7 +64,7 @@ committed.
 
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
-| C19 | Planned | Implement allocation-free canonical and definition-source header/index readers | Host fixtures reject truncation, overflow, bad CRC, UUID and count mismatches before seeking |
+| C19 | Done | Implement allocation-free canonical and definition-source header/index readers | Host fixtures reject truncation, overflow, bad CRC, UUID and count mismatches before seeking |
 | C20 | Planned | Extend transactional installer for `.cplex` and `.cpdef` runtime files | Interrupted install/replace/remove recovers previous package; one-reader hardware rule preserved |
 | C21 | Planned | Add atomic attachment record for at most three sources | Order persists; duplicate/mismatched/missing UUIDs rejected or skipped; interrupted write retains old record |
 | C22 | Planned | Extend inventory APIs with canonical/source compatibility | Bounded JSON output reports labels, direction, coverage and attachment order |
@@ -130,8 +130,18 @@ new compiled EPUB and recoverable source installation.
 | Ordinary page-turn dictionary I/O | 0 |
 | State writes during ordinary page turns | 0 |
 
+## C19 implementation note
+
+`lib/Dictionary/ContextualRuntimeFormat.*` parses canonical and definition-source
+metadata through non-owning `RandomAccessSource` callbacks. Opening uses fixed
+112-byte or 144-byte stack headers; runtime lookups use 16-byte and 8-byte
+record scratch respectively. Full CRC and ordered-index validation reuse a
+caller-owned bounded buffer, so the reader classes allocate no heap and retain
+no `HalFile`. The C20 storage adapter remains responsible for opening only one
+SD file at a time.
+
 ## Immediate next work
 
-1. Begin allocation-free canonical/source readers in C19.
-2. Extend transactional installation for canonical and definition-source files in C20.
+1. Extend transactional installation for canonical and definition-source files in C20.
+2. Add the atomic three-source attachment record in C21.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
