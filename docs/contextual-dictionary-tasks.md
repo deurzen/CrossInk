@@ -2,8 +2,10 @@
 
 This board tracks the implementation of
 [`contextual-dictionary-architecture.md`](contextual-dictionary-architecture.md).
-It tracks the only supported dictionary architecture: contextual v4 EPUB
-artifacts, canonical lexicons, and independent definition sources.
+It tracks the current contextual v4 architecture: contextual EPUB artifacts,
+canonical lexicons, and independent definition sources. The planned v5 grammar
+and dictionary-navigation cutover is tracked separately in
+[`contextual-dictionary-ux-v5-tasks.md`](contextual-dictionary-ux-v5-tasks.md).
 
 A unit moves to **Done** only when its focused tests pass and its commit remains
 independently buildable. Generated private dictionary/model artifacts are not
@@ -392,6 +394,7 @@ X3 and X4 logs satisfy the documented gates.
 
 ## Immediate next work
 
-1. Complete C35 production-novel measurements on X3/X4.
-2. Run the C36 100-cycle hardware endurance sequence.
+1. Execute U00-U19 from the v5 UX task board.
+2. Close C35-C36 with the final v5 firmware rather than measuring an intermediate UI twice.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
+4. Consider optimization only from the resulting physical-device measurements.
