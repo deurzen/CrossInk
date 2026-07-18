@@ -31,7 +31,7 @@ committed.
 | C00 | Done | Specify the contextual canonical-lexicon and multi-source architecture | Architecture documents artifacts, provider boundaries, RAM budget, failure behavior and acceptance criteria |
 | C01 | Blocked on private access | Obtain and fingerprint the complete DWDSmor DWDS-edition analyzer | Provenance and terms recorded locally; automaton version/SHA-256 reproducible; sample analyses run |
 | C02 | Done | Pin the ZDL static German spaCy model and compiler environment | Locked Python/model versions and hashes; clean environment reproduces reference inference |
-| C03 | Planned | Define canonical POS/features mapping and scoring policy | Versioned DWDSmor/ZDL→canonical mapping; unsupported tags and low-confidence behavior documented |
+| C03 | Done | Define canonical POS/features mapping and scoring policy | Versioned DWDSmor/ZDL→canonical mapping; unsupported tags and low-confidence behavior documented |
 | C04 | Planned | Specify canonical, definition-source, attachment and next `language.bin` formats | Endianness, CRCs, caps, UUID/fingerprint rules and corruption fixtures documented before readers are written |
 
 ## Phase B — host linguistic pipeline
