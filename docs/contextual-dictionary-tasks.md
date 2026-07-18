@@ -66,7 +66,7 @@ committed.
 | --- | --- | --- | --- |
 | C19 | Done | Implement allocation-free canonical and definition-source header/index readers | Host fixtures reject truncation, overflow, bad CRC, UUID and count mismatches before seeking |
 | C20 | Done | Extend transactional installer for `.cplex` and `.cpdef` runtime files | Interrupted install/replace/remove recovers previous package; one-reader hardware rule preserved |
-| C21 | Planned | Add atomic attachment record for at most three sources | Order persists; duplicate/mismatched/missing UUIDs rejected or skipped; interrupted write retains old record |
+| C21 | Done | Add atomic attachment record for at most three sources | Order persists; duplicate/mismatched/missing UUIDs rejected or skipped; interrupted write retains old record |
 | C22 | Planned | Extend inventory APIs with canonical/source compatibility | Bounded JSON output reports labels, direction, coverage and attachment order |
 | C23 | Planned | Add WebUI installation and source-order controls | Compiler models stay on desktop; only runtime files upload; source reorder requires no EPUB recompile |
 
@@ -156,8 +156,23 @@ operation, and verify that only the old or new complete package is visible,
 with no `.backup-*` restoration after removal and no `DIN` open failures in the
 serial log.
 
+## C21 implementation note
+
+`ContextualAttachments.*` parses and emits the fixed 88-byte `CXAT` record and
+updates it with optimistic generation checks. The store syncs
+`attachments.tmp`, hides the previous record as `attachments.bak`, and commits
+with a final rename; recovery prefers a valid committed final record and
+otherwise restores the valid backup. A bounded compatibility callback rejects
+uninstalled or wrong-canonical sources before writing. The HAL adapter uses one
+local `HalFile` at a time and explicitly closes it before rename/remove calls.
+
+On hardware after C23, reorder three installed sources, reboot and confirm the
+order and generation persist. Then cut power once after temp sync and once
+during replacement; reboot must expose either the complete previous order or
+the complete new order, never duplicate UUIDs or a partial record.
+
 ## Immediate next work
 
-1. Add the atomic three-source attachment record in C21.
-2. Extend inventory APIs with canonical/source compatibility in C22.
+1. Extend inventory APIs with canonical/source compatibility in C22.
+2. Add WebUI installation and source-order controls in C23.
 3. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.
