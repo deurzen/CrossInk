@@ -139,7 +139,7 @@ divider slot before loading content so labels cannot clip the final line.
 | --- | --- | --- | --- |
 | U00 | Done | Freeze [grammatical descriptor semantics and merge policy](contextual-grammar-descriptor-v1.md) | Bit layout, allowed values, conflict-to-unavailable behavior and examples are documented |
 | U01 | Done | Specify [contextual `language.bin` v5](contextual-language-v5-format.md) | Header/version, 20-byte candidate header, record alignment, CRC coverage and strict rejection order are frozen |
-| U02 | Planned | Define translated presentation policy | POS/feature labels, ordering, omission rules, width fallback and UTF-8 truncation are specified |
+| U02 | Done | Define [translated grammar presentation policy](contextual-grammar-presentation.md) | POS/feature labels, ordering, omission rules, width fallback and UTF-8 truncation are specified |
 | U03 | Planned | Freeze definition-mode input behavior | All three modes, wrap/filter behavior, failure-state navigation and orientation-aware logical buttons have test cases |
 
 U00 deliberately uses contextual ZDL features rather than form-only morphology.
@@ -152,6 +152,11 @@ U01 keeps the 108-byte artifact header and every identity contract stable while
 moving to version 5 and a 20-byte candidate header. The four-byte grammar word
 sits before local IDs, so every aligned candidate grows by exactly four bytes;
 v4 is rejected before payload or package access after cutover.
+
+U02 freezes POS-aware field order, full English/German terminology,
+person+number translation units, fixed-buffer width fallback and 22-pixel
+labeled alternative dividers. Formatting is performed before rendering with no
+dynamic string or render-time SD I/O.
 
 ## Phase B — host grammatical pipeline
 
