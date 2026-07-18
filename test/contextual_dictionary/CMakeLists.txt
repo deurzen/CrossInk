@@ -31,6 +31,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.Fusion
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_fusion.py
+)
+
+add_test(
   NAME ContextualDictionary.Formats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_contextual_formats.py
 )

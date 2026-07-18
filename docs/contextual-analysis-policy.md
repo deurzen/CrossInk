@@ -75,10 +75,16 @@ bad lemma while still supplying useful POS evidence; for example, pinned ZDL
 DWDSmor remains the authority for valid candidates, so contextual output only
 ranks its analyses.
 
-C08 will sort by score and deterministic canonical key, retain the top analysis,
-and retain at most seven alternatives within 180 points of it. Ties are not
-resolved by source lexeme ID. No score causes a valid morphology candidate to
-be destructively deleted before the bounded-alternative policy runs.
+C08 sorts by score and deterministic canonical key, collapses inflection
+variants by `(lemma, POS)` using their best feature evidence, retains the top
+analysis, and retains at most seven alternatives within 180 points of it. Ties
+are not resolved by source lexeme ID. No score causes a valid morphology
+candidate to be destructively deleted before the bounded-alternative policy
+runs.
+
+For `language.bin`, raw scores are clamped to `[-1000, 1250]` and linearly
+rounded to confidence `0..1000`. Raw scores remain in host pipeline records;
+normalization is an encoding concern and does not change ordering.
 
 ## Versioning
 
