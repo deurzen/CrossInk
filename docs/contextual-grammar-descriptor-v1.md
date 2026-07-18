@@ -205,9 +205,9 @@ mood=1, number=1, person=3, tense=2, verbForm=1
 = 0x0000DA80
 ```
 
-Checked-in encoder/decoder vectors in U04 must include every valid field value,
-all reserved encodings, structural contradictions, zero, the examples above,
-and merge-order permutations.
+Checked-in encoder/decoder vectors in U04 include every valid field value, all
+reserved encodings, structural contradictions, zero and the examples above. U05
+adds merge-order permutations when aggregation is implemented.
 
 ## Diagnostics and versioning
 

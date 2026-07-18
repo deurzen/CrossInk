@@ -36,6 +36,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.GrammarDescriptor
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_grammar_descriptor.py
+)
+
+add_test(
   NAME ContextualDictionary.AnalyzerPipeline
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_analyzer_pipeline.py
 )
