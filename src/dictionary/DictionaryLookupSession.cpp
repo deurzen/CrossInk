@@ -2,11 +2,13 @@
 
 #include <Crc32.h>
 #include <HalStorage.h>
+#include <Logging.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 
+#include "AttachmentStorage.h"
 #include "LanguageStateStorage.h"
 
 namespace dictionary::lookup {
@@ -24,6 +26,10 @@ uint32_t readU32(const uint8_t* data) {
 bool appendPath(char* output, const size_t capacity, const char* directory, const char* leaf) {
   const int written = std::snprintf(output, capacity, "%s/%s", directory, leaf);
   return written > 0 && static_cast<size_t>(written) < capacity;
+}
+
+void formatUuid(const uint8_t* uuid, char (&output)[33]) {
+  for (size_t index = 0; index < 16; ++index) std::snprintf(output + index * 2, 3, "%02x", uuid[index]);
 }
 
 }  // namespace
@@ -100,6 +106,68 @@ bool Session::openCanonicalRuntime(const char* directory, SessionError& error) {
   return true;
 }
 
+bool Session::loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[16],
+                                     contextual::DefinitionMetadata& output) {
+  auto& session = *static_cast<Session*>(context);
+  auto& sources = session.definitionSources_;
+  sources.reader = {};
+  char uuidHex[33]{};
+  formatUuid(sourceUuid, uuidHex);
+  char path[kMaxLookupPath]{};
+  const auto initialize = [&](SourceContext& source, const char* leaf, const uint8_t token) {
+    const int written = std::snprintf(path, sizeof(path), "%s/%s/%s", DEFINITION_SOURCE_ROOT_PATH, uuidHex, leaf);
+    return written > 0 && static_cast<size_t>(written) < sizeof(path) && session.initializeSource(source, path, token);
+  };
+  if (!initialize(sources.metaSource, "meta.bin", 5) || !initialize(sources.indexSource, "entry-index.bin", 6) ||
+      !initialize(sources.entriesSource, "entries.bin", 7)) {
+    session.sourceReader_.close();
+    return false;
+  }
+
+  const RandomAccessSource meta{&sources.metaSource, sources.metaSource.size, readAt};
+  const RandomAccessSource index{&sources.indexSource, sources.indexSource.size, readAt};
+  const RandomAccessSource entries{&sources.entriesSource, sources.entriesSource.size, readAt};
+  contextual::RuntimeFormatError formatError;
+  if (!sources.reader.open(meta, index, entries, session.identityUuid_, session.runtimeLexemeCount_, formatError)) {
+    session.sourceReader_.close();
+    return false;
+  }
+  output = sources.reader.metadata();
+  return true;
+}
+
+void Session::discoverDefinitionSources(const char* canonicalDirectory) {
+  definitionSources_ = {};
+  definitionSources_.status = SourceDiscoveryStatus::ATTACHMENTS_INVALID;
+  // Attachment recovery uses short-lived HalFile instances. Release the shared
+  // package reader first so real SD hardware never has two readers open.
+  sourceReader_.close();
+  contextual::AttachmentError attachmentError;
+  const auto& canonicalUuid = *reinterpret_cast<const uint8_t (*)[16]>(identityUuid_);
+  if (!definitionSources_.attachments.open(attachment_storage::backend(), canonicalDirectory, canonicalUuid,
+                                           attachmentError)) {
+    LOG_ERR("DICT", "Failed to open contextual attachments: %s", contextual::attachmentErrorName(attachmentError));
+    return;
+  }
+  contextual::AttachmentRecord attachments;
+  if (!definitionSources_.attachments.load(attachments, attachmentError)) {
+    LOG_ERR("DICT", "Failed to load contextual attachments: %s", contextual::attachmentErrorName(attachmentError));
+    return;
+  }
+
+  contextual::SourceCatalogError catalogError;
+  if (!contextual::buildDefinitionSourceCatalog(attachments, canonicalUuid, runtimeLexemeCount_, loadDefinitionMetadata,
+                                                this, definitionSources_.catalog, catalogError)) {
+    LOG_ERR("DICT", "Failed to build definition catalog: %s", contextual::sourceCatalogErrorName(catalogError));
+    sourceReader_.close();
+    return;
+  }
+  sourceReader_.close();
+  definitionSources_.reader = {};
+  definitionSources_.status =
+      definitionSources_.catalog.skippedCount == 0 ? SourceDiscoveryStatus::READY : SourceDiscoveryStatus::PARTIAL;
+}
+
 bool Session::openReaders(const char* languageArtifactPath, const char* bookCachePath,
                           const std::array<uint8_t, 16>& expectedIdentityUuid, SessionError& error) {
   readersOpen_ = false;
@@ -107,6 +175,7 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
   runtimeLexemeCount_ = 0;
   package_ = {};
   canonical_ = {};
+  definitionSources_ = {};
   contextualIdentity_ = false;
   sourceReader_.close();
   sourceIoMetrics_.reset();
@@ -140,9 +209,7 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
   }
 
   char uuidHex[33]{};
-  for (size_t index = 0; index < sizeof(identityUuid_); ++index) {
-    std::snprintf(uuidHex + index * 2, 3, "%02x", identityUuid_[index]);
-  }
+  formatUuid(identityUuid_, uuidHex);
   char directory[kMaxLookupPath]{};
   char path[kMaxLookupPath]{};
   contextualIdentity_ = book_.header().usesCanonicalIdentity();
@@ -153,6 +220,7 @@ bool Session::openReaders(const char* languageArtifactPath, const char* bookCach
   }
   if (contextualIdentity_) {
     if (!openCanonicalRuntime(directory, error)) return false;
+    discoverDefinitionSources(directory);
     readersOpen_ = true;
     return true;
   }

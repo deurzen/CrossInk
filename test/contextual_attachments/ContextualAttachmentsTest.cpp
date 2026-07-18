@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "ContextualAttachments.h"
+#include "ContextualSourceCatalog.h"
 #include "Crc32.h"
 
 namespace {
@@ -18,6 +19,7 @@ using dictionary::contextual::AttachmentStore;
 constexpr uint8_t CANONICAL_UUID[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 constexpr uint8_t SOURCE_A[16] = {2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 constexpr uint8_t SOURCE_B[16] = {3, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+constexpr uint8_t SOURCE_C[16] = {4, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 constexpr char DIRECTORY[] = "/.crosspoint/lexicons/fixture";
 constexpr char FINAL[] = "/.crosspoint/lexicons/fixture/attachments.bin";
 constexpr char TEMP[] = "/.crosspoint/lexicons/fixture/attachments.tmp";
@@ -88,6 +90,25 @@ bool compatible(void* context, const uint8_t (&sourceUuid)[16], const uint8_t (&
   if (std::memcmp(sourceUuid, SOURCE_A, 16) == 0) return compatibility.allowA;
   if (std::memcmp(sourceUuid, SOURCE_B, 16) == 0) return compatibility.allowB;
   return false;
+}
+
+struct MetadataLoaderFixture {
+  uint8_t unavailableUuid[16]{};
+  uint8_t incompatibleUuid[16]{};
+  uint8_t loadedUuids[3][16]{};
+  uint8_t loadCount = 0;
+};
+
+bool loadMetadata(void* context, const uint8_t (&sourceUuid)[16], dictionary::contextual::DefinitionMetadata& output) {
+  auto& fixture = *static_cast<MetadataLoaderFixture*>(context);
+  std::memcpy(fixture.loadedUuids[fixture.loadCount++], sourceUuid, 16);
+  if (std::memcmp(sourceUuid, fixture.unavailableUuid, 16) == 0) return false;
+  output = {};
+  std::memcpy(output.sourceUuid, sourceUuid, 16);
+  std::memcpy(output.canonicalUuid, CANONICAL_UUID, 16);
+  if (std::memcmp(sourceUuid, fixture.incompatibleUuid, 16) == 0) output.canonicalUuid[0] ^= 1U;
+  output.canonicalLexemeCount = 42;
+  return true;
 }
 
 std::vector<uint8_t> encodedRecord(const uint32_t generation, const uint8_t sourceCount, const uint8_t* sources) {
@@ -188,6 +209,69 @@ TEST(ContextualAttachmentStore, FailedReplacementRestoresPreviousRecord) {
   EXPECT_EQ(output.generation, 1U);
   EXPECT_EQ(std::memcmp(output.sourceUuids[0], SOURCE_A, 16), 0);
   EXPECT_FALSE(storage.files.contains(BACKUP));
+}
+
+TEST(ContextualSourceCatalog, RetainsValidMetadataInAttachmentOrderAndSkipsMissingSources) {
+  AttachmentRecord attachments;
+  std::memcpy(attachments.canonicalUuid, CANONICAL_UUID, 16);
+  attachments.generation = 9;
+  attachments.sourceCount = 3;
+  std::memcpy(attachments.sourceUuids[0], SOURCE_A, 16);
+  std::memcpy(attachments.sourceUuids[1], SOURCE_B, 16);
+  std::memcpy(attachments.sourceUuids[2], SOURCE_C, 16);
+  MetadataLoaderFixture loader;
+  std::memcpy(loader.unavailableUuid, SOURCE_B, 16);
+  dictionary::contextual::DefinitionSourceCatalog catalog;
+  dictionary::contextual::SourceCatalogError error;
+
+  ASSERT_TRUE(dictionary::contextual::buildDefinitionSourceCatalog(attachments, CANONICAL_UUID, 42, loadMetadata,
+                                                                   &loader, catalog, error));
+  EXPECT_EQ(catalog.attachmentGeneration, 9U);
+  EXPECT_EQ(catalog.attachedCount, 3);
+  EXPECT_EQ(catalog.sourceCount, 2);
+  EXPECT_EQ(catalog.skippedCount, 1);
+  EXPECT_EQ(std::memcmp(catalog.sources[0].sourceUuid, SOURCE_A, 16), 0);
+  EXPECT_EQ(std::memcmp(catalog.sources[1].sourceUuid, SOURCE_C, 16), 0);
+  EXPECT_EQ(loader.loadCount, 3);
+  EXPECT_EQ(std::memcmp(loader.loadedUuids[0], SOURCE_A, 16), 0);
+  EXPECT_EQ(std::memcmp(loader.loadedUuids[1], SOURCE_B, 16), 0);
+  EXPECT_EQ(std::memcmp(loader.loadedUuids[2], SOURCE_C, 16), 0);
+}
+
+TEST(ContextualSourceCatalog, SkipsLoadedMetadataWithTheWrongCanonicalIdentity) {
+  AttachmentRecord attachments;
+  std::memcpy(attachments.canonicalUuid, CANONICAL_UUID, 16);
+  attachments.sourceCount = 2;
+  std::memcpy(attachments.sourceUuids[0], SOURCE_A, 16);
+  std::memcpy(attachments.sourceUuids[1], SOURCE_B, 16);
+  MetadataLoaderFixture loader;
+  std::memcpy(loader.incompatibleUuid, SOURCE_A, 16);
+  dictionary::contextual::DefinitionSourceCatalog catalog;
+  dictionary::contextual::SourceCatalogError error;
+
+  ASSERT_TRUE(dictionary::contextual::buildDefinitionSourceCatalog(attachments, CANONICAL_UUID, 42, loadMetadata,
+                                                                   &loader, catalog, error));
+  ASSERT_EQ(catalog.sourceCount, 1);
+  EXPECT_EQ(catalog.skippedCount, 1);
+  EXPECT_EQ(std::memcmp(catalog.sources[0].sourceUuid, SOURCE_B, 16), 0);
+}
+
+TEST(ContextualSourceCatalog, RejectsCanonicalMismatchBeforeLoadingMetadata) {
+  AttachmentRecord attachments;
+  std::memcpy(attachments.canonicalUuid, CANONICAL_UUID, 16);
+  attachments.sourceCount = 1;
+  std::memcpy(attachments.sourceUuids[0], SOURCE_A, 16);
+  uint8_t otherCanonical[16]{};
+  std::memcpy(otherCanonical, CANONICAL_UUID, 16);
+  otherCanonical[0] ^= 1U;
+  MetadataLoaderFixture loader;
+  dictionary::contextual::DefinitionSourceCatalog catalog;
+  dictionary::contextual::SourceCatalogError error;
+
+  EXPECT_FALSE(dictionary::contextual::buildDefinitionSourceCatalog(attachments, otherCanonical, 42, loadMetadata,
+                                                                    &loader, catalog, error));
+  EXPECT_EQ(error, dictionary::contextual::SourceCatalogError::CANONICAL_MISMATCH);
+  EXPECT_EQ(loader.loadCount, 0);
 }
 
 TEST(ContextualAttachmentStore, RecoveryChoosesCommittedFinalOrValidBackup) {

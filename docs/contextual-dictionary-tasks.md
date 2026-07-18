@@ -75,7 +75,7 @@ committed.
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
 | C24 | Done | Switch learning state and book artifacts to canonical UUID identity | Existing explicit states remain isolated until migration; mismatch behavior tested |
-| C25 | Planned | Discover and retain at most three bounded definition descriptors | Measured session growth ≤3.5 KB; no source index or entry loaded wholesale |
+| C25 | Done | Discover and retain at most three bounded definition descriptors | Measured session growth ≤3.5 KB; no source index or entry loaded wholesale |
 | C26 | Planned | Read canonical entry-index records through the switching SD reader | One 8-byte index read per source/lemma; no simultaneous file handles; I/O metrics covered |
 | C27 | Planned | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
 | C28 | Planned | Render labeled source dividers and existing analysis/meaning separators | de-DE, dict.cc and Kaikki visibly distinct; pagination accounts for divider height without clipping |
@@ -224,7 +224,27 @@ Then open a v3 book with explicit state and confirm neither status appears in
 the other namespace. A missing or mismatched canonical UUID must fail lookup
 without opening a same-named legacy package.
 
+## C25 implementation note
+
+Contextual lookup now recovers and reads the canonical package's attachment
+record after closing the shared SD reader, then probes attached source metadata
+in configured order under `/.crosspoint/definition-sources`. Missing, corrupt,
+or canonical-incompatible source packages are skipped while valid descriptors
+retain their relative order. The session exposes the attachment generation,
+valid/skipped counts and a ready/partial/invalid discovery status for later UI
+work.
+
+`DefinitionSources` is 1,536 bytes in the ESP32-C3 DWARF layout, enforced by a
+3.5 KiB compile-time ceiling. That state contains three copied 104-byte metadata
+descriptors, one reusable definition reader, three path/source contexts and the
+attachment store. Discovery reads only the 88-byte attachment record and each
+144-byte metadata header plus file sizes; it never reads a source index or entry
+payload and allocates no heap. On X3/X4, attach three sources, open a v4 book and
+confirm serial/SD tracing shows one reader switching across metadata files.
+Remove one source directory manually and reopen: lookup must retain the other
+two in order, report partial discovery, and show no `DIN` multiple-reader error.
+
 ## Immediate next work
 
-1. Discover and retain at most three bounded definition descriptors in C25.
+1. Read canonical entry-index records through the switching SD reader in C26.
 2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

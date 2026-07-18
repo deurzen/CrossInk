@@ -15,6 +15,7 @@
 - Dictionary-aware EPUB compilation is now a separate upload option from image optimization and can preserve the book's images and auxiliary package files unchanged.
 - Failed or cancelled EPUB optimization no longer silently uploads the original book; users must explicitly retry or upload without optimization.
 - Contextual EPUB artifacts and global learning state now use canonical lexicon UUIDs, while legacy bundle-keyed statuses remain isolated until explicit migration.
+- Contextual lookups now retain up to three attached, compatible definition-source descriptors in configured order and skip unavailable sources without loading their indexes or entries.
 
 ### Fixed
 

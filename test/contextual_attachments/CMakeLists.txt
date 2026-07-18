@@ -1,6 +1,7 @@
 add_executable(contextual_attachments_test
   ContextualAttachmentsTest.cpp
   ${REPO_ROOT}/lib/Dictionary/ContextualAttachments.cpp
+  ${REPO_ROOT}/lib/Dictionary/ContextualSourceCatalog.cpp
   ${REPO_ROOT}/lib/Dictionary/Crc32.cpp
 )
 

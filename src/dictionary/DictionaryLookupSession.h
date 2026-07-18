@@ -2,6 +2,7 @@
 
 #include <BookLanguageReader.h>
 #include <ContextualRuntimeFormat.h>
+#include <ContextualSourceCatalog.h>
 #include <DictionaryPackage.h>
 #include <HalStorage.h>
 #include <LexemeStateStore.h>
@@ -18,7 +19,15 @@ namespace dictionary::lookup {
 
 inline constexpr char DICTIONARY_ROOT_PATH[] = "/.crosspoint/dictionaries";
 inline constexpr char CANONICAL_ROOT_PATH[] = "/.crosspoint/lexicons";
+inline constexpr char DEFINITION_SOURCE_ROOT_PATH[] = "/.crosspoint/definition-sources";
 constexpr size_t kMaxLookupPath = 256;
+
+enum class SourceDiscoveryStatus : uint8_t {
+  NOT_APPLICABLE = 0,
+  READY,
+  PARTIAL,
+  ATTACHMENTS_INVALID,
+};
 
 enum class SessionError : uint8_t {
   NONE = 0,
@@ -55,6 +64,13 @@ class Session {
   const DictionaryPackage& package() const { return package_; }
   const contextual::CanonicalLexiconReader& canonical() const { return canonical_; }
   bool usesCanonicalIdentity() const { return contextualIdentity_; }
+  SourceDiscoveryStatus sourceDiscoveryStatus() const { return definitionSources_.status; }
+  uint8_t definitionSourceCount() const { return definitionSources_.catalog.sourceCount; }
+  uint8_t skippedDefinitionSourceCount() const { return definitionSources_.catalog.skippedCount; }
+  uint32_t attachmentGeneration() const { return definitionSources_.catalog.attachmentGeneration; }
+  const contextual::DefinitionMetadata* definitionSource(uint8_t index) const {
+    return index < definitionSources_.catalog.sourceCount ? &definitionSources_.catalog.sources[index] : nullptr;
+  }
   uint32_t runtimeLexemeCount() const { return runtimeLexemeCount_; }
   uint32_t stateGeneration() const { return state_.generation(); }
   const io_metrics::Counters& sourceIoMetrics() const { return sourceIoMetrics_; }
@@ -69,6 +85,18 @@ class Session {
     uint8_t sourceToken = 0;
   };
 
+  struct DefinitionSources {
+    contextual::AttachmentStore attachments{};
+    contextual::DefinitionSourceReader reader{};
+    SourceContext metaSource{};
+    SourceContext indexSource{};
+    SourceContext entriesSource{};
+    contextual::DefinitionSourceCatalog catalog{};
+    SourceDiscoveryStatus status = SourceDiscoveryStatus::NOT_APPLICABLE;
+  };
+  static_assert(sizeof(DefinitionSources) <= 3584,
+                "definition-source discovery must add no more than 3.5 KiB to the lookup session");
+
   SourceContext languageSource_{};
   SourceContext metaSource_{};
   SourceContext lexemesSource_{};
@@ -80,6 +108,7 @@ class Session {
   book_language::BookLanguageReader book_{};
   DictionaryPackage package_{};
   contextual::CanonicalLexiconReader canonical_{};
+  DefinitionSources definitionSources_{};
   lexeme_state::Store state_{};
   uint32_t shortlistGlobalIds_[page_shortlist::kMaxItems * page_shortlist::kMaxAnalysesPerItem]{};
   uint16_t shortlistStatusOrder_[page_shortlist::kMaxItems * page_shortlist::kMaxAnalysesPerItem]{};
@@ -96,6 +125,9 @@ class Session {
   bool setSourcePath(SourceContext& context, const char* path, uint8_t sourceToken);
   bool validateLegacyRuntimeMetadata(SessionError& error);
   bool openCanonicalRuntime(const char* directory, SessionError& error);
+  void discoverDefinitionSources(const char* canonicalDirectory);
+  static bool loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[16],
+                                     contextual::DefinitionMetadata& output);
 };
 
 const char* sessionErrorName(SessionError error);
