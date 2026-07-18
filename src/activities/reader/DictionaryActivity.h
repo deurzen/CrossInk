@@ -29,6 +29,14 @@ class DictionaryActivity final : public Activity {
     uint8_t sourceIndex = 0;
   };
 
+  enum class AnalysisLabelState : uint8_t { Empty = 0, Ready, Failed };
+  struct AnalysisLabelCacheEntry {
+    dictionary::contextual::CanonicalAnalysisLabel label{};
+    AnalysisLabelState state = AnalysisLabelState::Empty;
+  };
+  static_assert(sizeof(AnalysisLabelCacheEntry) * dictionary::page_shortlist::kMaxAnalysesPerItem <= 512,
+                "Analysis-label cache exceeds its 512-byte activity budget");
+
   enum class Mode : uint8_t { Shortlist, Definition, Status };
   enum class DefinitionFailure : uint8_t {
     None = 0,
@@ -53,9 +61,9 @@ class DictionaryActivity final : public Activity {
   uint32_t definitionPageIndex_ = 0;
   uint8_t statusSelection_ = 0;
   char headword_[dictionary::contextual::kMaxCanonicalHeadwordBytes + 1]{};
-  // Activities are heap-owned. Retaining one additional bounded canonical
-  // headword avoids stack storage and is populated only after opening a word.
-  char canonicalHeadword_[dictionary::contextual::kMaxCanonicalHeadwordBytes + 1]{};
+  // The activity is heap-owned. Eight fixed cache slots retain labels only for
+  // the selected word; loading uses the session's single switching SD reader.
+  std::array<AnalysisLabelCacheEntry, dictionary::page_shortlist::kMaxAnalysesPerItem> analysisLabels_{};
   char lineScratch_[dictionary::definition::kMaxLineBytes + 1]{};
   unsigned long lookupStartedAt_ = 0;
   bool definitionFailed_ = false;
@@ -68,6 +76,8 @@ class DictionaryActivity final : public Activity {
   bool loadContextualDefinitionPage(const DefinitionCursor& start, uint32_t pageIndex,
                                     const dictionary::definition::WidthMeasurer& measurer, size_t maxLines);
   bool loadContextualIndexes(uint8_t analysisIndex);
+  bool loadAnalysisLabel(uint8_t analysisIndex);
+  void resetAnalysisLabels();
   void changeDefinitionPage(int delta);
   void saveSelectedStatus();
   void returnToShortlist();

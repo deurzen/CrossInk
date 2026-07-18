@@ -14,6 +14,7 @@ constexpr uint16_t kCanonicalPosVersion = 1;
 constexpr uint32_t kMaxCanonicalLexemes = 500000;
 constexpr uint32_t kMaxCanonicalHeadwordsSize = 64U * 1024U * 1024U;
 constexpr uint16_t kMaxCanonicalHeadwordBytes = 96;
+constexpr uint8_t kMaxCanonicalDisplayHeadwordBytes = 48;
 
 constexpr uint16_t kDefinitionFormatVersion = 1;
 constexpr size_t kDefinitionMetaSize = 144;
@@ -41,6 +42,13 @@ struct CanonicalLexemeRecord {
   uint8_t partOfSpeech = 0;
   uint8_t flags = 0;
 };
+
+struct CanonicalAnalysisLabel {
+  char headword[kMaxCanonicalDisplayHeadwordBytes + 1]{};
+  uint8_t headwordLength = 0;
+  uint8_t partOfSpeech = 0;
+};
+static_assert(sizeof(CanonicalAnalysisLabel) == 51, "Canonical analysis label must remain compact");
 
 struct DefinitionMetadata {
   uint8_t sourceUuid[16]{};
@@ -106,6 +114,7 @@ class CanonicalLexiconReader {
   bool readLexeme(uint32_t canonicalId, CanonicalLexemeRecord& out, RuntimeFormatError& error) const;
   bool readHeadword(const CanonicalLexemeRecord& lexeme, char* output, size_t capacity, size_t& outputLength,
                     RuntimeFormatError& error) const;
+  bool readAnalysisLabel(uint32_t canonicalId, CanonicalAnalysisLabel& out, RuntimeFormatError& error) const;
 
   const CanonicalMetadata& metadata() const { return metadata_; }
   bool isOpen() const { return open_; }

@@ -152,13 +152,40 @@ int DictionaryActivity::measureDefinitionText(void* context, const std::string_v
   return activity.renderer.getTextAdvanceX(UI_10_FONT_ID, activity.lineScratch_, EpdFontFamily::REGULAR);
 }
 
+void DictionaryActivity::resetAnalysisLabels() {
+  for (auto& cached : analysisLabels_) cached = {};
+}
+
+bool DictionaryActivity::loadAnalysisLabel(const uint8_t analysisIndex) {
+  if (!shortlist_ || selected_ >= shortlist_->count || analysisIndex >= shortlist_->items[selected_].analysisCount ||
+      analysisIndex >= analysisLabels_.size()) {
+    return false;
+  }
+  auto& cached = analysisLabels_[analysisIndex];
+  if (cached.state == AnalysisLabelState::Ready) return true;
+  if (cached.state == AnalysisLabelState::Failed) return false;
+
+  dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
+  if (!session_->readCanonicalAnalysisLabel(shortlist_->items[selected_].localLemmaIds[analysisIndex], cached.label,
+                                            error)) {
+    cached = {};
+    cached.state = AnalysisLabelState::Failed;
+    LOG_ERR("DICT", "Canonical analysis label %u unavailable: %s", static_cast<unsigned>(analysisIndex),
+            dictionary::lookup::sessionErrorName(error));
+    return false;
+  }
+  cached.state = AnalysisLabelState::Ready;
+  return true;
+}
+
 bool DictionaryActivity::openDefinition() {
   const unsigned long startedAt = millis();
   definitionFailed_ = false;
   contextualSourceWarning_ = false;
   definitionFailure_ = DefinitionFailure::None;
   statusSaved_ = false;
-  canonicalHeadword_[0] = '\0';
+  headword_[0] = '\0';
+  resetAnalysisLabels();
   if (!session_ || !shortlist_ || selected_ >= shortlist_->count) {
     LOG_ERR("DICT", "Definition selection is invalid");
     definitionFailed_ = true;
@@ -168,6 +195,12 @@ bool DictionaryActivity::openDefinition() {
     return false;
   }
   const auto ioBefore = session_->sourceIoMetrics();
+  const std::string_view surface = shortlist_->surface(selected_);
+  const size_t headwordLength = std::min(surface.size(), sizeof(headword_) - 1);
+  std::memcpy(headword_, surface.data(), headwordLength);
+  headword_[headwordLength] = '\0';
+  loadAnalysisLabel(0);
+
   if (session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::ATTACHMENTS_INVALID) {
     definitionFailed_ = true;
     definitionFailure_ = DefinitionFailure::AttachmentsInvalid;
@@ -183,19 +216,6 @@ bool DictionaryActivity::openDefinition() {
     return false;
   }
   contextualSourceWarning_ = session_->sourceDiscoveryStatus() == dictionary::lookup::SourceDiscoveryStatus::PARTIAL;
-
-  const std::string_view surface = shortlist_->surface(selected_);
-  const size_t headwordLength = std::min(surface.size(), sizeof(headword_) - 1);
-  std::memcpy(headword_, surface.data(), headwordLength);
-  headword_[headwordLength] = '\0';
-
-  size_t canonicalHeadwordLength = 0;
-  dictionary::lookup::SessionError headwordError = dictionary::lookup::SessionError::NONE;
-  if (!session_->readCanonicalHeadword(shortlist_->items[selected_].localLemmaIds[0], canonicalHeadword_,
-                                       sizeof(canonicalHeadword_), canonicalHeadwordLength, headwordError)) {
-    LOG_ERR("DICT", "Canonical lemma unavailable: %s", dictionary::lookup::sessionErrorName(headwordError));
-    canonicalHeadword_[0] = '\0';
-  }
 
   if (!pager_) {
     // 644-byte wrapping workspace is retained and reused in definition mode;
@@ -288,6 +308,13 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
     const auto& index = contextualIndexes_[sourceIndex];
     if (index.status != dictionary::lookup::DefinitionIndexStatus::PRESENT) {
       ++cursor.sourceIndex;
+      cursor.entry = {};
+      definitionPageNext_ = cursor;
+      continue;
+    }
+    if (cursor.analysisIndex > 0 && !loadAnalysisLabel(cursor.analysisIndex)) {
+      ++cursor.analysisIndex;
+      cursor.sourceIndex = 0;
       cursor.entry = {};
       definitionPageNext_ = cursor;
       continue;
@@ -548,8 +575,9 @@ void DictionaryActivity::renderDefinition() {
   int left = 0;
   contentMargins(top, right, bottom, left);
   char header[200]{};
-  if (canonicalHeadword_[0] != '\0' && std::strcmp(headword_, canonicalHeadword_) != 0) {
-    std::snprintf(header, sizeof(header), "%s · %s", headword_, canonicalHeadword_);
+  const auto& primaryLabel = analysisLabels_[0];
+  if (primaryLabel.state == AnalysisLabelState::Ready && std::strcmp(headword_, primaryLabel.label.headword) != 0) {
+    std::snprintf(header, sizeof(header), "%s · %s", headword_, primaryLabel.label.headword);
   } else {
     std::snprintf(header, sizeof(header), "%s", headword_);
   }

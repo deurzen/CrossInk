@@ -210,7 +210,7 @@ and primary-ranking errors rather than adding guesses.
 | --- | --- | --- | --- |
 | U09 | Done | Replace v4 parser with strict v5 parser | Host tests reject v4 and every malformed grammar bit/combination before out-of-range reads |
 | U10 | Done | Carry primary grammar into the shortlist | Fixed item growth stays within the 4 KiB shortlist and 192-byte incremental budget |
-| U11 | Planned | Add bounded canonical analysis-label loading | Labels use the switching reader, lazy fixed cache and no render-time I/O or second handle |
+| U11 | Done | Add bounded canonical analysis-label loading | Labels use the switching reader, lazy fixed cache and no render-time I/O or second handle |
 | U12 | Planned | Render primary grammar and labeled alternatives | Primary line and every alternative boundary are translated, pagination-safe and orientation-safe |
 | U13 | Planned | Add direct previous/next word navigation | Side buttons switch sorted words, reuse buffers, reset cursors, handle saved-status filtering and work from failures |
 | U14 | Planned | Update button hints and position feedback | Front hints remain accurate; current/total feedback fits bezel-safe bounds in all orientations |
@@ -228,6 +228,13 @@ alternate ID aliases were removed because `localLemmaIds[0..1]` already own
 those values. `Item` grows from 34 to 36 bytes and `Shortlist` from 3,686 to
 3,784 bytes: 98 incremental bytes, below both the 192-byte growth gate and 4 KiB
 cap, with no heap allocation or unaligned packing.
+
+U11 replaces the retained 97-byte primary-lemma buffer with eight 52-byte cache
+slots containing a UTF-8-safe 48-byte display headword, POS and state. The
+416-byte cache is activity-owned and adds 319 retained bytes relative to v4.
+Primary is loaded on definition open; alternatives load only when a present
+entry is about to be paged. All reads switch through the existing single handle,
+failed alternative labels are skipped explicitly, and render performs no I/O.
 
 ## Phase D — tests, cutover and qualification
 

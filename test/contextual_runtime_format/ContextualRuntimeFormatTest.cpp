@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -176,6 +177,35 @@ TEST(CanonicalLexiconReader, ReadsDenseIdentityWithoutAllocation) {
   size_t length = 0;
   ASSERT_TRUE(reader.readHeadword(lexeme, headword.data(), headword.size(), length, error));
   EXPECT_EQ(std::string_view(headword.data(), length), "laden");
+
+  dictionary::contextual::CanonicalAnalysisLabel label;
+  ASSERT_TRUE(reader.readAnalysisLabel(1, label, error));
+  EXPECT_EQ(std::string_view(label.headword, label.headwordLength), "laden");
+  EXPECT_EQ(label.partOfSpeech, 2);
+}
+
+TEST(CanonicalLexiconReader, TruncatesDisplayLabelAtUtf8Boundary) {
+  CanonicalFixture fixture = makeCanonicalFixture();
+  fixture.headwords.assign(44, 'a');
+  for (size_t index = 0; index < 8; ++index) {
+    fixture.headwords.push_back(static_cast<uint8_t>(0xC3));
+    fixture.headwords.push_back(static_cast<uint8_t>(0xA4));
+  }
+  writeU32(fixture.lexemes, 16, 0);
+  writeU16(fixture.lexemes, 28, fixture.headwords.size());
+  writeU32(fixture.meta, 48, fixture.headwords.size());
+  refreshCanonicalMeta(fixture);
+
+  dictionary::contextual::CanonicalLexiconReader reader;
+  RuntimeFormatError error;
+  ASSERT_TRUE(openCanonical(fixture, reader, error));
+  dictionary::contextual::CanonicalAnalysisLabel label;
+  ASSERT_TRUE(reader.readAnalysisLabel(1, label, error));
+  EXPECT_EQ(label.headwordLength, 47);
+  EXPECT_EQ(std::string_view(label.headword, 44), std::string(44, 'a'));
+  EXPECT_EQ(std::string_view(label.headword + 44, 3), "\xE2\x80\xA6");
+  EXPECT_EQ(label.headword[label.headwordLength], '\0');
+  EXPECT_EQ(label.partOfSpeech, 2);
 }
 
 TEST(CanonicalLexiconReader, RejectsHeaderAndRecordCorruptionBeforeOutOfRangeReads) {

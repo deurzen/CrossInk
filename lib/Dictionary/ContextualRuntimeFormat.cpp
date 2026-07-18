@@ -344,6 +344,38 @@ bool CanonicalLexiconReader::readHeadword(const CanonicalLexemeRecord& lexeme, c
   return true;
 }
 
+bool CanonicalLexiconReader::readAnalysisLabel(const uint32_t canonicalId, CanonicalAnalysisLabel& out,
+                                               RuntimeFormatError& error) const {
+  out = {};
+  CanonicalLexemeRecord lexeme;
+  if (!readLexeme(canonicalId, lexeme, error)) return false;
+  out.partOfSpeech = lexeme.partOfSpeech;
+
+  size_t headwordLength = 0;
+  if (lexeme.headwordLength <= kMaxCanonicalDisplayHeadwordBytes) {
+    if (!readHeadword(lexeme, out.headword, sizeof(out.headword), headwordLength, error)) {
+      out = {};
+      return false;
+    }
+  } else {
+    char fullHeadword[kMaxCanonicalHeadwordBytes + 1]{};
+    if (!readHeadword(lexeme, fullHeadword, sizeof(fullHeadword), headwordLength, error)) {
+      out = {};
+      return false;
+    }
+    constexpr char kEllipsis[] = "\xE2\x80\xA6";
+    size_t prefixLength = kMaxCanonicalDisplayHeadwordBytes - (sizeof(kEllipsis) - 1U);
+    while (prefixLength > 0 && (static_cast<uint8_t>(fullHeadword[prefixLength]) & 0xC0U) == 0x80U) {
+      --prefixLength;
+    }
+    std::memcpy(out.headword, fullHeadword, prefixLength);
+    std::memcpy(out.headword + prefixLength, kEllipsis, sizeof(kEllipsis));
+    headwordLength = prefixLength + sizeof(kEllipsis) - 1U;
+  }
+  out.headwordLength = static_cast<uint8_t>(headwordLength);
+  return true;
+}
+
 bool DefinitionSourceReader::open(const RandomAccessSource& meta, const RandomAccessSource& index,
                                   const RandomAccessSource& entries, const uint8_t expectedCanonicalUuid[16],
                                   const uint32_t expectedCanonicalCount, RuntimeFormatError& error) {

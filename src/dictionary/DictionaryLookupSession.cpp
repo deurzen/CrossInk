@@ -373,25 +373,22 @@ bool Session::globalLexemeId(const uint16_t localLemmaId, uint32_t& globalLexeme
          globalLexemeId < runtimeLexemeCount_;
 }
 
-bool Session::readCanonicalHeadword(const uint16_t localLemmaId, char* output, const size_t capacity,
-                                    size_t& outputLength, SessionError& error) {
-  outputLength = 0;
+bool Session::readCanonicalAnalysisLabel(const uint16_t localLemmaId, contextual::CanonicalAnalysisLabel& output,
+                                         SessionError& error) {
+  output = {};
   error = SessionError::NONE;
   uint32_t canonicalId = 0;
-  if (!readersOpen_ || output == nullptr || capacity == 0 || !globalLexemeId(localLemmaId, canonicalId)) {
+  if (!readersOpen_ || !globalLexemeId(localLemmaId, canonicalId)) {
     error = SessionError::INVALID_INPUT;
     return false;
   }
 
-  contextual::CanonicalLexemeRecord lexeme;
   contextual::RuntimeFormatError formatError = contextual::RuntimeFormatError::NONE;
-  if (!canonical_.readLexeme(canonicalId, lexeme, formatError) ||
-      !canonical_.readHeadword(lexeme, output, capacity, outputLength, formatError)) {
-    LOG_ERR("DICT", "Canonical headword read failed: %s", contextual::runtimeFormatErrorName(formatError));
+  if (!canonical_.readAnalysisLabel(canonicalId, output, formatError)) {
+    LOG_ERR("DICT", "Canonical analysis label read failed: %s", contextual::runtimeFormatErrorName(formatError));
     error = SessionError::CANONICAL_INVALID;
     return false;
   }
-  output[outputLength] = '\0';
   return true;
 }
 
