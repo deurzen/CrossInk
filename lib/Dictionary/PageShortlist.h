@@ -20,8 +20,6 @@ constexpr uint32_t kMaxScannedCandidates = 1024;
 struct Item {
   uint16_t surfaceOffset = 0;
   uint16_t localSurfaceId = UINT16_MAX;
-  uint16_t primaryLocalLemmaId = UINT16_MAX;
-  uint16_t alternateLocalLemmaId = UINT16_MAX;
   uint8_t surfaceLength = 0;
   uint8_t flags = 0;
   uint8_t analysisCount = 0;
@@ -29,6 +27,7 @@ struct Item {
   uint8_t difficulty = 0;
   uint16_t confidence = 0;
   uint16_t visibleOrder = 0;
+  uint32_t grammarDescriptor = 0;
   uint16_t localLemmaIds[kMaxAnalysesPerItem]{};
 };
 
@@ -84,7 +83,12 @@ class Generator {
   bool addWordTokens(std::string_view word, bool joinFirst, bool holdLast);
 };
 
+constexpr size_t kV4ShortlistSize = 3686;
+constexpr size_t kMaxV5ShortlistGrowth = sizeof(uint32_t) * kMaxItems;
+static_assert(sizeof(Item) == 36, "Shortlist item layout changed unexpectedly");
 static_assert(sizeof(Generator) <= 6656, "Shortlist generator exceeds its transient memory budget");
+static_assert(sizeof(Shortlist) <= kV4ShortlistSize + kMaxV5ShortlistGrowth,
+              "V5 shortlist growth exceeds its 192-byte budget");
 static_assert(sizeof(Shortlist) <= 4096, "Shortlist output exceeds its transient memory budget");
 
 uint8_t learningIdentityCount(const Item& item);

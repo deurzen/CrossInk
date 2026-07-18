@@ -53,6 +53,30 @@ bool lemmasOverlap(const Item& item, const uint16_t* const incoming, const uint8
   return false;
 }
 
+constexpr uint32_t kGrammarConflict = 0x80000000U;
+
+uint32_t mergeGrammar(const uint32_t existing, const uint32_t incoming) {
+  if (existing == kGrammarConflict || incoming == 0) return existing;
+  if (existing == 0) return incoming;
+  static constexpr uint32_t kFieldMasks[] = {0x00000007U, 0x00000018U, 0x00000060U, 0x00000180U,
+                                             0x00000600U, 0x00001800U, 0x00006000U, 0x00018000U};
+  for (const uint32_t mask : kFieldMasks) {
+    const uint32_t currentField = existing & mask;
+    const uint32_t incomingField = incoming & mask;
+    if (currentField != 0 && incomingField != 0 && currentField != incomingField) return kGrammarConflict;
+  }
+  const uint32_t merged = existing | incoming;
+  return book_language::isGrammarDescriptorValid(merged) ? merged : kGrammarConflict;
+}
+
+void clearGrammarConflicts(Shortlist& shortlist) {
+  for (uint16_t itemIndex = 0; itemIndex < shortlist.count; ++itemIndex) {
+    if (shortlist.items[itemIndex].grammarDescriptor == kGrammarConflict) {
+      shortlist.items[itemIndex].grammarDescriptor = 0;
+    }
+  }
+}
+
 }  // namespace
 
 std::string_view Shortlist::surface(const uint16_t index) const {
@@ -236,21 +260,35 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
             std::memcmp(tokenPool_ + token.offset, candidate->surface, token.length) != 0) {
           continue;
         }
-        bool duplicate = false;
+        Item* duplicate = nullptr;
+        bool duplicateSurface = false;
         for (uint16_t itemIndex = 0; itemIndex < output.count; ++itemIndex) {
-          duplicate = lemmasOverlap(output.items[itemIndex], candidate->localLemmaIds, candidate->analysisCount);
-          if (duplicate) break;
+          Item& existing = output.items[itemIndex];
+          duplicateSurface = existing.surfaceLength == candidate->surfaceLength &&
+                             std::memcmp(output.surfacePool + existing.surfaceOffset, candidate->surface,
+                                         candidate->surfaceLength) == 0;
+          if (duplicateSurface || lemmasOverlap(existing, candidate->localLemmaIds, candidate->analysisCount)) {
+            duplicate = &existing;
+            break;
+          }
         }
-        if (duplicate) break;
+        if (duplicate != nullptr) {
+          if (duplicateSurface) {
+            duplicate->grammarDescriptor =
+                duplicate->localLemmaIds[0] == candidate->localLemmaIds[0]
+                    ? mergeGrammar(duplicate->grammarDescriptor, candidate->grammarDescriptor)
+                    : kGrammarConflict;
+          }
+          break;
+        }
         if (output.count >= kMaxItems || token.length > kShortlistSurfacePoolBytes - output.surfaceBytesUsed) {
           output.truncated = true;
+          clearGrammarConflicts(output);
           return true;
         }
         Item& item = output.items[output.count++];
         item.surfaceOffset = output.surfaceBytesUsed;
         item.localSurfaceId = UINT16_MAX;
-        item.primaryLocalLemmaId = candidate->localLemmaIds[0];
-        item.alternateLocalLemmaId = candidate->analysisCount > 1 ? candidate->localLemmaIds[1] : UINT16_MAX;
         item.surfaceLength = token.length;
         item.flags = candidate->flags;
         item.analysisCount = candidate->analysisCount;
@@ -258,6 +296,7 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
         item.difficulty = candidate->difficulty;
         item.confidence = candidate->confidence;
         item.visibleOrder = token.order;
+        item.grammarDescriptor = candidate->grammarDescriptor;
         std::copy(candidate->localLemmaIds, candidate->localLemmaIds + candidate->analysisCount, item.localLemmaIds);
         std::memcpy(output.surfacePool + output.surfaceBytesUsed, tokenPool_ + token.offset, token.length);
         output.surfaceBytesUsed = static_cast<uint16_t>(output.surfaceBytesUsed + token.length);
@@ -265,6 +304,7 @@ bool Generator::generate(const book_language::BookLanguageReader& reader, const 
       }
     }
   }
+  clearGrammarConflicts(output);
   sortForDisplay(output);
   return true;
 }

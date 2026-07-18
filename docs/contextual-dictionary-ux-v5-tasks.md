@@ -209,7 +209,7 @@ and primary-ranking errors rather than adding guesses.
 | ID | Status | Work item | Completion gate |
 | --- | --- | --- | --- |
 | U09 | Done | Replace v4 parser with strict v5 parser | Host tests reject v4 and every malformed grammar bit/combination before out-of-range reads |
-| U10 | Planned | Carry primary grammar into the shortlist | Fixed item growth stays within the 4 KiB shortlist and 192-byte incremental budget |
+| U10 | Done | Carry primary grammar into the shortlist | Fixed item growth stays within the 4 KiB shortlist and 192-byte incremental budget |
 | U11 | Planned | Add bounded canonical analysis-label loading | Labels use the switching reader, lazy fixed cache and no render-time I/O or second handle |
 | U12 | Planned | Render primary grammar and labeled alternatives | Primary line and every alternative boundary are translated, pagination-safe and orientation-safe |
 | U13 | Planned | Add direct previous/next word navigation | Side buttons switch sorted words, reuse buffers, reset cursors, handle saved-status filtering and work from failures |
@@ -221,6 +221,13 @@ against an independent exhaustive oracle, rejects every reserved high bit, and
 reports malformed grammar before local-ID validation. Source/target,
 tokenizer/analyzer and 20-byte record contracts are exact; static RAM remains
 unchanged and no cache or handle is added.
+
+U10 copies primary grammar into each fixed shortlist item and applies the U00
+merge policy across repeated same-surface shard records. Two unused primary/
+alternate ID aliases were removed because `localLemmaIds[0..1]` already own
+those values. `Item` grows from 34 to 36 bytes and `Shortlist` from 3,686 to
+3,784 bytes: 98 incremental bytes, below both the 192-byte growth gate and 4 KiB
+cap, with no heap allocation or unaligned packing.
 
 ## Phase D — tests, cutover and qualification
 

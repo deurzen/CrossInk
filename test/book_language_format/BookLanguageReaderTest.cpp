@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iomanip>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "BookLanguageReader.h"
@@ -79,6 +80,64 @@ std::vector<uint8_t> makeArtifact() {
   writeU16(data, blobOffset + 20, 0);
   writeU16(data, blobOffset + 22, 1);
   std::memcpy(data.data() + blobOffset + 24, surface.data(), surface.size());
+  writeU32(data, lemmaOffset, 10);
+  writeU32(data, lemmaOffset + 4, 20);
+  std::memcpy(data.data() + metadataOffset, "meta", 4);
+  refreshCrc(data);
+  return data;
+}
+
+std::vector<uint8_t> makeRepeatedSurfaceArtifact(
+    const std::vector<std::pair<uint32_t, uint16_t>>& grammarAndPrimaryIds) {
+  constexpr size_t spineOffset = 108;
+  constexpr size_t shardOffset = 116;
+  constexpr size_t shardRecordSize = 20;
+  constexpr size_t candidateRecordSize = 28;
+  const size_t blobOffset = shardOffset + grammarAndPrimaryIds.size() * shardRecordSize;
+  const size_t lemmaOffset = blobOffset + grammarAndPrimaryIds.size() * candidateRecordSize;
+  const size_t metadataOffset = lemmaOffset + 8;
+  std::vector<uint8_t> data(metadataOffset + 4, 0);
+  std::memcpy(data.data(), "CXLG", 4);
+  writeU16(data, 4, dictionary::book_language::kFormatVersion);
+  writeU16(data, 6, 108);
+  writeU16(data, 12, 1);
+  writeU16(data, 14, 1);
+  for (size_t index = 0; index < 16; ++index) data[16 + index] = index + 1;
+  std::memcpy(data.data() + 32, "de", 2);
+  std::memcpy(data.data() + 40, "und", 3);
+  writeU16(data, 48, 1);
+  writeU32(data, 52, grammarAndPrimaryIds.size());
+  writeU32(data, 56, grammarAndPrimaryIds.size());
+  writeU32(data, 60, 2);
+  writeU32(data, 68, spineOffset);
+  writeU32(data, 72, shardOffset);
+  writeU32(data, 76, blobOffset);
+  writeU32(data, 80, lemmaOffset);
+  writeU32(data, 84, metadataOffset);
+  writeU32(data, 96, data.size());
+  writeU32(data, spineOffset, 0);
+  writeU32(data, spineOffset + 4, grammarAndPrimaryIds.size());
+
+  constexpr std::string_view surface = "liebe";
+  for (size_t index = 0; index < grammarAndPrimaryIds.size(); ++index) {
+    const size_t shard = shardOffset + index * shardRecordSize;
+    writeU32(data, shard, index * candidateRecordSize);
+    writeU16(data, shard + 4, candidateRecordSize);
+    writeU16(data, shard + 6, 1);
+    writeU32(data, shard + 8, index * 64);
+    writeU32(data, shard + 12, (index + 1) * 64);
+
+    const size_t candidate = blobOffset + index * candidateRecordSize;
+    writeU64(data, candidate, dictionary::book_language::fnv1a64(surface));
+    writeU16(data, candidate + 8, candidateRecordSize);
+    data[candidate + 10] = surface.size();
+    data[candidate + 11] = 1;
+    data[candidate + 12] = 2;
+    writeU16(data, candidate + 14, 900);
+    writeU32(data, candidate + 16, grammarAndPrimaryIds[index].first);
+    writeU16(data, candidate + 20, grammarAndPrimaryIds[index].second);
+    std::memcpy(data.data() + candidate + 22, surface.data(), surface.size());
+  }
   writeU32(data, lemmaOffset, 10);
   writeU32(data, lemmaOffset + 4, 20);
   std::memcpy(data.data() + metadataOffset, "meta", 4);
@@ -230,8 +289,64 @@ TEST(PageShortlist, IntersectsInlineCandidatesAndRetainsAmbiguity) {
   ASSERT_EQ(shortlist.count, 1);
   EXPECT_EQ(shortlist.surface(0), "liebe");
   EXPECT_EQ(shortlist.items[0].analysisCount, 2);
+  EXPECT_EQ(shortlist.items[0].grammarDescriptor, 0x0000DA80U);
   EXPECT_EQ(shortlist.items[0].localLemmaIds[0], 0);
   EXPECT_EQ(shortlist.items[0].localLemmaIds[1], 1);
+}
+
+TEST(PageShortlist, MergesCompatibleGrammarForRepeatedSurfaceAndPrimary) {
+  const auto data = makeRepeatedSurfaceArtifact({{0x00008080U, 0}, {0x0000DA00U, 0}});
+  BookLanguageReader reader;
+  ReaderError readerError;
+  ASSERT_TRUE(reader.open(sourceFor(data), readerError));
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  ASSERT_TRUE(generator.addRenderedWord("liebe", false));
+  generator.finishRenderedPage();
+  dictionary::page_shortlist::Shortlist shortlist;
+  dictionary::page_shortlist::GenerateError error;
+  ASSERT_TRUE(generator.generate(reader, 0, 1, shortlist, error));
+  ASSERT_EQ(shortlist.count, 1);
+  EXPECT_EQ(shortlist.items[0].grammarDescriptor, 0x0000DA80U);
+}
+
+TEST(PageShortlist, KeepsGrammarConflictStickyAcrossRepeatedSurface) {
+  const auto data = makeRepeatedSurfaceArtifact({{0x00000200U, 0}, {0x00000400U, 0}, {0x00000200U, 0}});
+  BookLanguageReader reader;
+  ReaderError readerError;
+  ASSERT_TRUE(reader.open(sourceFor(data), readerError));
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  ASSERT_TRUE(generator.addRenderedWord("liebe", false));
+  generator.finishRenderedPage();
+  dictionary::page_shortlist::Shortlist shortlist;
+  dictionary::page_shortlist::GenerateError error;
+  ASSERT_TRUE(generator.generate(reader, 0, 2, shortlist, error));
+  ASSERT_EQ(shortlist.count, 1);
+  EXPECT_EQ(shortlist.items[0].grammarDescriptor, 0U);
+}
+
+TEST(PageShortlist, ClearsGrammarWhenRepeatedSurfacePrimaryChanges) {
+  const auto data = makeRepeatedSurfaceArtifact({{0x00000200U, 0}, {0x00000400U, 1}});
+  BookLanguageReader reader;
+  ReaderError readerError;
+  ASSERT_TRUE(reader.open(sourceFor(data), readerError));
+  dictionary::page_shortlist::Generator generator;
+  generator.reset();
+  ASSERT_TRUE(generator.addRenderedWord("liebe", false));
+  generator.finishRenderedPage();
+  dictionary::page_shortlist::Shortlist shortlist;
+  dictionary::page_shortlist::GenerateError error;
+  ASSERT_TRUE(generator.generate(reader, 0, 1, shortlist, error));
+  ASSERT_EQ(shortlist.count, 1);
+  EXPECT_EQ(shortlist.items[0].grammarDescriptor, 0U);
+}
+
+TEST(PageShortlist, StaysWithinV5GrowthBudget) {
+  EXPECT_EQ(sizeof(dictionary::page_shortlist::Item), 36U);
+  EXPECT_EQ(sizeof(dictionary::page_shortlist::Shortlist), 3784U);
+  EXPECT_LE(sizeof(dictionary::page_shortlist::Shortlist) - dictionary::page_shortlist::kV4ShortlistSize,
+            dictionary::page_shortlist::kMaxV5ShortlistGrowth);
 }
 
 TEST(PageShortlist, UsesOnlyPrimaryCanonicalAnalysisForLearningIdentity) {
