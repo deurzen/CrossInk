@@ -263,7 +263,7 @@ existing bottom definition-page indicator remains independent.
 | ID | Status | Work item | Completion gate |
 | --- | --- | --- | --- |
 | U15 | Done | Add focused host and simulator interaction tests | Grammar omission, alternatives, pagination, all button modes, edge wrap and post-status removal are covered |
-| U16 | Planned | Run complete automated qualification | Host, contextual Python, WebUI, simulator smoke, firmware, format, static analysis and generated-file checks pass |
+| U16 | Done | Run complete automated qualification | Host, contextual Python, WebUI, simulator smoke, firmware, format, static analysis and generated-file checks pass |
 | U17 | Planned | Recompile the two production German EPUBs | Adjacent byte-identical pre-v5 backups are preserved; outputs validate as v5 with the existing canonical UUID |
 | U18 | Planned | Validate UX and resources on X3/X4 | `knipste · knipsen` grammar, alternative labels, direct word navigation, orientations, heap, largest block, stack and one-reader behavior pass |
 | U19 | Planned | Run updated 100-cycle endurance gate | Word changes, definition paging, status removals, source reorder and reboot show no decline or stale state |
@@ -276,6 +276,13 @@ features, alternative labels and sequential pager continuation. The simulator
 injects named physical button positions through reader mapping and records all
 six logical actions in portrait, inverted and both landscape orientations. The
 suite grows from 200 to 209 tests without retained RAM growth.
+
+U16 passes 209 CTest cases, 105 contextual Python tests, nine dictionary bundle
+compiler tests, the standalone WebUI validator, nine deterministic format
+fixtures, i18n and WebUI regeneration, Python byte-compilation, tracked C++
+formatting, zero-defect static analysis, the four-orientation simulator smoke
+test and the default firmware build. Static RAM remains 50,964 bytes and the
+firmware retains 948,576 bytes of OTA app-partition headroom.
 
 ## Phase E — measurement-gated optimization
 
