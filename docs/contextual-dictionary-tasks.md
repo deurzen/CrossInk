@@ -84,7 +84,7 @@ committed.
 | --- | --- | --- | --- |
 | C31 | Removed | Migrate monolithic de-DE IDs into canonical IDs | No compatibility or migration path is shipped; old EPUBs and state are intentionally unsupported |
 | C32 | Removed | Migrate bundle-keyed learning state | Learning state is canonical-UUID-keyed only |
-| C33 | Planned | Add compiler differential fixtures | Token offsets, shard markers, IDs and binary records agree across deterministic host stages |
+| C33 | Done | Add compiler differential fixtures | Token offsets, shard markers, IDs and binary records agree across deterministic host stages |
 | C34 | Planned | Run complete host, simulator, firmware and static-analysis suite | All tests/builds pass; generated files clean; static DRAM and flash deltas recorded |
 | C35 | Planned | Validate production novel and all three sources on X3/X4 | Cold/warm lookup, opens/seeks/reads/bytes, heap/largest block and stack high-water recorded |
 | C36 | Planned | Run 100-lookup/status/source-reorder endurance test | No heap decline, stale handle, state loss, cache dependency or attachment corruption |
@@ -338,7 +338,22 @@ and truncating one index and one entries file. Each case must show the matching
 action, valid remaining sources must stay readable and correctly labeled, and
 serial logs must identify the rejected source without a crash or second reader.
 
+## C33 implementation note
+
+The checked-in `compiler-differential.json` fixture drives explicit analyzer
+sentences and offsets through two XHTML spines, including markup boundaries,
+multiple paragraphs and the 64-token shard boundary. An independent test decoder
+cross-checks source token offsets, exact marker insertion points, cumulative
+spine/shard token ranges, canonical global-to-local ID remapping, candidate
+ordering, flags, confidence, record sizes, zero padding, FNV hashes and both
+artifact CRCs. A pinned SHA-256 covers the complete deterministic `language.bin`
+output, while the fixture's intentionally shuffled canonical input catches
+accidental dependence on source order.
+
+The fixture and decoder are host-test-only and add no firmware flash, DRAM, heap
+or SD I/O. Focused contextual coverage is now 92 tests.
+
 ## Immediate next work
 
-1. Complete C33–C34 automated qualification.
+1. Complete C34 automated qualification.
 2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

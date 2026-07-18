@@ -71,6 +71,11 @@ add_test(
 )
 
 add_test(
+  NAME ContextualDictionary.CompilerDifferential
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_contextual_compiler_differential.py
+)
+
+add_test(
   NAME ContextualDictionary.DefinitionSource
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_definition_source.py
 )
