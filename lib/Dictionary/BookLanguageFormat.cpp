@@ -82,6 +82,27 @@ bool offsetsAreOrdered(const Header& header) {
 
 }  // namespace
 
+bool isGrammarDescriptorValid(const uint32_t descriptor) {
+  constexpr uint32_t kReservedMask = 0xFFFE0000U;
+  constexpr uint32_t kCaseMask = 0x00000007U;
+  constexpr uint32_t kDegreeMask = 0x00000018U;
+  constexpr uint32_t kGenderMask = 0x00000060U;
+  constexpr uint32_t kMoodMask = 0x00000180U;
+  constexpr uint32_t kNumberMask = 0x00000600U;
+  constexpr uint32_t kPersonMask = 0x00001800U;
+  constexpr uint32_t kTenseMask = 0x00006000U;
+  constexpr uint32_t kVerbFormMask = 0x00018000U;
+
+  if ((descriptor & kReservedMask) != 0 || (descriptor & kCaseMask) > 4U || (descriptor & kNumberMask) == kNumberMask) {
+    return false;
+  }
+  const uint32_t verbForm = (descriptor & kVerbFormMask) >> 15U;
+  if (verbForm == 2U) return (descriptor & ~kVerbFormMask) == 0;
+  if (verbForm == 3U) return (descriptor & (kMoodMask | kPersonMask)) == 0;
+  if (verbForm == 1U) return (descriptor & (kCaseMask | kDegreeMask | kGenderMask)) == 0;
+  return (descriptor & (kMoodMask | kTenseMask)) == 0;
+}
+
 bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actualFileSize, Header& out,
                  FormatError& error) {
   out = {};
@@ -148,7 +169,8 @@ bool parseHeader(const uint8_t* data, const size_t dataSize, const uint64_t actu
     error = FormatError::INVALID_LANGUAGE;
     return false;
   }
-  if (out.analyzerVersion != 1 || std::strcmp(out.targetLanguage, "und") != 0) {
+  if (out.tokenizerVersion != 1 || out.analyzerVersion != 1 || std::strcmp(out.sourceLanguage, "de") != 0 ||
+      std::strcmp(out.targetLanguage, "und") != 0) {
     error = FormatError::INVALID_LANGUAGE;
     return false;
   }

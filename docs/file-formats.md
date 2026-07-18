@@ -7,71 +7,42 @@ fixed-size char buffer.
 
 ## EPUB `META-INF/crossink/language.bin`
 
-### Version 4
+### Version 5
 
-Version 3 retains the version-2 108-byte header and self-contained shard blobs, and assigns the former candidate reserved byte to an optional language-neutral difficulty score. All integers are unsigned little-endian; offsets are absolute and four-byte aligned.
+Version 5 is specified completely in
+[`contextual-language-v5-format.md`](contextual-language-v5-format.md). It keeps
+the 108-byte `CXLG` header, 8-byte spine directory, 20-byte shard directory and
+canonical local-ID table from v4. The fixed identity contract is source `de`,
+target `und`, tokenizer/analyzer version 1, and the canonical `.cplex` UUID.
+Firmware accepts exactly v5; v4 is rejected before CRC/payload or package access.
 
-| Offset | Size | Field |
-| ---: | ---: | --- |
-| 0 | 4 | Magic `CXLG` |
-| 4 | 2 | Format version (`3`) |
-| 6 | 2 | Header size (`108`) |
-| 8 | 4 | Flags; must be zero |
-| 12 | 2 | Tokenizer version |
-| 14 | 2 | Analyzer version |
-| 16 | 16 | Dictionary bundle UUID |
-| 32 | 8 | Zero-padded source language |
-| 40 | 8 | Zero-padded target language |
-| 48 | 2 | Spine count |
-| 50 | 2 | Reserved; zero |
-| 52 | 4 | Shard count |
-| 56 | 4 | Total candidate count |
-| 60 | 4 | Local lemma count |
-| 64 | 4 | Reserved; zero |
-| 68 | 4 | Spine-directory offset |
-| 72 | 4 | Shard-directory offset |
-| 76 | 4 | Shard-blob section offset |
-| 80 | 4 | Local-lemma table offset |
-| 84 | 4 | Metadata section offset |
-| 88 | 8 | Reserved; zero |
-| 96 | 4 | Exact file size |
-| 100 | 4 | Payload CRC32 over bytes `[108, fileSize)` |
-| 104 | 4 | Header CRC32 over bytes `[0, 104)` |
-
-The spine directory uses an eight-byte record. Each version-3
-shard-directory record is 20 bytes:
+Each sorted candidate record now has a 20-byte fixed header:
 
 ```text
-blobOffset:u32       // relative to the shard-blob section
-blobLength:u16
-recordCount:u16
-sourceTokenStart:u32
-sourceTokenEnd:u32
-reserved:u32         // zero
-```
-
-Shard blobs are ordered by shard ID, non-overlapping, and at most 24 KiB each.
-They contain `recordCount` variable records sorted by `(surfaceHash, UTF-8
-surface)`. Each record starts with this 16-byte header:
-
-```text
-surfaceHash:u64      // FNV-1a-64 over exact NFC UTF-8
-recordSize:u16       // header + analyses + surface + zero padding
-surfaceLength:u8     // 1..255
-analysisCount:u8     // 1..8
+surfaceHash:u64
+recordSize:u16
+surfaceLength:u8
+analysisCount:u8
 flags:u8
-difficulty:u8        // 0 unavailable; 1 easiest through 255 hardest
-confidence:u16       // 0..1000
+difficulty:u8
+confidence:u16
+grammarDescriptor:u32
 localLemmaIds:u16[analysisCount]
 surface:u8[surfaceLength]
-padding:u8[]         // zero, to four-byte record alignment
+padding:u8[]
 ```
 
-Candidate flag bit 0 marks ambiguity, bit 2 marks that case-folded analysis contributed to the match, bit 3 records that a pathological surface had more than eight analyses and was deterministically capped, bit 4 marks low-confidence fallback morphology, and bit 5 marks proper-noun classification. Other bits are invalid. The first and second inline analysis IDs are the primary and alternate analyses. Compound-only guesses with no whole-word analysis are not emitted. A record must fit completely inside its shard blob; all local IDs must be below the header's local-lemma count. Firmware processes one shard sequentially through bounded scratch storage and never allocates `blobLength`.
+The descriptor follows
+[`contextual-grammar-descriptor-v1.md`](contextual-grammar-descriptor-v1.md),
+describes only the primary analysis, and is zero when unavailable. Firmware
+validates reserved bits/codes and structural combinations before local IDs or
+surface bytes. It retains one allocation-free decoded candidate, reads shards
+sequentially through bounded caches, and never allocates `blobLength`.
 
-The local-lemma table is `canonicalLexemeId:u32` indexed by local ID and sorted by canonical ID. Bytes `[16,32)` of the 108-byte header are the canonical lexicon UUID, target language must be `und`, analyzer version must be `1`, and candidate analyses resolve directly to canonical lexeme IDs. The metadata section uses the `CXLM` envelope and records shard size plus compiler/tokenizer/analyzer versions. The 64 MiB file cap, 4096-spine cap, 65535-shard cap, 32768-local-lemma cap, payload CRC, and header CRC apply. Oversized records or blobs fail compilation rather than truncating structural data.
-
-Firmware accepts only version 4 and resolves its canonical lexicon only under `/.crosspoint/lexicons/<canonical-uuid>/`. Scored candidates sort hardest-first using confidence and original page order as deterministic tie-breakers.
+Candidate flags, score ordering, canonical identity, file/count caps, CRCs,
+receipts and invalid markers are unchanged. The local-lemma table remains
+`canonicalLexemeId:u32` sorted by canonical ID, and runtime packages resolve only
+under `/.crosspoint/lexicons/<canonical-uuid>/`.
 
 After full extraction validation, firmware writes a 44-byte `language.valid` receipt: `CXLR`, version/header size (`u16`, `u16`), embedded size (`u32`), ZIP central-directory CRC (`u32`), payload CRC (`u32`), header CRC (`u32`), canonical lexicon UUID (16 bytes), and receipt CRC32 over the first 40 bytes. On later opens, matching ZIP identity plus the cached artifact's size and validated 108-byte header avoids rereading the full payload. Missing, stale, or corrupt receipts fall back to full streaming validation and are replaced atomically through `language.valid.tmp`.
 

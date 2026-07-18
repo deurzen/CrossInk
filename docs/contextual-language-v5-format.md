@@ -1,8 +1,8 @@
 # Contextual EPUB Language Format Version 5
 
-This document freezes U01. It is the future replacement for contextual
-`META-INF/crossink/language.bin` version 4. Current firmware remains v4 until
-U09 performs the single cutover; no reader accepts both versions.
+This document freezes U01 and now describes the contextual
+`META-INF/crossink/language.bin` format emitted by the host and accepted by
+firmware after U09. No reader accepts both v4 and v5.
 
 All integers are unsigned little-endian. Absolute section offsets and variable
 candidate records are aligned to four bytes. Every reserved field and padding

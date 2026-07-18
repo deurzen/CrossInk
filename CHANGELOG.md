@@ -11,6 +11,7 @@
 
 ### Changed
 
+- Contextual EPUB compilation and firmware now use `language.bin` v5 with validated primary-form grammar descriptors; v4 artifacts must be recompiled.
 - Contextual EPUB compilation is host-only and independent from image optimization; the WebUI optimizer no longer runs morphology or rewrites dictionary artifacts.
 - Failed or cancelled EPUB optimization no longer silently uploads the original book; users must explicitly retry or upload without optimization.
 - EPUB artifacts and global learning state use canonical lexicon UUIDs exclusively.

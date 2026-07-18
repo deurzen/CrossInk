@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <iomanip>
 #include <vector>
 
 #include "BookLanguageFormat.h"
@@ -32,9 +33,9 @@ void refreshCrcs(std::vector<uint8_t>& data) {
 }
 
 std::vector<uint8_t> makeValidArtifact() {
-  // Header + one spine + one v2 shard directory entry + one minimal blob
+  // Header + one spine + one shard directory entry + one minimal v5 blob
   // record + one local lemma + four metadata bytes.
-  std::vector<uint8_t> data(160, 0);
+  std::vector<uint8_t> data(164, 0);
   std::memcpy(data.data(), "CXLG", 4);
   writeU16(data, 4, dictionary::book_language::kFormatVersion);
   writeU16(data, 6, dictionary::book_language::kHeaderSize);
@@ -51,19 +52,32 @@ std::vector<uint8_t> makeValidArtifact() {
   writeU32(data, 68, 108);  // Spine directory.
   writeU32(data, 72, 116);  // Shard directory.
   writeU32(data, 76, 136);  // Shard blobs.
-  writeU32(data, 80, 152);  // Local lemmas.
-  writeU32(data, 84, 156);  // Metadata.
+  writeU32(data, 80, 156);  // Local lemmas.
+  writeU32(data, 84, 160);  // Metadata.
   writeU32(data, 96, static_cast<uint32_t>(data.size()));
-  data[156] = 't';
-  data[157] = 'e';
-  data[158] = 's';
-  data[159] = 't';
+  data[160] = 't';
+  data[161] = 'e';
+  data[162] = 's';
+  data[163] = 't';
   refreshCrcs(data);
   return data;
 }
 
 bool parse(const std::vector<uint8_t>& data, Header& header, FormatError& error) {
   return dictionary::book_language::parseHeader(data.data(), data.size(), data.size(), header, error);
+}
+
+bool referenceGrammarDescriptorValid(const uint32_t descriptor) {
+  if ((descriptor >> 17U) != 0 || (descriptor & 0x7U) > 4U || ((descriptor >> 9U) & 0x3U) == 3U) return false;
+  const uint32_t verbForm = (descriptor >> 15U) & 0x3U;
+  const bool hasCaseDegreeOrGender = (descriptor & 0x7FU) != 0;
+  const bool hasMood = ((descriptor >> 7U) & 0x3U) != 0;
+  const bool hasPerson = ((descriptor >> 11U) & 0x3U) != 0;
+  const bool hasTense = ((descriptor >> 13U) & 0x3U) != 0;
+  if (verbForm == 1U) return !hasCaseDegreeOrGender;
+  if (verbForm == 2U) return (descriptor & 0x7FFFU) == 0;
+  if (verbForm == 3U) return !hasMood && !hasPerson;
+  return !hasMood && !hasTense;
 }
 
 }  // namespace
@@ -100,10 +114,37 @@ TEST(BookLanguageFormat, RejectsNonContextualContract) {
   EXPECT_EQ(error, FormatError::INVALID_LANGUAGE);
 
   invalid = data;
+  std::fill(invalid.begin() + 32, invalid.begin() + 40, 0);
+  std::memcpy(invalid.data() + 32, "en", 2);
+  refreshCrcs(invalid);
+  EXPECT_FALSE(parse(invalid, header, error));
+  EXPECT_EQ(error, FormatError::INVALID_LANGUAGE);
+
+  invalid = data;
+  writeU16(invalid, 12, 2);
+  refreshCrcs(invalid);
+  EXPECT_FALSE(parse(invalid, header, error));
+  EXPECT_EQ(error, FormatError::INVALID_LANGUAGE);
+
+  invalid = data;
   writeU16(invalid, 14, 2);
   refreshCrcs(invalid);
   EXPECT_FALSE(parse(invalid, header, error));
   EXPECT_EQ(error, FormatError::INVALID_LANGUAGE);
+}
+
+TEST(BookLanguageFormat, ValidatesEveryGrammarDescriptorPayload) {
+  size_t validCount = 0;
+  for (uint32_t descriptor = 0; descriptor < (1U << 17U); ++descriptor) {
+    const bool expected = referenceGrammarDescriptorValid(descriptor);
+    EXPECT_EQ(dictionary::book_language::isGrammarDescriptorValid(descriptor), expected)
+        << "descriptor=0x" << std::hex << descriptor;
+    validCount += expected;
+  }
+  EXPECT_EQ(validCount, 2113U);
+  for (uint32_t bit = 17; bit < 32; ++bit) {
+    EXPECT_FALSE(dictionary::book_language::isGrammarDescriptorValid(1U << bit));
+  }
 }
 
 TEST(BookLanguageFormat, CrcCanBeUpdatedInChunks) {
@@ -143,7 +184,7 @@ TEST(BookLanguageFormat, RejectsUnsupportedVersionAndFlags) {
   Header header;
   FormatError error;
 
-  writeU16(data, 4, 3);
+  writeU16(data, 4, 4);
   refreshCrcs(data);
   EXPECT_FALSE(parse(data, header, error));
   EXPECT_EQ(error, FormatError::UNSUPPORTED_VERSION);

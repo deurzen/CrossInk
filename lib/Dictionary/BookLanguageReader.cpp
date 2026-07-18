@@ -157,6 +157,7 @@ bool BookLanguageReader::readCandidate(const ShardDirectoryRecord& shard, const 
   candidate_.flags = fixed[12];
   candidate_.difficulty = fixed[13];
   candidate_.confidence = readU16(fixed + 14);
+  candidate_.grammarDescriptor = readU32(fixed + 16);
   const uint32_t contentSize =
       kInlineCandidateHeaderSize + candidate_.analysisCount * sizeof(uint16_t) + candidate_.surfaceLength;
   const uint32_t expectedRecordSize = (contentSize + 3U) & ~3U;
@@ -164,6 +165,10 @@ bool BookLanguageReader::readCandidate(const ShardDirectoryRecord& shard, const 
       candidate_.surfaceLength == 0 || candidate_.analysisCount == 0 || candidate_.analysisCount > kMaxInlineAnalyses ||
       (candidate_.flags & ~kKnownCandidateFlags) != 0 || candidate_.confidence > 1000) {
     error = ReaderError::CANDIDATE_RECORD_INVALID;
+    return false;
+  }
+  if (!isGrammarDescriptorValid(candidate_.grammarDescriptor)) {
+    error = ReaderError::GRAMMAR_DESCRIPTOR_INVALID;
     return false;
   }
   uint8_t analyses[kMaxInlineAnalyses * sizeof(uint16_t)]{};
@@ -260,6 +265,8 @@ const char* readerErrorName(const ReaderError error) {
       return "candidate index out of range";
     case ReaderError::CANDIDATE_RECORD_INVALID:
       return "candidate record invalid";
+    case ReaderError::GRAMMAR_DESCRIPTOR_INVALID:
+      return "grammar descriptor invalid";
     case ReaderError::LOCAL_LEMMA_ID_OUT_OF_RANGE:
       return "local lemma id out of range";
   }

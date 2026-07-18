@@ -208,12 +208,19 @@ and primary-ranking errors rather than adding guesses.
 
 | ID | Status | Work item | Completion gate |
 | --- | --- | --- | --- |
-| U09 | Planned | Replace v4 parser with strict v5 parser | Host tests reject v4 and every malformed grammar bit/combination before out-of-range reads |
+| U09 | Done | Replace v4 parser with strict v5 parser | Host tests reject v4 and every malformed grammar bit/combination before out-of-range reads |
 | U10 | Planned | Carry primary grammar into the shortlist | Fixed item growth stays within the 4 KiB shortlist and 192-byte incremental budget |
 | U11 | Planned | Add bounded canonical analysis-label loading | Labels use the switching reader, lazy fixed cache and no render-time I/O or second handle |
 | U12 | Planned | Render primary grammar and labeled alternatives | Primary line and every alternative boundary are translated, pagination-safe and orientation-safe |
 | U13 | Planned | Add direct previous/next word navigation | Side buttons switch sorted words, reuse buffers, reset cursors, handle saved-status filtering and work from failures |
 | U14 | Planned | Update button hints and position feedback | Front hints remain accurate; current/total feedback fits bezel-safe bounds in all orientations |
+
+U09 cuts firmware acceptance directly from v4 to v5. The allocation-free reader
+adds one `u32` to its reusable candidate, validates all 2,113 legal payloads
+against an independent exhaustive oracle, rejects every reserved high bit, and
+reports malformed grammar before local-ID validation. Source/target,
+tokenizer/analyzer and 20-byte record contracts are exact; static RAM remains
+unchanged and no cache or handle is added.
 
 ## Phase D — tests, cutover and qualification
 

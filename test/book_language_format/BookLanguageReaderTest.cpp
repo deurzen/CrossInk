@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <iomanip>
 #include <string_view>
 #include <vector>
 
@@ -36,9 +37,9 @@ std::vector<uint8_t> makeArtifact() {
   constexpr size_t spineOffset = 108;
   constexpr size_t shardOffset = 116;
   constexpr size_t blobOffset = 136;
-  constexpr size_t lemmaOffset = 164;
-  constexpr size_t metadataOffset = 172;
-  std::vector<uint8_t> data(176, 0);
+  constexpr size_t lemmaOffset = 168;
+  constexpr size_t metadataOffset = 176;
+  std::vector<uint8_t> data(180, 0);
   std::memcpy(data.data(), "CXLG", 4);
   writeU16(data, 4, dictionary::book_language::kFormatVersion);
   writeU16(data, 6, 108);
@@ -61,22 +62,23 @@ std::vector<uint8_t> makeArtifact() {
   writeU32(data, spineOffset, 0);
   writeU32(data, spineOffset + 4, 1);
   writeU32(data, shardOffset, 0);
-  writeU16(data, shardOffset + 4, 28);
+  writeU16(data, shardOffset + 4, 32);
   writeU16(data, shardOffset + 6, 1);
   writeU32(data, shardOffset + 8, 0);
   writeU32(data, shardOffset + 12, 64);
 
   const std::string_view surface = "liebe";
   writeU64(data, blobOffset, dictionary::book_language::fnv1a64(surface));
-  writeU16(data, blobOffset + 8, 28);
+  writeU16(data, blobOffset + 8, 32);
   data[blobOffset + 10] = surface.size();
   data[blobOffset + 11] = 2;
   data[blobOffset + 12] = 1;
   data[blobOffset + 13] = 200;
   writeU16(data, blobOffset + 14, 900);
-  writeU16(data, blobOffset + 16, 0);
-  writeU16(data, blobOffset + 18, 1);
-  std::memcpy(data.data() + blobOffset + 20, surface.data(), surface.size());
+  writeU32(data, blobOffset + 16, 0x0000DA80);  // Finite past indicative third-person singular.
+  writeU16(data, blobOffset + 20, 0);
+  writeU16(data, blobOffset + 22, 1);
+  std::memcpy(data.data() + blobOffset + 24, surface.data(), surface.size());
   writeU32(data, lemmaOffset, 10);
   writeU32(data, lemmaOffset + 4, 20);
   std::memcpy(data.data() + metadataOffset, "meta", 4);
@@ -120,6 +122,7 @@ TEST(BookLanguageReader, ReadsInlineCandidateAndLocalLemmas) {
   EXPECT_EQ(std::string_view(candidate->surface, candidate->surfaceLength), "liebe");
   EXPECT_EQ(candidate->analysisCount, 2);
   EXPECT_EQ(candidate->difficulty, 200);
+  EXPECT_EQ(candidate->grammarDescriptor, 0x0000DA80U);
   EXPECT_EQ(candidate->localLemmaIds[0], 0);
   EXPECT_EQ(candidate->localLemmaIds[1], 1);
   uint32_t global = 0;
@@ -167,6 +170,33 @@ TEST(BookLanguageReader, RejectsMalformedShardAndCandidateRecords) {
   const dictionary::book_language::InlineCandidate* candidate = nullptr;
   EXPECT_FALSE(reader.readCandidate(shard, 0, candidate, error));
   EXPECT_EQ(error, ReaderError::CANDIDATE_RECORD_INVALID);
+}
+
+TEST(BookLanguageReader, RejectsGrammarBeforeLocalLemmaIds) {
+  constexpr uint32_t invalidDescriptors[] = {
+      0x00020000U,  // Reserved bit.
+      0x00000005U,  // Reserved case.
+      0x00000600U,  // Reserved number.
+      0x00010001U,  // Infinitive with case.
+      0x00018080U,  // Participle with mood.
+      0x00008001U,  // Finite with case.
+      0x00000080U,  // Mood without verb form.
+      0x00002000U,  // Tense without verb form.
+  };
+  for (const uint32_t descriptor : invalidDescriptors) {
+    auto data = makeArtifact();
+    writeU32(data, 152, descriptor);
+    writeU16(data, 156, 2);  // Also out of range; grammar must fail first.
+    refreshCrc(data);
+    BookLanguageReader reader;
+    ReaderError error;
+    ASSERT_TRUE(reader.open(sourceFor(data), error));
+    dictionary::book_language::ShardDirectoryRecord shard;
+    ASSERT_TRUE(reader.readShard(0, shard, error));
+    const dictionary::book_language::InlineCandidate* candidate = nullptr;
+    EXPECT_FALSE(reader.readCandidate(shard, 0, candidate, error));
+    EXPECT_EQ(error, ReaderError::GRAMMAR_DESCRIPTOR_INVALID) << "descriptor=0x" << std::hex << descriptor;
+  }
 }
 
 TEST(BookLanguageReader, AcceptsContextualCandidateFlags) {

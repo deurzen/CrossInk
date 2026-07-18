@@ -30,6 +30,7 @@ struct InlineCandidate {
   uint8_t flags = 0;
   uint8_t difficulty = 0;
   uint16_t confidence = 0;
+  uint32_t grammarDescriptor = 0;
   uint16_t localLemmaIds[kMaxInlineAnalyses]{};
   char surface[256]{};
 };
@@ -43,10 +44,11 @@ enum class ReaderError : uint8_t {
   SHARD_RECORD_INVALID,
   CANDIDATE_INDEX_OUT_OF_RANGE,
   CANDIDATE_RECORD_INVALID,
+  GRAMMAR_DESCRIPTOR_INVALID,
   LOCAL_LEMMA_ID_OUT_OF_RANGE,
 };
 
-// Allocation-free reader for the CRC-validated contextual v4 artifact.
+// Allocation-free reader for the CRC-validated contextual v5 artifact.
 // Shard records are consumed sequentially through one bounded cache.
 class BookLanguageReader {
  public:

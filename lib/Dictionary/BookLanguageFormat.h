@@ -9,7 +9,7 @@ namespace dictionary::book_language {
 
 using dictionary::updateCrc32;
 
-constexpr uint16_t kFormatVersion = 4;
+constexpr uint16_t kFormatVersion = 5;
 constexpr size_t kHeaderSize = 108;
 constexpr uint32_t kMaxFileSize = 64U * 1024U * 1024U;
 constexpr uint16_t kMaxSpineCount = 4096;
@@ -21,7 +21,7 @@ constexpr uint8_t kMaxInlineAnalyses = 8;
 
 constexpr uint32_t kSpineRecordSize = 8;
 constexpr uint32_t kShardDirectoryRecordSize = 20;
-constexpr uint32_t kInlineCandidateHeaderSize = 16;
+constexpr uint32_t kInlineCandidateHeaderSize = 20;
 constexpr uint32_t kLocalLemmaRecordSize = 4;
 
 struct Header {
@@ -76,6 +76,7 @@ bool parseHeader(const uint8_t* data, size_t dataSize, uint64_t actualFileSize, 
 // allocating the whole artifact.
 bool validatePayload(const uint8_t* fileData, size_t dataSize, const Header& header, FormatError& error);
 bool matchesCanonicalLexicon(const Header& header, const uint8_t* expectedCanonicalUuid);
+bool isGrammarDescriptorValid(uint32_t descriptor);
 
 // Incremental validator used while extracting or scanning an artifact. It owns
 // only the fixed 108-byte header and CRC state; payload bytes are never retained.

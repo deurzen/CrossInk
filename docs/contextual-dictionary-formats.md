@@ -3,7 +3,7 @@
 ## Contract
 
 This document freezes version 1 of the canonical lexicon, definition-source and
-attachment formats, plus version 4 of EPUB `language.bin`. All integers are
+attachment formats, plus version 5 of EPUB `language.bin`. All integers are
 unsigned little-endian. All unused bytes and flag bits must be zero. CRC-32 is
 the IEEE/zlib CRC over the stated byte range with initial and final XOR as
 implemented by `zlib.crc32` and `lib/Dictionary/Crc32.*`.
@@ -184,9 +184,9 @@ canonical UUID. Unused slots must be zero. Updates write and sync
 `attachments.tmp`, then atomically replace `attachments.bin`; a valid previous
 record remains authoritative after an interrupted write.
 
-## EPUB `language.bin` version 4
+## EPUB `language.bin` version 5
 
-Version 4 uses a 108-byte header, fixed directory layouts, and bounded shard
+Version 5 uses a 108-byte header, fixed directory layouts, and bounded shard
 encoding. Its identity contract is:
 
 - bytes `[16,32)` identify the canonical lexicon rather than a definition
@@ -198,15 +198,14 @@ encoding. Its identity contract is:
 - candidate flags record contextual/fallback provenance;
 - metadata pins model and policy identities.
 
-The header fields, offsets, and caps are documented in
-[`file-formats.md`](file-formats.md). The format version is `4` and the UUID
-field is `canonicalLexiconUuid`. Firmware accepts only this frozen contract;
-older artifacts and unreleased drafts must be recompiled.
+The complete header, record, grammar and validation contract is documented in
+[`contextual-language-v5-format.md`](contextual-language-v5-format.md). The UUID
+field is `canonicalLexiconUuid`. Firmware accepts only this frozen contract; v4
+and older artifacts must be recompiled.
 
 ### Candidate flags and confidence
 
-The 16-byte variable candidate header and following local ID/surface encoding
-remain unchanged:
+The fixed candidate header is 20 bytes before local IDs and surface bytes:
 
 ```text
 surfaceHash:u64
@@ -216,6 +215,7 @@ analysisCount:u8       // 1..8
 flags:u8
 difficulty:u8          // 0 unknown, 1 easiest, 255 hardest
 confidence:u16         // normalized primary-analysis score, 0..1000
+grammarDescriptor:u32  // layout 1 for primary analysis; zero unavailable
 localLemmaIds:u16[analysisCount]
 surface:u8[surfaceLength]
 zeroPadding:u8[]       // four-byte alignment
@@ -236,7 +236,8 @@ Flag bits are:
 Analyses are stored primary first, then descending policy score, then canonical
 ID. C08 maps the policy's unbounded integer score to `0..1000`; confidence is
 presentation/ranking evidence and never an ID. A valid DWDSmor candidate is not
-dropped merely because confidence is low.
+dropped merely because confidence is low. Grammar is validated before local IDs
+and never changes canonical identity or score order.
 
 ### Metadata envelope
 
