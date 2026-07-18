@@ -3,6 +3,7 @@
 #include <BookLanguageReader.h>
 #include <ContextualRuntimeFormat.h>
 #include <ContextualSourceCatalog.h>
+#include <DefinitionPager.h>
 #include <DictionaryPackage.h>
 #include <HalStorage.h>
 #include <LexemeStateStore.h>
@@ -70,6 +71,7 @@ class Session {
   bool readDefinitionIndexes(uint32_t canonicalId,
                              std::array<DefinitionIndexLookup, contextual::kMaxAttachedSources>& output,
                              uint8_t& outputCount, SessionError& error);
+  bool contextualEntryReader(uint8_t sourceIndex, definition::EntryReader& output, SessionError& error);
 
   bool globalLexemeId(uint16_t localLemmaId, uint32_t& globalLexemeId) const;
   bool setStatus(uint16_t localLemmaId, lexeme_state::Status status, SessionError& error);
@@ -107,6 +109,7 @@ class Session {
     SourceContext indexSource{};
     SourceContext entriesSource{};
     SourceContext retainedIndexSources[contextual::kMaxAttachedSources]{};
+    SourceContext retainedEntrySources[contextual::kMaxAttachedSources]{};
     contextual::DefinitionSourceCatalog catalog{};
     SourceDiscoveryStatus status = SourceDiscoveryStatus::NOT_APPLICABLE;
   };
@@ -144,7 +147,9 @@ class Session {
   void discoverDefinitionSources(const char* canonicalDirectory);
   static bool loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[16],
                                      contextual::DefinitionMetadata& output);
-  bool prepareDefinitionIndexSource(uint8_t sourceIndex);
+  bool prepareDefinitionRuntimeSources(uint8_t sourceIndex);
+  static bool readContextualEntryChunk(void* context, const EntrySlice& entry, uint32_t relativeOffset, void* output,
+                                       size_t capacity, size_t& bytesRead, PackageError& error);
 };
 
 const char* sessionErrorName(SessionError error);

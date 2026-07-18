@@ -3174,8 +3174,8 @@ void EpubReaderActivity::startDictionaryLookup() {
                   static_cast<unsigned>(collected.renderedWordsVisited), static_cast<unsigned>(collected.visibleTokens),
                   static_cast<unsigned long>(firstShard), static_cast<unsigned long>(lastShard));
 
-          // Session retains only bounded paths/readers and global-state handles;
-          // heap ownership avoids roughly 2.5 KB of reader-task stack use.
+          // Session retains bounded paths/readers and global-state handles;
+          // heap ownership keeps this multi-kilobyte state off the reader task stack.
           session = makeUniqueNoThrow<dictionary::lookup::Session>();
           if (!session) {
             LOG_ERR("DICT", "OOM: dictionary lookup session (%u bytes)",

@@ -23,9 +23,11 @@ struct Line {
   uint16_t textOffset = 0;
   uint16_t textLength = 0;
   uint8_t fieldType = 0;
-  bool fieldStart : 1 = false;
-  bool gapBefore : 1 = false;
-  bool analysisStart : 1 = false;
+  uint8_t fieldStart : 1 = 0;
+  uint8_t gapBefore : 1 = 0;
+  uint8_t analysisStart : 1 = 0;
+  uint8_t sourceStart : 1 = 0;
+  uint8_t sourceIndex : 2 = 0;
 };
 
 struct Page {
@@ -37,6 +39,12 @@ struct Page {
   bool hasNext = false;
 
   std::string_view lineText(uint8_t index) const;
+};
+
+struct EntryReader {
+  void* context = nullptr;
+  bool (*readChunk)(void* context, const EntrySlice& entry, uint32_t relativeOffset, void* output, size_t capacity,
+                    size_t& bytesRead, PackageError& error) = nullptr;
 };
 
 struct WidthMeasurer {
@@ -62,6 +70,10 @@ class Pager {
             const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
   bool append(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
               const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
+  bool load(const EntryReader& reader, const EntrySlice& entry, const Cursor& start, const WidthMeasurer& measurer,
+            int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
+  bool append(const EntryReader& reader, const EntrySlice& entry, const Cursor& start, const WidthMeasurer& measurer,
+              int maxLineWidth, size_t maxLines, Page& output, PagerError& error);
 
  private:
   uint8_t chunk_[kReadChunkBytes]{};
@@ -69,13 +81,18 @@ class Pager {
   uint32_t chunkStart_ = UINT32_MAX;
   size_t chunkLength_ = 0;
 
-  bool readByte(const DictionaryPackage& package, const EntrySlice& entry, uint32_t relativeOffset, uint8_t& value,
+  bool readByte(const EntryReader& reader, const EntrySlice& entry, uint32_t relativeOffset, uint8_t& value,
                 PagerError& error);
-  bool loadInternal(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
+  bool readEntryHeader(const EntryReader& reader, const EntrySlice& entry, EntryHeader& output,
+                       PagerError& error) const;
+  bool readFieldHeader(const EntryReader& reader, const EntrySlice& entry, uint32_t relativeOffset,
+                       EntryFieldHeader& output, PagerError& error) const;
+  bool loadInternal(const EntryReader& reader, const EntrySlice& entry, const Cursor& start,
                     const WidthMeasurer& measurer, int maxLineWidth, size_t maxLines, bool resetOutput, Page& output,
                     PagerError& error);
 };
 
+static_assert(sizeof(Line) <= 6, "Definition line metadata must stay packed");
 static_assert(sizeof(Pager) <= 768, "Definition pager workspace exceeds its transient memory budget");
 static_assert(sizeof(Page) <= 4608, "Definition page exceeds its transient memory budget");
 

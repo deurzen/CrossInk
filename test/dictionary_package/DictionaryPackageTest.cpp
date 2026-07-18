@@ -45,6 +45,26 @@ RandomAccessSource sourceFor(const std::vector<uint8_t>& data) {
   return {const_cast<std::vector<uint8_t>*>(&data), data.size(), readVector};
 }
 
+bool readEntryVector(void* context, const dictionary::EntrySlice& entry, const uint32_t relativeOffset, void* output,
+                     const size_t capacity, size_t& bytesRead, PackageError& error) {
+  bytesRead = 0;
+  error = PackageError::NONE;
+  const auto& data = *static_cast<const std::vector<uint8_t>*>(context);
+  if (entry.length == 0 || static_cast<uint64_t>(entry.offset) + entry.length > data.size() ||
+      relativeOffset > entry.length) {
+    error = PackageError::ENTRY_RANGE_INVALID;
+    return false;
+  }
+  if (capacity == 0 || relativeOffset == entry.length) return true;
+  if (!output) {
+    error = PackageError::OUTPUT_BUFFER_TOO_SMALL;
+    return false;
+  }
+  bytesRead = std::min(capacity, static_cast<size_t>(entry.length - relativeOffset));
+  std::memcpy(output, data.data() + entry.offset + relativeOffset, bytesRead);
+  return true;
+}
+
 struct Fixture {
   std::vector<uint8_t> meta;
   std::vector<uint8_t> lexemes;
@@ -292,6 +312,23 @@ TEST(DefinitionPager, StreamsWrappedPagesAcrossEntryFields) {
   EXPECT_TRUE(page.lines[1].gapBefore);
   EXPECT_FALSE(page.lines[2].gapBefore);
   EXPECT_EQ(page.lineText(page.lineCount - 1), "example");
+  EXPECT_FALSE(page.hasNext);
+}
+
+TEST(DefinitionPager, StreamsFromGenericEntryReaderWithoutMaterializingPayload) {
+  Fixture fixture = makeFixture();
+  replaceFirstEntry(fixture, {{2, "verb"}, {1, "contextual definition"}});
+  const dictionary::definition::EntryReader reader{&fixture.entries, readEntryVector};
+  const dictionary::EntrySlice entry{0, static_cast<uint32_t>(fixture.entries.size())};
+  dictionary::definition::Pager pager;
+  dictionary::definition::Page page;
+  dictionary::definition::PagerError error;
+  const dictionary::definition::WidthMeasurer measurer{nullptr, measuredBytes};
+
+  ASSERT_TRUE(pager.load(reader, entry, {}, measurer, 40, dictionary::definition::kMaxPageLines, page, error));
+  ASSERT_EQ(page.lineCount, 2);
+  EXPECT_EQ(page.lineText(0), "verb");
+  EXPECT_EQ(page.lineText(1), "contextual definition");
   EXPECT_FALSE(page.hasNext);
 }
 

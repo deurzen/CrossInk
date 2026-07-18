@@ -77,7 +77,7 @@ committed.
 | C24 | Done | Switch learning state and book artifacts to canonical UUID identity | Existing explicit states remain isolated until migration; mismatch behavior tested |
 | C25 | Done | Discover and retain at most three bounded definition descriptors | Measured session growth ≤3.5 KB; no source index or entry loaded wholesale |
 | C26 | Done | Read canonical entry-index records through the switching SD reader | One 8-byte index read per source/lemma; no simultaneous file handles; I/O metrics covered |
-| C27 | Planned | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
+| C27 | Done | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
 | C28 | Planned | Render labeled source dividers and existing analysis/meaning separators | de-DE, dict.cc and Kaikki visibly distinct; pagination accounts for divider height without clipping |
 | C29 | Planned | Apply status once to the canonical lexical item | Known/Learning/Ignore suppresses the item independent of source availability or order |
 | C30 | Planned | Add translated failure and compatibility UI | Missing canonical/source/corrupt-entry states are actionable and never crash or silently mislabel content |
@@ -234,12 +234,12 @@ retain their relative order. The session exposes the attachment generation,
 valid/skipped counts and a ready/partial/invalid discovery status for later UI
 work.
 
-After C26, `DefinitionSources` is 2,376 bytes in the ESP32-C3 DWARF layout,
+After C27, `DefinitionSources` is 3,216 bytes in the ESP32-C3 DWARF layout,
 enforced by a 3.5 KiB compile-time ceiling. C25's discovery-only state measured
-1,536 bytes; C26 adds three retained index paths so lookups do not reopen
-metadata. The combined state contains three copied 104-byte metadata descriptors,
-one reusable definition reader, six path/source contexts and the attachment
-store. Discovery reads only the 88-byte attachment record and each
+1,536 bytes, C26 measured 2,376 bytes after retaining index paths, and C27 adds
+three entry paths for direct streaming. The combined state contains three copied
+104-byte metadata descriptors, one reusable definition reader, nine path/source
+contexts and the attachment store. Discovery reads only the 88-byte attachment record and each
 144-byte metadata header plus file sizes; it never reads a source index or entry
 payload and allocates no heap. On X3/X4, attach three sources, open a v4 book and
 confirm serial/SD tracing shows one reader switching across metadata files.
@@ -264,7 +264,30 @@ sources and confirm the same counters in the dictionary I/O log. Remove or
 truncate one index, reopen the book, and confirm the other source records still
 resolve without a `DIN` multiple-reader failure.
 
+## C27 implementation note
+
+`DefinitionPager` now accepts a small callback-backed entry reader in addition
+to the legacy package reader. Contextual lookup retains one `entries.bin` path
+per valid source and streams the same version-1 field encoding in 256-byte
+chunks through the existing pager workspace and single 4.4 KiB page. No entry
+payload, second page or second SD handle is materialized.
+
+The definition cursor now contains analysis, source and field position. Forward
+navigation continues the current source without rereading its index; changing
+analysis refreshes the bounded three-record index cache. Reverse navigation
+replays pages from the start, preserving memory bounds independent of entry
+length. Missing indexes and malformed/unreadable source entries are skipped
+independently; any partially appended lines are rolled back before continuing.
+Line metadata records source and analysis starts for C28 rendering without
+increasing `DefinitionPage` size.
+
+On X3/X4, open an ambiguous word covered by all three sources, page forward into
+a long source and backward to page zero, and verify identical text/order with
+only one `DICT` reader open. Repeat after truncating one `entries.bin`: the
+other source × analysis entries must remain navigable, with a logged source
+failure and no heap loss after 100 repeated opens.
+
 ## Immediate next work
 
-1. Stream source × analysis definitions through the existing pager/page in C27.
+1. Render labeled source dividers and existing analysis/meaning separators in C28.
 2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

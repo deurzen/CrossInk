@@ -18,6 +18,29 @@ uint8_t utf8Length(const uint8_t first) {
 
 bool isAsciiSpace(const uint8_t byte) { return byte == ' ' || byte == '\t' || byte == '\r'; }
 
+uint16_t readU16(const uint8_t* data) {
+  return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8U);
+}
+
+bool readPackageChunk(void* context, const EntrySlice& entry, const uint32_t relativeOffset, void* output,
+                      const size_t capacity, size_t& bytesRead, PackageError& error) {
+  return static_cast<const DictionaryPackage*>(context)->readEntryChunk(entry, relativeOffset, output, capacity,
+                                                                        bytesRead, error);
+}
+
+EntryReader readerFor(const DictionaryPackage& package) {
+  return {const_cast<DictionaryPackage*>(&package), readPackageChunk};
+}
+
+bool readExact(const EntryReader& reader, const EntrySlice& entry, const uint32_t relativeOffset, void* output,
+               const size_t length) {
+  PackageError packageError = PackageError::NONE;
+  size_t bytesRead = 0;
+  return reader.readChunk != nullptr &&
+         reader.readChunk(reader.context, entry, relativeOffset, output, length, bytesRead, packageError) &&
+         bytesRead == length;
+}
+
 }  // namespace
 
 std::string_view Page::lineText(const uint8_t index) const {
@@ -27,12 +50,12 @@ std::string_view Page::lineText(const uint8_t index) const {
   return {text + line.textOffset, line.textLength};
 }
 
-bool Pager::readByte(const DictionaryPackage& package, const EntrySlice& entry, const uint32_t relativeOffset,
-                     uint8_t& value, PagerError& error) {
+bool Pager::readByte(const EntryReader& reader, const EntrySlice& entry, const uint32_t relativeOffset, uint8_t& value,
+                     PagerError& error) {
   if (chunkStart_ == UINT32_MAX || relativeOffset < chunkStart_ || relativeOffset >= chunkStart_ + chunkLength_) {
     chunkStart_ = relativeOffset;
     PackageError packageError = PackageError::NONE;
-    if (!package.readEntryChunk(entry, relativeOffset, chunk_, sizeof(chunk_), chunkLength_, packageError) ||
+    if (!reader.readChunk(reader.context, entry, relativeOffset, chunk_, sizeof(chunk_), chunkLength_, packageError) ||
         chunkLength_ == 0) {
       error = PagerError::PACKAGE_READ_FAILED;
       return false;
@@ -45,16 +68,75 @@ bool Pager::readByte(const DictionaryPackage& package, const EntrySlice& entry, 
 bool Pager::load(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
                  const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines, Page& output,
                  PagerError& error) {
-  return loadInternal(package, entry, start, measurer, maxLineWidth, maxLines, true, output, error);
+  return load(readerFor(package), entry, start, measurer, maxLineWidth, maxLines, output, error);
 }
 
 bool Pager::append(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
                    const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines, Page& output,
                    PagerError& error) {
-  return loadInternal(package, entry, start, measurer, maxLineWidth, maxLines, false, output, error);
+  return append(readerFor(package), entry, start, measurer, maxLineWidth, maxLines, output, error);
 }
 
-bool Pager::loadInternal(const DictionaryPackage& package, const EntrySlice& entry, const Cursor& start,
+bool Pager::load(const EntryReader& reader, const EntrySlice& entry, const Cursor& start, const WidthMeasurer& measurer,
+                 const int maxLineWidth, const size_t maxLines, Page& output, PagerError& error) {
+  return loadInternal(reader, entry, start, measurer, maxLineWidth, maxLines, true, output, error);
+}
+
+bool Pager::append(const EntryReader& reader, const EntrySlice& entry, const Cursor& start,
+                   const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines, Page& output,
+                   PagerError& error) {
+  return loadInternal(reader, entry, start, measurer, maxLineWidth, maxLines, false, output, error);
+}
+
+bool Pager::readEntryHeader(const EntryReader& reader, const EntrySlice& entry, EntryHeader& output,
+                            PagerError& error) const {
+  output = {};
+  if (entry.length < 4 || entry.length > kMaxEntryBytes) {
+    error = PagerError::CURSOR_INVALID;
+    return false;
+  }
+  uint8_t data[4]{};
+  if (!readExact(reader, entry, 0, data, sizeof(data))) {
+    error = PagerError::PACKAGE_READ_FAILED;
+    return false;
+  }
+  output.version = data[0];
+  output.flags = data[1];
+  output.fieldCount = readU16(data + 2);
+  if (output.version != 1 || output.flags != 0 || output.fieldCount == 0 || output.fieldCount > kMaxEntryFieldCount) {
+    output = {};
+    error = PagerError::PACKAGE_READ_FAILED;
+    return false;
+  }
+  return true;
+}
+
+bool Pager::readFieldHeader(const EntryReader& reader, const EntrySlice& entry, const uint32_t relativeOffset,
+                            EntryFieldHeader& output, PagerError& error) const {
+  output = {};
+  if (relativeOffset < 4 || static_cast<uint64_t>(relativeOffset) + 4 > entry.length) {
+    error = PagerError::CURSOR_INVALID;
+    return false;
+  }
+  uint8_t data[4]{};
+  if (!readExact(reader, entry, relativeOffset, data, sizeof(data))) {
+    error = PagerError::PACKAGE_READ_FAILED;
+    return false;
+  }
+  output.type = data[0];
+  output.flags = data[1];
+  output.length = readU16(data + 2);
+  output.payloadOffset = relativeOffset + 4;
+  if (output.type == 0 || output.flags != 0 ||
+      static_cast<uint64_t>(output.payloadOffset) + output.length > entry.length) {
+    output = {};
+    error = PagerError::PACKAGE_READ_FAILED;
+    return false;
+  }
+  return true;
+}
+
+bool Pager::loadInternal(const EntryReader& reader, const EntrySlice& entry, const Cursor& start,
                          const WidthMeasurer& measurer, const int maxLineWidth, const size_t maxLines,
                          const bool resetOutput, Page& output, PagerError& error) {
   if (resetOutput) output = {};
@@ -63,18 +145,14 @@ bool Pager::loadInternal(const DictionaryPackage& package, const EntrySlice& ent
   chunkStart_ = UINT32_MAX;
   chunkLength_ = 0;
 
-  if (!package.isOpen() || measurer.measure == nullptr || maxLineWidth <= 0 || maxLines == 0 ||
+  if (reader.readChunk == nullptr || measurer.measure == nullptr || maxLineWidth <= 0 || maxLines == 0 ||
       maxLines > kMaxPageLines) {
     error = PagerError::INVALID_INPUT;
     return false;
   }
 
   EntryHeader entryHeader;
-  PackageError packageError = PackageError::NONE;
-  if (!package.readEntryHeader(entry, entryHeader, packageError)) {
-    error = PagerError::PACKAGE_READ_FAILED;
-    return false;
-  }
+  if (!readEntryHeader(reader, entry, entryHeader, error)) return false;
   if (start.fieldIndex > entryHeader.fieldCount || start.fieldHeaderOffset < 4 ||
       start.fieldHeaderOffset > entry.length ||
       (start.fieldIndex == entryHeader.fieldCount &&
@@ -86,10 +164,7 @@ bool Pager::loadInternal(const DictionaryPackage& package, const EntrySlice& ent
   Cursor cursor = start;
   while (cursor.fieldIndex < entryHeader.fieldCount && output.lineCount < maxLines) {
     EntryFieldHeader field;
-    if (!package.readEntryFieldHeader(entry, cursor.fieldHeaderOffset, field, packageError)) {
-      error = PagerError::PACKAGE_READ_FAILED;
-      return false;
-    }
+    if (!readFieldHeader(reader, entry, cursor.fieldHeaderOffset, field, error)) return false;
     if (cursor.fieldByteOffset > field.length) {
       error = PagerError::CURSOR_INVALID;
       return false;
@@ -99,7 +174,7 @@ bool Pager::loadInternal(const DictionaryPackage& package, const EntrySlice& ent
     while (cursor.fieldByteOffset < field.length && output.lineCount < maxLines) {
       while (cursor.fieldByteOffset < field.length) {
         uint8_t byte = 0;
-        if (!readByte(package, entry, field.payloadOffset + cursor.fieldByteOffset, byte, error)) return false;
+        if (!readByte(reader, entry, field.payloadOffset + cursor.fieldByteOffset, byte, error)) return false;
         if (!isAsciiSpace(byte)) break;
         ++cursor.fieldByteOffset;
       }
@@ -113,7 +188,7 @@ bool Pager::loadInternal(const DictionaryPackage& package, const EntrySlice& ent
 
       while (cursor.fieldByteOffset < field.length) {
         uint8_t first = 0;
-        if (!readByte(package, entry, field.payloadOffset + cursor.fieldByteOffset, first, error)) return false;
+        if (!readByte(reader, entry, field.payloadOffset + cursor.fieldByteOffset, first, error)) return false;
         if (first == '\n') {
           ++cursor.fieldByteOffset;
           endedByNewline = true;
@@ -137,7 +212,7 @@ bool Pager::loadInternal(const DictionaryPackage& package, const EntrySlice& ent
 
         for (uint8_t byteIndex = 0; byteIndex < codepointLength; ++byteIndex) {
           uint8_t byte = 0;
-          if (!readByte(package, entry, field.payloadOffset + cursor.fieldByteOffset + byteIndex, byte, error)) {
+          if (!readByte(reader, entry, field.payloadOffset + cursor.fieldByteOffset + byteIndex, byte, error)) {
             return false;
           }
           if (byteIndex > 0 && !isContinuation(byte)) {

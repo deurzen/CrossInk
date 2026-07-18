@@ -50,6 +50,10 @@ const char* modeName(const uint8_t mode) {
   }
 }
 
+bool entryCursorAtStart(const dictionary::definition::Cursor& cursor) {
+  return cursor.fieldHeaderOffset == 4 && cursor.fieldIndex == 0 && cursor.fieldByteOffset == 0;
+}
+
 dictionary::lexeme_state::Status statusValue(const uint8_t index) {
   switch (index) {
     case 0:
@@ -148,7 +152,9 @@ bool DictionaryActivity::openDefinition() {
   definitionFailed_ = false;
   statusSaved_ = false;
   dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
-  if (!shortlist_ || selected_ >= shortlist_->count || !session_->openDefinitionPackage(sessionError)) {
+  const bool contextual = session_ && session_->usesCanonicalIdentity();
+  if (!shortlist_ || selected_ >= shortlist_->count ||
+      (!contextual && !session_->openDefinitionPackage(sessionError))) {
     LOG_ERR("DICT", "Definition package open failed: %s", dictionary::lookup::sessionErrorName(sessionError));
     definitionFailed_ = true;
     mode_ = Mode::Definition;
@@ -182,6 +188,9 @@ bool DictionaryActivity::openDefinition() {
 
   definitionPageStart_ = {};
   definitionPageNext_ = {};
+  contextualIndexes_ = {};
+  contextualIndexCount_ = 0;
+  contextualIndexAnalysis_ = UINT8_MAX;
   definitionPageIndex_ = 0;
   mode_ = Mode::Definition;
   const bool loaded = loadDefinitionPage(definitionPageStart_, 0);
@@ -194,6 +203,112 @@ bool DictionaryActivity::openDefinition() {
           static_cast<unsigned long>(io.readCalls), static_cast<unsigned long long>(io.bytesRead), ESP.getFreeHeap(),
           ESP.getMaxAllocHeap());
   return loaded;
+}
+
+bool DictionaryActivity::loadContextualIndexes(const uint8_t analysisIndex) {
+  if (contextualIndexAnalysis_ == analysisIndex) return true;
+  if (!shortlist_ || selected_ >= shortlist_->count || analysisIndex >= shortlist_->items[selected_].analysisCount) {
+    return false;
+  }
+  uint32_t canonicalId = 0;
+  dictionary::lookup::SessionError error = dictionary::lookup::SessionError::NONE;
+  if (!session_->globalLexemeId(shortlist_->items[selected_].localLemmaIds[analysisIndex], canonicalId) ||
+      !session_->readDefinitionIndexes(canonicalId, contextualIndexes_, contextualIndexCount_, error)) {
+    LOG_ERR("DICT", "Contextual index lookup failed: %s", dictionary::lookup::sessionErrorName(error));
+    return false;
+  }
+  contextualIndexAnalysis_ = analysisIndex;
+  return true;
+}
+
+bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& start, const uint32_t pageIndex,
+                                                      const dictionary::definition::WidthMeasurer& measurer,
+                                                      const size_t maxLines) {
+  const uint8_t analysisCount = shortlist_->items[selected_].analysisCount;
+  DefinitionCursor cursor = start;
+  definitionPageNext_ = start;
+  uint8_t appendedAnalysis = UINT8_MAX;
+  bool firstEntry = true;
+  *definitionPage_ = {};
+
+  while (cursor.analysisIndex < analysisCount && definitionPage_->lineCount < maxLines) {
+    if (!loadContextualIndexes(cursor.analysisIndex)) {
+      definitionFailed_ = true;
+      requestUpdate();
+      return false;
+    }
+    if (cursor.sourceIndex >= contextualIndexCount_) {
+      ++cursor.analysisIndex;
+      cursor.sourceIndex = 0;
+      cursor.entry = {};
+      definitionPageNext_ = cursor;
+      continue;
+    }
+
+    const uint8_t sourceIndex = cursor.sourceIndex;
+    const auto& index = contextualIndexes_[sourceIndex];
+    if (index.status != dictionary::lookup::DefinitionIndexStatus::PRESENT) {
+      ++cursor.sourceIndex;
+      cursor.entry = {};
+      definitionPageNext_ = cursor;
+      continue;
+    }
+
+    dictionary::definition::EntryReader reader;
+    dictionary::lookup::SessionError sessionError = dictionary::lookup::SessionError::NONE;
+    if (!session_->contextualEntryReader(sourceIndex, reader, sessionError)) {
+      LOG_ERR("DICT", "Contextual entry source failed: %s", dictionary::lookup::sessionErrorName(sessionError));
+      ++cursor.sourceIndex;
+      cursor.entry = {};
+      definitionPageNext_ = cursor;
+      continue;
+    }
+    const dictionary::EntrySlice slice{index.record.entryOffset, index.record.entryLength};
+    const uint8_t oldLineCount = definitionPage_->lineCount;
+    const uint16_t oldTextBytes = definitionPage_->textBytesUsed;
+    const bool startsSource = entryCursorAtStart(cursor.entry);
+    dictionary::definition::PagerError pagerError = dictionary::definition::PagerError::NONE;
+    const bool loaded = firstEntry ? pager_->load(reader, slice, cursor.entry, measurer, definitionContentWidth(),
+                                                  maxLines, *definitionPage_, pagerError)
+                                   : pager_->append(reader, slice, cursor.entry, measurer, definitionContentWidth(),
+                                                    maxLines, *definitionPage_, pagerError);
+    if (!loaded) {
+      definitionPage_->lineCount = oldLineCount;
+      definitionPage_->textBytesUsed = oldTextBytes;
+      definitionPage_->hasNext = false;
+      LOG_ERR("DICT", "Skipping contextual definition source %u: %s", static_cast<unsigned>(sourceIndex),
+              dictionary::definition::pagerErrorName(pagerError));
+      ++cursor.sourceIndex;
+      cursor.entry = {};
+      definitionPageNext_ = cursor;
+      continue;
+    }
+
+    // Pager mutates the referenced page; cppcheck does not model that callback path.
+    // cppcheck-suppress knownConditionTrueFalse
+    if (definitionPage_->lineCount > oldLineCount) {
+      auto& firstLine = definitionPage_->lines[oldLineCount];
+      firstLine.analysisStart = !firstEntry && appendedAnalysis != cursor.analysisIndex;
+      firstLine.sourceStart = startsSource;
+      firstLine.sourceIndex = sourceIndex;
+      appendedAnalysis = cursor.analysisIndex;
+      firstEntry = false;
+    }
+    if (definitionPage_->hasNext) {
+      definitionPageNext_ = {definitionPage_->next, cursor.analysisIndex, sourceIndex};
+      break;
+    }
+    ++cursor.sourceIndex;
+    cursor.entry = {};
+    definitionPageNext_ = cursor;
+  }
+
+  definitionPage_->hasNext = definitionPageNext_.analysisIndex < analysisCount;
+  definitionFailed_ = definitionPage_->lineCount == 0;
+  definitionPageStart_ = start;
+  definitionPageIndex_ = pageIndex;
+  requestUpdate();
+  return !definitionFailed_;
 }
 
 bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const uint32_t pageIndex) {
@@ -217,6 +332,9 @@ bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const
   const size_t visibleLines =
       static_cast<size_t>(std::max(1, availableHeight / std::max(1, lineStep + kDefinitionMeaningGap)));
   const size_t maxLines = std::min(visibleLines, dictionary::definition::kMaxPageLines);
+  if (session_->usesCanonicalIdentity()) {
+    return loadContextualDefinitionPage(start, pageIndex, measurer, maxLines);
+  }
 
   DefinitionCursor cursor = start;
   bool firstEntry = true;

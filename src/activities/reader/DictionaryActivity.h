@@ -3,6 +3,8 @@
 #include <DefinitionPager.h>
 #include <PageShortlist.h>
 
+#include <array>
+#include <cstdint>
 #include <memory>
 
 #include "activities/Activity.h"
@@ -24,6 +26,7 @@ class DictionaryActivity final : public Activity {
   struct DefinitionCursor {
     dictionary::definition::Cursor entry{};
     uint8_t analysisIndex = 0;
+    uint8_t sourceIndex = 0;
   };
 
   enum class Mode : uint8_t { Shortlist, Definition, Status };
@@ -35,6 +38,10 @@ class DictionaryActivity final : public Activity {
   DefinitionCursor definitionPageNext_{};
   dictionary::LexemeRecord lexeme_{};
   dictionary::EntrySlice entry_{};
+  std::array<dictionary::lookup::DefinitionIndexLookup, dictionary::contextual::kMaxAttachedSources>
+      contextualIndexes_{};
+  uint8_t contextualIndexCount_ = 0;
+  uint8_t contextualIndexAnalysis_ = UINT8_MAX;
   Mode mode_ = Mode::Shortlist;
   uint16_t selected_ = 0;
   uint32_t definitionPageIndex_ = 0;
@@ -47,7 +54,10 @@ class DictionaryActivity final : public Activity {
 
   bool openDefinition();
   bool loadDefinitionPage(const DefinitionCursor& start, uint32_t pageIndex);
+  bool loadContextualDefinitionPage(const DefinitionCursor& start, uint32_t pageIndex,
+                                    const dictionary::definition::WidthMeasurer& measurer, size_t maxLines);
   bool openAnalysisEntry(uint8_t analysisIndex);
+  bool loadContextualIndexes(uint8_t analysisIndex);
   void changeDefinitionPage(int delta);
   void saveSelectedStatus();
   void returnToShortlist();

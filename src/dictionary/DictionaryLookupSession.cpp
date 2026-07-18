@@ -136,19 +136,27 @@ bool Session::loadDefinitionMetadata(void* context, const uint8_t (&sourceUuid)[
   return true;
 }
 
-bool Session::prepareDefinitionIndexSource(const uint8_t sourceIndex) {
+bool Session::prepareDefinitionRuntimeSources(const uint8_t sourceIndex) {
   if (sourceIndex >= definitionSources_.catalog.sourceCount) return false;
   const auto& metadata = definitionSources_.catalog.sources[sourceIndex];
   char uuidHex[33]{};
   formatUuid(metadata.sourceUuid, uuidHex);
   char path[kMaxLookupPath]{};
-  const int written = std::snprintf(path, sizeof(path), "%s/%s/entry-index.bin", DEFINITION_SOURCE_ROOT_PATH, uuidHex);
-  auto& source = definitionSources_.retainedIndexSources[sourceIndex];
+  int written = std::snprintf(path, sizeof(path), "%s/%s/entry-index.bin", DEFINITION_SOURCE_ROOT_PATH, uuidHex);
+  auto& indexSource = definitionSources_.retainedIndexSources[sourceIndex];
   if (written <= 0 || static_cast<size_t>(written) >= sizeof(path) ||
-      !setSourcePath(source, path, static_cast<uint8_t>(8U + sourceIndex))) {
+      !setSourcePath(indexSource, path, static_cast<uint8_t>(8U + sourceIndex))) {
     return false;
   }
-  source.size = metadata.indexFileSize;
+  indexSource.size = metadata.indexFileSize;
+
+  written = std::snprintf(path, sizeof(path), "%s/%s/entries.bin", DEFINITION_SOURCE_ROOT_PATH, uuidHex);
+  auto& entrySource = definitionSources_.retainedEntrySources[sourceIndex];
+  if (written <= 0 || static_cast<size_t>(written) >= sizeof(path) ||
+      !setSourcePath(entrySource, path, static_cast<uint8_t>(11U + sourceIndex))) {
+    return false;
+  }
+  entrySource.size = metadata.entriesFileSize;
   return true;
 }
 
@@ -181,8 +189,8 @@ void Session::discoverDefinitionSources(const char* canonicalDirectory) {
   sourceReader_.close();
   definitionSources_.reader = {};
   for (uint8_t sourceIndex = 0; sourceIndex < definitionSources_.catalog.sourceCount; ++sourceIndex) {
-    if (!prepareDefinitionIndexSource(sourceIndex)) {
-      LOG_ERR("DICT", "Failed to retain definition index path");
+    if (!prepareDefinitionRuntimeSources(sourceIndex)) {
+      LOG_ERR("DICT", "Failed to retain definition runtime paths");
       definitionSources_.catalog = {};
       return;
     }
@@ -382,6 +390,42 @@ bool Session::readDefinitionIndexes(const uint32_t canonicalId,
     }
     result.status = result.record.present() ? DefinitionIndexStatus::PRESENT : DefinitionIndexStatus::MISSING;
   }
+  return true;
+}
+
+bool Session::readContextualEntryChunk(void* context, const EntrySlice& entry, const uint32_t relativeOffset,
+                                       void* output, const size_t capacity, size_t& bytesRead, PackageError& error) {
+  bytesRead = 0;
+  error = PackageError::NONE;
+  auto& source = *static_cast<SourceContext*>(context);
+  if (!source.reader || entry.length == 0 || entry.length > kMaxEntryBytes ||
+      static_cast<uint64_t>(entry.offset) + entry.length > source.size || relativeOffset > entry.length) {
+    error = PackageError::ENTRY_RANGE_INVALID;
+    return false;
+  }
+  if (capacity == 0 || relativeOffset == entry.length) return true;
+  if (!output) {
+    error = PackageError::OUTPUT_BUFFER_TOO_SMALL;
+    return false;
+  }
+  bytesRead = std::min<size_t>(capacity, entry.length - relativeOffset);
+  if (!source.reader->readAt(source.path, source.sourceToken, source.size, entry.offset + relativeOffset, output,
+                             bytesRead, source.metrics)) {
+    bytesRead = 0;
+    error = PackageError::ENTRY_READ_FAILED;
+    return false;
+  }
+  return true;
+}
+
+bool Session::contextualEntryReader(const uint8_t sourceIndex, definition::EntryReader& output, SessionError& error) {
+  output = {};
+  error = SessionError::NONE;
+  if (!readersOpen_ || !contextualIdentity_ || sourceIndex >= definitionSources_.catalog.sourceCount) {
+    error = SessionError::INVALID_INPUT;
+    return false;
+  }
+  output = {&definitionSources_.retainedEntrySources[sourceIndex], readContextualEntryChunk};
   return true;
 }
 
