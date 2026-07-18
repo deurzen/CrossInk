@@ -88,9 +88,13 @@ C08a unions DWDSmor with the compiler-only de-DE form inventory. Duplicate
 analyses merge provenance rather than creating duplicate candidates. Candidate
 precedence is DWDSmor, exact inventory form, then case-folded inventory form;
 ordinary ranking still uses linguistic evidence rather than source IDs. The
-union fails cleanly above 256 unique analyses instead of silently producing an
-unbounded list. Provenance is compiler metadata and does not participate in
-canonical identity.
+union remains capped at 256 unique analyses. Wiktextract metadata rows such as
+auxiliary verbs, table descriptors, and abbreviation labels are excluded when
+building form inventories. As a defense for existing contaminated inventories,
+more than 32 fallback identities for one surface retains only identities also
+supported by DWDSmor or whose lemma literally matches the surface; unrelated
+rows are never arbitrarily truncated into the candidate set. Provenance is
+compiler metadata and does not participate in canonical identity.
 
 C08b recognizes ZDL's `PTKVZ` tag, finds the nearest preceding finite verb
 within 64 tokens and the same strong punctuation boundary, then tests each

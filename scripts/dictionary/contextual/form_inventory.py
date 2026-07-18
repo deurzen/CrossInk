@@ -21,10 +21,15 @@ class FormInventoryError(RuntimeError):
     pass
 
 
+class FormInventoryFanoutError(FormInventoryError):
+    """The seed inventory maps one surface to implausibly many identities."""
+
+
 @dataclass(frozen=True)
 class FormInventoryLimits:
     max_surface_bytes: int = 255
     max_unique_analyses: int = 256
+    max_credible_inventory_analyses: int = 32
 
     def __post_init__(self) -> None:
         for name, value in self.__dict__.items():
@@ -203,7 +208,7 @@ class DeDeFormInventoryAnalyzer:
                 analysis = self._lexemes[lexeme_id]
                 by_analysis.setdefault(analysis, AnalysisProvenance.FOLDED_FORM_INVENTORY)
         if len(by_analysis) > self._limits.max_unique_analyses:
-            raise FormInventoryError(
+            raise FormInventoryFanoutError(
                 f"surface exceeds inventory-analysis cap {self._limits.max_unique_analyses}"
             )
         return tuple(
@@ -231,19 +236,42 @@ class AugmentedMorphologyAnalyzer:
         self._limits = limits
 
     def analyze_surface(self, surface: str) -> tuple[MorphologyCandidate, ...]:
+        primary_candidates = tuple(self._primary.analyze_surface(surface))
+        try:
+            inventory_candidates = tuple(self._inventory.analyze_surface(surface))
+        except FormInventoryFanoutError:
+            inventory_candidates = ()
+
+        for candidate in primary_candidates + inventory_candidates:
+            if not isinstance(candidate, MorphologyCandidate):
+                raise FormInventoryError("morphology provider returned an invalid candidate")
+
+        if len(inventory_candidates) > self._limits.max_credible_inventory_analyses:
+            # Wiktextract metadata such as an auxiliary verb or abbreviation can
+            # appear in the source's `forms` array for hundreds of unrelated
+            # lexemes. Keep only identities independently supported by primary
+            # morphology or whose lemma is literally the observed surface. This
+            # avoids arbitrary truncation while retaining safe exact identities.
+            primary_analyses = {candidate.analysis for candidate in primary_candidates}
+            folded_surface = unicodedata.normalize("NFC", surface).casefold()
+            inventory_candidates = tuple(
+                candidate
+                for candidate in inventory_candidates
+                if candidate.analysis in primary_analyses
+                or candidate.analysis.lemma.casefold() == folded_surface
+            )
+
         by_analysis: dict[CanonicalAnalysis, AnalysisProvenance] = {}
-        for analyzer in (self._primary, self._inventory):
-            for candidate in analyzer.analyze_surface(surface):
-                if not isinstance(candidate, MorphologyCandidate):
-                    raise FormInventoryError("morphology provider returned an invalid candidate")
-                by_analysis[candidate.analysis] = (
-                    by_analysis.get(candidate.analysis, AnalysisProvenance(0))
-                    | candidate.provenance
+        for candidate in primary_candidates + inventory_candidates:
+            by_analysis[candidate.analysis] = (
+                by_analysis.get(candidate.analysis, AnalysisProvenance(0))
+                | candidate.provenance
+            )
+            if len(by_analysis) > self._limits.max_unique_analyses:
+                raise FormInventoryError(
+                    f"surface {surface!r} combined morphology exceeds cap "
+                    f"{self._limits.max_unique_analyses}"
                 )
-                if len(by_analysis) > self._limits.max_unique_analyses:
-                    raise FormInventoryError(
-                        f"combined morphology exceeds cap {self._limits.max_unique_analyses}"
-                    )
         return tuple(
             sorted(
                 (

@@ -158,6 +158,53 @@ class FormInventoryTest(unittest.TestCase):
         )
         self.assertTrue(result[0].provenance & AnalysisProvenance.PRIMARY_MORPHOLOGY)
 
+    def test_pathological_inventory_fanout_keeps_only_independently_safe_identities(self):
+        surface = "sein"
+        primary_analysis = CanonicalAnalysis(surface, CanonicalPos.VERB)
+        primary = SyntheticMorphology(
+            (
+                MorphologyCandidate(
+                    primary_analysis,
+                    AnalysisProvenance.PRIMARY_MORPHOLOGY,
+                ),
+            )
+        )
+        inventory = SyntheticMorphology(
+            (
+                MorphologyCandidate(
+                    primary_analysis,
+                    AnalysisProvenance.EXACT_FORM_INVENTORY,
+                ),
+                MorphologyCandidate(
+                    CanonicalAnalysis("Sein", CanonicalPos.NOUN),
+                    AnalysisProvenance.EXACT_FORM_INVENTORY,
+                ),
+                *(
+                    MorphologyCandidate(
+                        CanonicalAnalysis(f"unrelated-{index}", CanonicalPos.VERB),
+                        AnalysisProvenance.EXACT_FORM_INVENTORY,
+                    )
+                    for index in range(8)
+                ),
+            )
+        )
+
+        result = AugmentedMorphologyAnalyzer(
+            primary,
+            inventory,
+            FormInventoryLimits(max_credible_inventory_analyses=4),
+        ).analyze_surface(surface)
+
+        self.assertEqual(
+            {(candidate.analysis.lemma, candidate.analysis.part_of_speech) for candidate in result},
+            {("sein", CanonicalPos.VERB), ("Sein", CanonicalPos.NOUN)},
+        )
+        self.assertEqual(
+            result[0].provenance,
+            AnalysisProvenance.PRIMARY_MORPHOLOGY
+            | AnalysisProvenance.EXACT_FORM_INVENTORY,
+        )
+
     def test_rejects_wrong_direction_corruption_and_caps(self):
         wrong_direction = copy.deepcopy(SOURCE)
         wrong_direction["targetLanguage"] = "en"

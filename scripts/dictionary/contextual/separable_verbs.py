@@ -129,7 +129,8 @@ class GermanSeparableVerbRecombiner:
             base_lemmas.add(finite.analysis.lemma)
         if len(base_lemmas) > self._limits.max_base_lemmas:
             raise SeparableVerbError(
-                f"finite token exceeds base-lemma cap {self._limits.max_base_lemmas}"
+                f"finite token {finite.surface!r} exceeds base-lemma cap "
+                f"{self._limits.max_base_lemmas} with {len(base_lemmas)} candidates"
             )
 
         additions: dict[CanonicalAnalysis, AnalysisProvenance] = {}

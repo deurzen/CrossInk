@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from dictionary.compiler import CompileError, compile_bundle, compile_file  # noqa: E402
+from convert_wiktextract import extract_forms  # noqa: E402
 
 FIXTURE = ROOT / "test" / "data" / "dictionary-sources" / "german-small.json"
 
@@ -195,6 +196,18 @@ class DictionaryBundleCompilerTest(unittest.TestCase):
                 self.assertEqual(archive.namelist(), sorted(archive.namelist()))
                 self.assertIn("compiler/forms.bin", archive.namelist())
                 self.assertIn("device/meta.bin", archive.namelist())
+
+    def test_wiktextract_metadata_rows_are_not_compiled_as_surface_forms(self):
+        entry = {
+            "forms": [
+                {"form": "fiel", "tags": ["past"]},
+                {"form": "sein", "tags": ["auxiliary"]},
+                {"form": "7 strong", "tags": ["class"]},
+                {"form": "de-conj", "tags": ["inflection-template"]},
+                {"form": "broken", "tags": ["error-unrecognized-form"]},
+            ]
+        }
+        self.assertEqual(extract_forms(entry), {"fiel"})
 
     def test_rejects_missing_license_and_oversized_headword(self):
         source = load_fixture()

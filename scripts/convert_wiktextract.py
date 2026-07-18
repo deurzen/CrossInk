@@ -40,6 +40,19 @@ POS_MAP: dict[str, str] = {
 # Max bytes for headword — warn if exceeded
 MAX_HEADWORD_BYTES = 96
 
+# Wiktextract includes conjugation metadata in the same `forms` array as real
+# surface inflections. These rows describe the lexeme or its table; they are not
+# words that should resolve back to every lexeme carrying that metadata.
+NON_SURFACE_FORM_TAGS = frozenset(
+    {
+        "abbreviation",
+        "auxiliary",
+        "class",
+        "inflection-template",
+        "table-tags",
+    }
+)
+
 
 def normalize(text: str) -> str:
     return unicodedata.normalize("NFC", text)
@@ -66,6 +79,12 @@ def extract_forms(entry: dict[str, Any]) -> set[str]:
     """Extract single-word surface forms from a Wiktextract entry's forms array."""
     forms: set[str] = set()
     for form_entry in entry.get("forms", []):
+        tags = form_entry.get("tags", [])
+        if isinstance(tags, list) and (
+            NON_SURFACE_FORM_TAGS.intersection(tags)
+            or any(isinstance(tag, str) and tag.startswith("error-") for tag in tags)
+        ):
+            continue
         raw = form_entry.get("form", "")
         text = normalize(clean_form(raw))
         if is_useful_form(text):
