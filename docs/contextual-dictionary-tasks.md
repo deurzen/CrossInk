@@ -78,7 +78,7 @@ committed.
 | C25 | Done | Discover and retain at most three bounded definition descriptors | Measured session growth ≤3.5 KB; no source index or entry loaded wholesale |
 | C26 | Done | Read canonical entry-index records through the switching SD reader | One 8-byte index read per source/lemma; no simultaneous file handles; I/O metrics covered |
 | C27 | Done | Stream source × analysis definitions through the existing pager/page | No second page allocation; missing source entries skipped; backward/forward replay bounded |
-| C28 | Planned | Render labeled source dividers and existing analysis/meaning separators | de-DE, dict.cc and Kaikki visibly distinct; pagination accounts for divider height without clipping |
+| C28 | Done | Render labeled source dividers and existing analysis/meaning separators | de-DE, dict.cc and Kaikki visibly distinct; pagination accounts for divider height without clipping |
 | C29 | Planned | Apply status once to the canonical lexical item | Known/Learning/Ignore suppresses the item independent of source availability or order |
 | C30 | Planned | Add translated failure and compatibility UI | Missing canonical/source/corrupt-entry states are actionable and never crash or silently mislabel content |
 
@@ -287,7 +287,30 @@ only one `DICT` reader open. Repeat after truncating one `entries.bin`: the
 other source × analysis entries must remain navigable, with a logged source
 failure and no heap loss after 100 repeated opens.
 
+## C28 implementation note
+
+Each contextual source start now renders its validated package label in bold,
+centered between two horizontal rules. Analysis boundaries retain the shorter
+unlabeled divider, while meaning fields retain the existing subtle gap. Labels
+come from installed source metadata, so de-DE, dict.cc and Kaikki remain visibly
+distinct without firmware-specific source names or new translations.
+
+Contextual pagination treats every pending source or analysis divider as one
+visual row before asking the pager for content lines. The 22-pixel source and
+16-pixel analysis dividers are therefore covered by the same conservative row
+height used for wrapped text and meaning gaps. When the next divider plus one
+content line cannot fit, the bounded source × analysis cursor becomes the next
+page start instead of drawing past the bezel-safe content area. Divider flags
+and the two-bit source index remain packed into the existing six-byte line
+metadata, so the single page buffer does not grow.
+
+On X3/X4, open entries covered by de-DE, dict.cc and Kaikki in portrait and both
+landscape orientations. Confirm labels and rules are centered, analysis and
+meaning separators remain distinct, and the final line stays above button hints.
+Page forward/backward across a source boundary and verify identical divider
+placement with no partial-refresh clipping.
+
 ## Immediate next work
 
-1. Render labeled source dividers and existing analysis/meaning separators in C28.
+1. Apply status once to the canonical lexical item in C29.
 2. Preserve the two known C09 ranking failures in broader novel evaluation before cutover.

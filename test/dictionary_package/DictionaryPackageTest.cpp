@@ -283,6 +283,13 @@ TEST(DictionaryPackage, ValidatesFilesWithBoundedReusableScratch) {
   EXPECT_EQ(error, PackageError::BAD_FILE_CRC);
 }
 
+TEST(DefinitionPager, ReservesVisualRowsForSourceAndAnalysisDividers) {
+  EXPECT_EQ(dictionary::definition::contentLineLimit(10, 0, 0, 1), 9U);
+  EXPECT_EQ(dictionary::definition::contentLineLimit(10, 4, 2, 2), 6U);
+  EXPECT_EQ(dictionary::definition::contentLineLimit(10, 6, 2, 2), 0U);
+  EXPECT_EQ(dictionary::definition::contentLineLimit(2, 0, 0, 2), 0U);
+}
+
 TEST(DefinitionPager, StreamsWrappedPagesAcrossEntryFields) {
   Fixture fixture = makeFixture();
   replaceFirstEntry(fixture, {{2, "verb"}, {1, "one two three four five six"}, {3, "an example"}});

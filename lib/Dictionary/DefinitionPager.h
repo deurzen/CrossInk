@@ -47,6 +47,13 @@ struct EntryReader {
                     size_t& bytesRead, PackageError& error) = nullptr;
 };
 
+constexpr size_t contentLineLimit(const size_t visualLineLimit, const size_t currentContentLines,
+                                  const size_t usedDividerLines, const size_t pendingDividerLines) {
+  const size_t reserved = usedDividerLines + pendingDividerLines;
+  return reserved < visualLineLimit && currentContentLines < visualLineLimit - reserved ? visualLineLimit - reserved
+                                                                                        : 0;
+}
+
 struct WidthMeasurer {
   void* context = nullptr;
   int (*measure)(void* context, std::string_view text) = nullptr;

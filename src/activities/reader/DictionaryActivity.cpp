@@ -22,6 +22,8 @@ constexpr int kDefinitionLineGap = 3;
 constexpr int kDefinitionMeaningGap = 4;
 constexpr int kAnalysisDividerWidth = 72;
 constexpr int kAnalysisDividerHeight = 16;
+constexpr int kSourceDividerHeight = 22;
+constexpr int kSourceDividerGap = 8;
 constexpr int kBottomReserved = 48;
 
 const char* statusLabel(const uint8_t index) {
@@ -228,6 +230,7 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
   DefinitionCursor cursor = start;
   definitionPageNext_ = start;
   uint8_t appendedAnalysis = UINT8_MAX;
+  size_t dividerSlots = 0;
   bool firstEntry = true;
   *definitionPage_ = {};
 
@@ -267,11 +270,19 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
     const uint8_t oldLineCount = definitionPage_->lineCount;
     const uint16_t oldTextBytes = definitionPage_->textBytesUsed;
     const bool startsSource = entryCursorAtStart(cursor.entry);
+    const bool startsAnalysis = !firstEntry && appendedAnalysis != cursor.analysisIndex;
+    const size_t pendingDividers = (startsSource ? 1U : 0U) + (startsAnalysis ? 1U : 0U);
+    const size_t contentLineLimit =
+        dictionary::definition::contentLineLimit(maxLines, definitionPage_->lineCount, dividerSlots, pendingDividers);
+    if (contentLineLimit == 0) {
+      definitionPageNext_ = cursor;
+      break;
+    }
     dictionary::definition::PagerError pagerError = dictionary::definition::PagerError::NONE;
     const bool loaded = firstEntry ? pager_->load(reader, slice, cursor.entry, measurer, definitionContentWidth(),
-                                                  maxLines, *definitionPage_, pagerError)
+                                                  contentLineLimit, *definitionPage_, pagerError)
                                    : pager_->append(reader, slice, cursor.entry, measurer, definitionContentWidth(),
-                                                    maxLines, *definitionPage_, pagerError);
+                                                    contentLineLimit, *definitionPage_, pagerError);
     if (!loaded) {
       definitionPage_->lineCount = oldLineCount;
       definitionPage_->textBytesUsed = oldTextBytes;
@@ -288,9 +299,10 @@ bool DictionaryActivity::loadContextualDefinitionPage(const DefinitionCursor& st
     // cppcheck-suppress knownConditionTrueFalse
     if (definitionPage_->lineCount > oldLineCount) {
       auto& firstLine = definitionPage_->lines[oldLineCount];
-      firstLine.analysisStart = !firstEntry && appendedAnalysis != cursor.analysisIndex;
+      firstLine.analysisStart = startsAnalysis;
       firstLine.sourceStart = startsSource;
       firstLine.sourceIndex = sourceIndex;
+      dividerSlots += pendingDividers;
       appendedAnalysis = cursor.analysisIndex;
       firstEntry = false;
     }
@@ -326,13 +338,16 @@ bool DictionaryActivity::loadDefinitionPage(const DefinitionCursor& start, const
   const uint8_t analysisCount = shortlist_->items[selected_].analysisCount;
   // Reserve the worst-case divider and meaning gaps up front so streamed lines
   // can never overflow the viewport, even when all analyses fit on one page.
-  const int dividerReserve = std::max(0, static_cast<int>(analysisCount) - 1) * kAnalysisDividerHeight;
+  const bool contextual = session_->usesCanonicalIdentity();
+  const int dividerReserve = contextual ? 0 : std::max(0, static_cast<int>(analysisCount) - 1) * kAnalysisDividerHeight;
   const int availableHeight =
       std::max(1, renderer.getScreenHeight() - bottom - (top + kListTop) - kBottomReserved - dividerReserve);
-  const size_t visibleLines =
-      static_cast<size_t>(std::max(1, availableHeight / std::max(1, lineStep + kDefinitionMeaningGap)));
+  const int visualRowHeight =
+      contextual ? std::max({lineStep + kDefinitionMeaningGap, kSourceDividerHeight, kAnalysisDividerHeight})
+                 : lineStep + kDefinitionMeaningGap;
+  const size_t visibleLines = static_cast<size_t>(std::max(1, availableHeight / std::max(1, visualRowHeight)));
   const size_t maxLines = std::min(visibleLines, dictionary::definition::kMaxPageLines);
-  if (session_->usesCanonicalIdentity()) {
+  if (contextual) {
     return loadContextualDefinitionPage(start, pageIndex, measurer, maxLines);
   }
 
@@ -557,8 +572,29 @@ void DictionaryActivity::renderDefinition() {
         const int centerX = left + (renderer.getScreenWidth() - left - right) / 2;
         renderer.fillRect(centerX - kAnalysisDividerWidth / 2, y, kAnalysisDividerWidth, 1, true);
         y += kAnalysisDividerHeight / 2;
-      } else if (line.gapBefore) {
+      } else if (line.gapBefore && !line.sourceStart) {
         y += kDefinitionMeaningGap;
+      }
+      if (line.sourceStart) {
+        const auto* source = session_->definitionSource(line.sourceIndex);
+        if (source) {
+          const int contentLeft = left + kSideMargin;
+          const int contentRight = renderer.getScreenWidth() - right - kSideMargin;
+          const int centerX = (contentLeft + contentRight) / 2;
+          const int labelWidth = renderer.getTextAdvanceX(SMALL_FONT_ID, source->sourceLabel, EpdFontFamily::BOLD);
+          const int labelLeft = centerX - labelWidth / 2;
+          const int labelRight = labelLeft + labelWidth;
+          const int lineY = y + renderer.getLineHeight(SMALL_FONT_ID) / 2;
+          if (labelLeft - kSourceDividerGap > contentLeft) {
+            renderer.fillRect(contentLeft, lineY, labelLeft - kSourceDividerGap - contentLeft, 1, true);
+          }
+          if (contentRight > labelRight + kSourceDividerGap) {
+            renderer.fillRect(labelRight + kSourceDividerGap, lineY, contentRight - labelRight - kSourceDividerGap, 1,
+                              true);
+          }
+          renderer.drawText(SMALL_FONT_ID, labelLeft, y, source->sourceLabel, true, EpdFontFamily::BOLD);
+          y += kSourceDividerHeight;
+        }
       }
       const auto text = definitionPage_->lineText(index);
       const size_t length = std::min(text.size(), sizeof(lineScratch_) - 1);
