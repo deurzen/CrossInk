@@ -29,8 +29,8 @@ committed.
 | ID | Status | Unit of work | Completion gate |
 | --- | --- | --- | --- |
 | C00 | Done | Specify the contextual canonical-lexicon and multi-source architecture | Architecture documents artifacts, provider boundaries, RAM budget, failure behavior and acceptance criteria |
-| C01 | Planned | Obtain and fingerprint the complete DWDSmor DWDS-edition analyzer | Provenance and terms recorded locally; automaton version/SHA-256 reproducible; sample analyses run |
-| C02 | Planned | Pin the ZDL static German spaCy model and compiler environment | Locked Python/model versions and hashes; clean environment reproduces reference inference |
+| C01 | Blocked on private access | Obtain and fingerprint the complete DWDSmor DWDS-edition analyzer | Provenance and terms recorded locally; automaton version/SHA-256 reproducible; sample analyses run |
+| C02 | Done | Pin the ZDL static German spaCy model and compiler environment | Locked Python/model versions and hashes; clean environment reproduces reference inference |
 | C03 | Planned | Define canonical POS/features mapping and scoring policy | Versioned DWDSmor/ZDL→canonical mapping; unsupported tags and low-confidence behavior documented |
 | C04 | Planned | Specify canonical, definition-source, attachment and next `language.bin` formats | Endianness, CRCs, caps, UUID/fingerprint rules and corruption fixtures documented before readers are written |
 
@@ -128,9 +128,9 @@ new compiled EPUB and recoverable source installation.
 
 ## Immediate next work
 
-1. Complete C01 by obtaining the full DWDSmor automata and recording hashes.
-2. Complete C02 with an isolated pinned ZDL static-model environment.
-3. Build C03/C09 together so scoring decisions are driven by real ambiguous
+1. Unblock C01 by obtaining access to the private `dwdsmor-dwds` package,
+   then record its automaton hashes and sample analyses.
+2. Build C03/C09 together so scoring decisions are driven by real ambiguous
    sentences rather than isolated token examples.
-4. Freeze C04 formats only after canonical identity and source-index needs are
+3. Freeze C04 formats only after canonical identity and source-index needs are
    demonstrated by small de-DE/dict.cc/Kaikki fixtures.

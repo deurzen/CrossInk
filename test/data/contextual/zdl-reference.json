@@ -1,0 +1,333 @@
+{
+  "schemaVersion": 1,
+  "sentences": [
+    {
+      "text": "Die Liebe bleibt, auch wenn ich dich nicht mehr liebe.",
+      "tokens": [
+        {
+          "lemma": "die",
+          "pos": "DET",
+          "start": 0,
+          "tag": "ART",
+          "text": "Die"
+        },
+        {
+          "lemma": "Liebe",
+          "pos": "NOUN",
+          "start": 4,
+          "tag": "NN",
+          "text": "Liebe"
+        },
+        {
+          "lemma": "bleiben",
+          "pos": "VERB",
+          "start": 10,
+          "tag": "VVFIN",
+          "text": "bleibt"
+        },
+        {
+          "lemma": ",",
+          "pos": "PUNCT",
+          "start": 16,
+          "tag": "$,",
+          "text": ","
+        },
+        {
+          "lemma": "auch",
+          "pos": "ADV",
+          "start": 18,
+          "tag": "ADV",
+          "text": "auch"
+        },
+        {
+          "lemma": "wenn",
+          "pos": "SCONJ",
+          "start": 23,
+          "tag": "KOUS",
+          "text": "wenn"
+        },
+        {
+          "lemma": "ich",
+          "pos": "PRON",
+          "start": 28,
+          "tag": "PPER",
+          "text": "ich"
+        },
+        {
+          "lemma": "dich",
+          "pos": "PRON",
+          "start": 32,
+          "tag": "PRF",
+          "text": "dich"
+        },
+        {
+          "lemma": "nicht",
+          "pos": "PART",
+          "start": 37,
+          "tag": "PTKNEG",
+          "text": "nicht"
+        },
+        {
+          "lemma": "sehr",
+          "pos": "ADV",
+          "start": 43,
+          "tag": "ADV",
+          "text": "mehr"
+        },
+        {
+          "lemma": "lieben",
+          "pos": "VERB",
+          "start": 48,
+          "tag": "VVFIN",
+          "text": "liebe"
+        },
+        {
+          "lemma": ".",
+          "pos": "PUNCT",
+          "start": 53,
+          "tag": "$.",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "text": "Morgen laden wir die Kisten in den Wagen.",
+      "tokens": [
+        {
+          "lemma": "morgen",
+          "pos": "ADV",
+          "start": 0,
+          "tag": "ADV",
+          "text": "Morgen"
+        },
+        {
+          "lemma": "laden",
+          "pos": "VERB",
+          "start": 7,
+          "tag": "VVFIN",
+          "text": "laden"
+        },
+        {
+          "lemma": "wir",
+          "pos": "PRON",
+          "start": 13,
+          "tag": "PPER",
+          "text": "wir"
+        },
+        {
+          "lemma": "die",
+          "pos": "DET",
+          "start": 17,
+          "tag": "ART",
+          "text": "die"
+        },
+        {
+          "lemma": "Kiste",
+          "pos": "NOUN",
+          "start": 21,
+          "tag": "NN",
+          "text": "Kisten"
+        },
+        {
+          "lemma": "in",
+          "pos": "ADP",
+          "start": 28,
+          "tag": "APPR",
+          "text": "in"
+        },
+        {
+          "lemma": "die",
+          "pos": "DET",
+          "start": 31,
+          "tag": "ART",
+          "text": "den"
+        },
+        {
+          "lemma": "Wagen",
+          "pos": "NOUN",
+          "start": 35,
+          "tag": "NN",
+          "text": "Wagen"
+        },
+        {
+          "lemma": ".",
+          "pos": "PUNCT",
+          "start": 40,
+          "tag": "$.",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "text": "Der Laden öffnet morgen, nachdem wir die Ware laden.",
+      "tokens": [
+        {
+          "lemma": "die",
+          "pos": "DET",
+          "start": 0,
+          "tag": "ART",
+          "text": "Der"
+        },
+        {
+          "lemma": "Laden",
+          "pos": "NOUN",
+          "start": 4,
+          "tag": "NN",
+          "text": "Laden"
+        },
+        {
+          "lemma": "öffnen",
+          "pos": "VERB",
+          "start": 10,
+          "tag": "VVFIN",
+          "text": "öffnet"
+        },
+        {
+          "lemma": "morgen",
+          "pos": "ADV",
+          "start": 17,
+          "tag": "ADV",
+          "text": "morgen"
+        },
+        {
+          "lemma": ",",
+          "pos": "PUNCT",
+          "start": 23,
+          "tag": "$,",
+          "text": ","
+        },
+        {
+          "lemma": "nachdem",
+          "pos": "SCONJ",
+          "start": 25,
+          "tag": "KOUS",
+          "text": "nachdem"
+        },
+        {
+          "lemma": "wir",
+          "pos": "PRON",
+          "start": 33,
+          "tag": "PPER",
+          "text": "wir"
+        },
+        {
+          "lemma": "die",
+          "pos": "DET",
+          "start": 37,
+          "tag": "ART",
+          "text": "die"
+        },
+        {
+          "lemma": "Ware",
+          "pos": "NOUN",
+          "start": 41,
+          "tag": "NN",
+          "text": "Ware"
+        },
+        {
+          "lemma": "laden",
+          "pos": "VERB",
+          "start": 46,
+          "tag": "VVINF",
+          "text": "laden"
+        },
+        {
+          "lemma": ".",
+          "pos": "PUNCT",
+          "start": 51,
+          "tag": "$.",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "text": "Das Bilden neuer Wörter ist schwierig; die Kinder bilden Gruppen.",
+      "tokens": [
+        {
+          "lemma": "die",
+          "pos": "DET",
+          "start": 0,
+          "tag": "ART",
+          "text": "Das"
+        },
+        {
+          "lemma": "Bilden",
+          "pos": "NOUN",
+          "start": 4,
+          "tag": "NN",
+          "text": "Bilden"
+        },
+        {
+          "lemma": "neu",
+          "pos": "ADJ",
+          "start": 11,
+          "tag": "ADJA",
+          "text": "neuer"
+        },
+        {
+          "lemma": "Wort",
+          "pos": "NOUN",
+          "start": 17,
+          "tag": "NN",
+          "text": "Wörter"
+        },
+        {
+          "lemma": "sein",
+          "pos": "AUX",
+          "start": 24,
+          "tag": "VAFIN",
+          "text": "ist"
+        },
+        {
+          "lemma": "schwierig",
+          "pos": "ADJ",
+          "start": 28,
+          "tag": "ADJD",
+          "text": "schwierig"
+        },
+        {
+          "lemma": ";",
+          "pos": "PUNCT",
+          "start": 37,
+          "tag": "$.",
+          "text": ";"
+        },
+        {
+          "lemma": "die",
+          "pos": "DET",
+          "start": 39,
+          "tag": "ART",
+          "text": "die"
+        },
+        {
+          "lemma": "Kind",
+          "pos": "NOUN",
+          "start": 43,
+          "tag": "NN",
+          "text": "Kinder"
+        },
+        {
+          "lemma": "bilden",
+          "pos": "VERB",
+          "start": 50,
+          "tag": "VVFIN",
+          "text": "bilden"
+        },
+        {
+          "lemma": "Gruppe",
+          "pos": "NOUN",
+          "start": 57,
+          "tag": "NN",
+          "text": "Gruppen"
+        },
+        {
+          "lemma": ".",
+          "pos": "PUNCT",
+          "start": 64,
+          "tag": "$.",
+          "text": "."
+        }
+      ]
+    }
+  ]
+}
