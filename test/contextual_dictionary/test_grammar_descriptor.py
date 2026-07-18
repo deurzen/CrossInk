@@ -1,3 +1,4 @@
+from itertools import permutations
 import json
 from pathlib import Path
 import sys
@@ -14,9 +15,11 @@ from dictionary.contextual.analysis_policy import (  # noqa: E402
 from dictionary.contextual.grammar_descriptor import (  # noqa: E402
     GRAMMAR_DESCRIPTOR_VERSION,
     GrammarDescriptorError,
+    GrammarEvidence,
     decode_features,
     encode_contextual_grammar,
     encode_features,
+    merge_grammar_evidence,
     validate_descriptor,
 )
 
@@ -68,6 +71,54 @@ class GrammarDescriptorTest(unittest.TestCase):
                     encode_features(CanonicalFeatures(**{field: "unversioned"}))
         with self.assertRaisesRegex(GrammarDescriptorError, "invalid type"):
             encode_features(object())
+
+    def test_same_surface_merge_is_order_independent_and_sticky(self):
+        partial = (
+            encode_features(CanonicalFeatures(mood="indicative", verb_form="finite")),
+            encode_features(CanonicalFeatures(number="singular", person="third")),
+            encode_features(CanonicalFeatures(tense="past", verb_form="finite")),
+            0,
+        )
+        expected = encode_features(
+            CanonicalFeatures(
+                mood="indicative",
+                number="singular",
+                person="third",
+                tense="past",
+                verb_form="finite",
+            )
+        )
+        for ordered in permutations(partial):
+            evidence = GrammarEvidence()
+            for descriptor in ordered:
+                evidence = merge_grammar_evidence(evidence, descriptor)
+            self.assertEqual(evidence, GrammarEvidence(expected))
+
+        singular = encode_features(CanonicalFeatures(number="singular"))
+        plural = encode_features(CanonicalFeatures(number="plural"))
+        for ordered in permutations((singular, plural, singular)):
+            evidence = GrammarEvidence()
+            for descriptor in ordered:
+                evidence = merge_grammar_evidence(evidence, descriptor)
+            self.assertEqual(evidence, GrammarEvidence(0, True))
+            self.assertEqual(
+                merge_grammar_evidence(evidence, singular),
+                GrammarEvidence(0, True),
+            )
+
+    def test_merge_clears_structurally_incompatible_unions(self):
+        finite = encode_features(CanonicalFeatures(verb_form="finite"))
+        nominal = encode_features(CanonicalFeatures(case="dative"))
+        self.assertEqual(
+            merge_grammar_evidence(GrammarEvidence(finite), nominal),
+            GrammarEvidence(0, True),
+        )
+        with self.assertRaisesRegex(GrammarDescriptorError, "invalid type"):
+            merge_grammar_evidence(object(), 0)
+        with self.assertRaisesRegex(GrammarDescriptorError, "reserved bits"):
+            merge_grammar_evidence(GrammarEvidence(0, True), 1 << 17)
+        with self.assertRaisesRegex(GrammarDescriptorError, "must be unavailable"):
+            GrammarEvidence(finite, True)
 
     def test_contextual_pos_policy_uses_context_features_only(self):
         finite_past = CanonicalFeatures(

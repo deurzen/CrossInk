@@ -11,7 +11,11 @@ import zlib
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from dictionary.contextual.analysis_policy import CanonicalAnalysis, CanonicalPos  # noqa: E402
+from dictionary.contextual.analysis_policy import (  # noqa: E402
+    CanonicalAnalysis,
+    CanonicalFeatures,
+    CanonicalPos,
+)
 from dictionary.contextual.canonical_lexicon import (  # noqa: E402
     CanonicalLexemeInput,
     compile_canonical_bundle,
@@ -22,9 +26,13 @@ from dictionary.contextual.epub_compiler import (  # noqa: E402
     FLAG_AMBIGUOUS,
     FLAG_CONTEXTUAL,
     LANGUAGE_PATH,
+    _EncodedCandidate,
+    _finalize_surface,
+    _merge_surface,
     compile_contextual_book,
     compile_contextual_epub,
 )
+from dictionary.contextual.grammar_descriptor import encode_features  # noqa: E402
 from dictionary.contextual.pipeline import (  # noqa: E402
     AnalysisProvenance,
     AnalyzedToken,
@@ -197,6 +205,40 @@ class ContextualEpubCompilerTest(unittest.TestCase):
         self.assertEqual(metadata["canonicalUuid"], str(self.canonical.canonical_uuid))
         self.assertEqual(metadata["analysisPolicyVersion"], 2)
         self.assertEqual(metadata["canonicalPosVersion"], 1)
+
+    def test_surface_aggregation_keeps_grammar_with_occurrence_primary_only(self):
+        singular = encode_features(CanonicalFeatures(number="singular"))
+        plural = encode_features(CanonicalFeatures(number="plural"))
+        first = _EncodedCandidate("Sie", (10, 20), 1000, 7, FLAG_CONTEXTUAL, singular)
+        alternative = _EncodedCandidate("Sie", (20, 10), 900, 8, FLAG_CONTEXTUAL, plural)
+
+        evidence = _merge_surface(None, first)
+        evidence = _merge_surface(evidence, alternative)
+        finalized = _finalize_surface("Sie", evidence)
+        self.assertEqual(finalized.global_ids, (10, 20))
+        self.assertEqual(finalized.grammar_descriptor, singular)
+        self.assertFalse(finalized.grammar_conflict)
+
+        evidence = _merge_surface(evidence, first)
+        finalized = _finalize_surface("Sie", evidence)
+        self.assertEqual(finalized.grammar_descriptor, singular)
+        self.assertFalse(finalized.grammar_conflict)
+
+    def test_surface_aggregation_clears_conflicting_primary_grammar(self):
+        singular = encode_features(CanonicalFeatures(number="singular"))
+        plural = encode_features(CanonicalFeatures(number="plural"))
+        candidates = (
+            _EncodedCandidate("Sie", (10,), 1000, 7, FLAG_CONTEXTUAL, singular),
+            _EncodedCandidate("Sie", (10,), 1000, 8, FLAG_CONTEXTUAL, plural),
+            _EncodedCandidate("Sie", (10,), 1000, 9, FLAG_CONTEXTUAL, singular),
+        )
+        for ordered in (candidates, tuple(reversed(candidates))):
+            evidence = None
+            for candidate in ordered:
+                evidence = _merge_surface(evidence, candidate)
+            finalized = _finalize_surface("Sie", evidence)
+            self.assertEqual(finalized.grammar_descriptor, 0)
+            self.assertTrue(finalized.grammar_conflict)
 
     def test_shards_by_rendered_word_tokens_and_is_deterministic(self):
         xhtml = "<p>" + " ".join(["laden"] * 65) + "</p>"

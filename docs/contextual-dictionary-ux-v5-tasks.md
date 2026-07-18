@@ -168,7 +168,7 @@ reuse of the existing pager/page/session.
 | ID | Status | Work item | Completion gate |
 | --- | --- | --- | --- |
 | U04 | Done | Add deterministic grammar descriptor encoder | Every supported DWDSmor/ZDL canonical feature maps to a validated packed value; malformed combinations fail |
-| U05 | Planned | Preserve primary grammar through surface aggregation | Identical evidence survives; conflicting repeated-surface evidence emits unavailable deterministically |
+| U05 | Done | Preserve primary grammar through surface aggregation | Identical evidence survives; conflicting repeated-surface evidence emits unavailable deterministically |
 | U06 | Planned | Emit only v5 contextual records | Compiler writes the descriptor, bumps compiler metadata and rejects out-of-range/reserved values |
 | U07 | Planned | Add v5 differential and corruption fixtures | Token offsets, markers, IDs, grammar words, record bytes, CRCs and complete artifact SHA agree independently |
 | U08 | Planned | Re-evaluate production corpora | German ambiguity baseline remains stable; v5 grammar accuracy is manually checked for verbs, nouns, adjectives and ambiguous forms |
@@ -178,6 +178,12 @@ ordinals. Checked-in vectors cover every field code and contradiction; an
 exhaustive test round-trips all 2,113 valid 17-bit payloads and rejects every
 reserved high bit. Contextual POS gating uses only ZDL token features and keeps
 noun/proper-noun compatibility explicit.
+
+U05 carries grammar only for the canonical ID that was primary at each surface
+occurrence. Per-field unavailable values union conservatively, equal evidence
+survives, and value or structural conflicts are sticky and finalize as zero.
+Permutation tests prove aggregation order cannot recover conflicted evidence or
+allow an alternative analysis to contaminate the selected primary.
 
 ## Phase C — bounded firmware support
 

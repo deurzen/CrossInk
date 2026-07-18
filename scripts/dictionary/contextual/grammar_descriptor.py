@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .analysis_policy import CanonicalAnalysis, CanonicalFeatures, CanonicalPos
 
 GRAMMAR_DESCRIPTOR_VERSION = 1
@@ -27,10 +29,31 @@ _NUMBER_VALUES = (None, "singular", "plural")
 _PERSON_VALUES = (None, "first", "second", "third")
 _TENSE_VALUES = (None, "present", "past", "perfect")
 _VERB_FORM_VALUES = (None, "finite", "infinitive", "participle")
+_FIELD_MASKS = (
+    0x00000007,
+    0x00000018,
+    0x00000060,
+    0x00000180,
+    0x00000600,
+    0x00001800,
+    0x00006000,
+    0x00018000,
+)
 
 
 class GrammarDescriptorError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class GrammarEvidence:
+    descriptor: int = 0
+    conflicted: bool = False
+
+    def __post_init__(self) -> None:
+        validate_descriptor(self.descriptor)
+        if self.conflicted and self.descriptor != 0:
+            raise GrammarDescriptorError("conflicted grammar evidence must be unavailable")
 
 
 def _encode_value(field: str, value: str | None, values: tuple[str | None, ...]) -> int:
@@ -112,6 +135,28 @@ def decode_features(descriptor: int) -> CanonicalFeatures:
         tense=_decode_value("tense", values["tense"], _TENSE_VALUES),
         verb_form=_decode_value("verb form", values["verb_form"], _VERB_FORM_VALUES),
     )
+
+
+def merge_grammar_evidence(evidence: GrammarEvidence, descriptor: int) -> GrammarEvidence:
+    if not isinstance(evidence, GrammarEvidence):
+        raise GrammarDescriptorError("grammar evidence has invalid type")
+    validate_descriptor(descriptor)
+    if evidence.conflicted or descriptor == 0:
+        return evidence
+    if evidence.descriptor == 0:
+        return GrammarEvidence(descriptor)
+
+    for mask in _FIELD_MASKS:
+        current = evidence.descriptor & mask
+        incoming = descriptor & mask
+        if current and incoming and current != incoming:
+            return GrammarEvidence(0, True)
+    merged = evidence.descriptor | descriptor
+    try:
+        validate_descriptor(merged)
+    except GrammarDescriptorError:
+        return GrammarEvidence(0, True)
+    return GrammarEvidence(merged)
 
 
 def encode_contextual_grammar(context: CanonicalAnalysis, primary: CanonicalAnalysis) -> int:

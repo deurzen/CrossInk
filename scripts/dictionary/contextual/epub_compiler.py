@@ -34,6 +34,12 @@ from dictionary.contextual.compiler_support import (
 from .analysis_policy import CanonicalPos
 from .canonical_lexicon import CanonicalLexiconIndex
 from .fusion import normalize_score
+from .grammar_descriptor import (
+    GrammarDescriptorError,
+    GrammarEvidence,
+    encode_contextual_grammar,
+    merge_grammar_evidence,
+)
 from .pipeline import AnalysisProvenance, AnalyzedToken, LanguageAnalyzer
 
 FORMAT_VERSION = 4
@@ -70,6 +76,7 @@ class CompiledContextualBook:
 class _SurfaceEvidence:
     scores: dict[int, int]
     provenance: dict[int, AnalysisProvenance]
+    grammar_by_primary_id: dict[int, GrammarEvidence]
     difficulty: int = 0
     context_proper_noun: bool = False
 
@@ -81,6 +88,8 @@ class _EncodedCandidate:
     confidence: int
     difficulty: int
     flags: int
+    grammar_descriptor: int
+    grammar_conflict: bool = False
 
 
 def _crc32(data: bytes) -> int:
@@ -188,6 +197,7 @@ def _analyze_spine(
             continue
         scores: dict[int, int] = {}
         provenance: dict[int, AnalysisProvenance] = {}
+        analyses_by_id = {}
         for ranked in analyzed.analyses:
             canonical_id = canonical.resolve(
                 ranked.analysis.lemma,
@@ -199,6 +209,7 @@ def _analyze_spine(
             previous = scores.get(canonical_id)
             if previous is None or ranked.score > previous:
                 scores[canonical_id] = ranked.score
+                analyses_by_id[canonical_id] = ranked.analysis
             provenance[canonical_id] = (
                 provenance.get(canonical_id, AnalysisProvenance(0))
                 | ranked.provenance
@@ -220,12 +231,22 @@ def _analyze_spine(
             flags |= FLAG_FALLBACK
         if analyzed.context.part_of_speech == CanonicalPos.PROPER_NOUN:
             flags |= FLAG_PROPER_NOUN
+        try:
+            grammar_descriptor = encode_contextual_grammar(
+                analyzed.context,
+                analyses_by_id[primary_id],
+            )
+        except GrammarDescriptorError as error:
+            raise ContextualEpubError(
+                f"invalid contextual grammar for {word.surface!r}: {error}"
+            ) from error
         candidates[word_index] = _EncodedCandidate(
-            word.surface,
-            tuple(ordered),
-            normalize_score(scores[primary_id]),
-            _difficulty(word.surface, analyzed, frequency_provider),
-            flags,
+            surface=word.surface,
+            global_ids=tuple(ordered),
+            confidence=normalize_score(scores[primary_id]),
+            difficulty=_difficulty(word.surface, analyzed, frequency_provider),
+            flags=flags,
+            grammar_descriptor=grammar_descriptor,
         )
     return words, candidates, missing
 
@@ -234,7 +255,7 @@ def _merge_surface(
     existing: _SurfaceEvidence | None,
     candidate: _EncodedCandidate,
 ) -> _SurfaceEvidence:
-    evidence = existing or _SurfaceEvidence({}, {})
+    evidence = existing or _SurfaceEvidence({}, {}, {})
     evidence.difficulty = max(evidence.difficulty, candidate.difficulty)
     evidence.context_proper_noun |= bool(candidate.flags & FLAG_PROPER_NOUN)
     for canonical_id in candidate.global_ids:
@@ -248,6 +269,11 @@ def _merge_surface(
                 evidence.provenance.get(canonical_id, AnalysisProvenance(0))
                 | AnalysisProvenance.FOLDED_FORM_INVENTORY
             )
+    primary_id = candidate.global_ids[0]
+    evidence.grammar_by_primary_id[primary_id] = merge_grammar_evidence(
+        evidence.grammar_by_primary_id.get(primary_id, GrammarEvidence()),
+        candidate.grammar_descriptor,
+    )
     if candidate.flags & FLAG_FALLBACK:
         evidence.provenance[candidate.global_ids[0]] = (
             evidence.provenance.get(candidate.global_ids[0], AnalysisProvenance(0))
@@ -281,7 +307,16 @@ def _finalize_surface(surface: str, evidence: _SurfaceEvidence) -> _EncodedCandi
     if evidence.context_proper_noun:
         flags |= FLAG_PROPER_NOUN
     confidence = min(1000, max(0, (evidence.scores[ordered[0]] + 8) // 16))
-    return _EncodedCandidate(surface, tuple(ordered), confidence, evidence.difficulty, flags)
+    grammar = evidence.grammar_by_primary_id.get(ordered[0], GrammarEvidence())
+    return _EncodedCandidate(
+        surface=surface,
+        global_ids=tuple(ordered),
+        confidence=confidence,
+        difficulty=evidence.difficulty,
+        flags=flags,
+        grammar_descriptor=grammar.descriptor,
+        grammar_conflict=grammar.conflicted,
+    )
 
 
 def compile_contextual_book(
